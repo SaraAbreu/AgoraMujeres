@@ -9,7 +9,8 @@
     "userInterfaceStyle": "light",
     "newArchEnabled": false,
     "extra": {
-      "EXPO_PUBLIC_BACKEND_URL": "http://localhost:8000"
+      "EXPO_PUBLIC_BACKEND_URL": "http://localhost:8000",
+      "EXPO_PUBLIC_STRIPE_KEY": "pk_live_51SRw7PL07UaiQy6MZzVJ6DHIRrZYNUvqRaoyLkkDi3LBXl5I6qUsN2Ky4Kqry0eOq1y0mS1mzYIqFIVlPFGE00pUYNlVzO"
     },
     "ios": {
       "supportsTablet": true,

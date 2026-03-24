@@ -31,6 +31,13 @@ export const useTrialCheck = (): TrialCheckResult => {
     checkTrial();
   }, [checkTrial]);
 
+  // Sincronizar remainingSeconds cuando subscriptionStatus cambia
+  useEffect(() => {
+    if (subscriptionStatus?.trial_remaining_seconds !== undefined) {
+      setRemainingSeconds(subscriptionStatus.trial_remaining_seconds);
+    }
+  }, [subscriptionStatus?.trial_remaining_seconds]);
+
   // Update remaining time every minute
   useEffect(() => {
     if (subscriptionStatus?.status !== 'trial') return;

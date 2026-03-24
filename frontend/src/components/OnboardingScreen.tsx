@@ -1,207 +1,204 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Dimensions, Image, Platform } from 'react-native';
-import { colors, spacing } from '../theme/colors';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, SafeAreaView } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { colors } from '../theme/colors';
 
-interface OnboardingProps {
+interface OnboardingScreenProps {
   onComplete: () => void;
 }
 
-const { width, height } = Dimensions.get('window');
-const isWeb = Platform.OS === 'web';
-
-const SCREENS = [
-  {
-    type: 'complete',
-    title: '¡Hola soy Ágora!',
-    subtitle: 'Tu acompañante en el cuidado de tu salud',
-    sectionTitle: 'Te ayudaré a:',
-    features: [
-      'Registrar y entender tu ciclo menstrual',
-      'Monitorear tus síntomas y patrones de salud',
-      'Recibir recomendaciones personalizadas',
-      'Conectar con información sobre salud menstrual',
-      'Acceder a recursos y consejos útiles',
-      'Tomar decisiones informadas sobre tu bienestar',
-    ],
-    disclaimer: 'Ágora es una herramienta de seguimiento y educación. No reemplaza la consulta médica profesional. Si tienes inquietudes de salud, consulta con tu médico.',
-  },
-];
-
-export function OnboardingScreen({ onComplete }: OnboardingProps) {
-  const screen = SCREENS[0];
+export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }) => {
+  const features = [
+    {
+      icon: 'calendar-outline',
+      title: 'Registrar y entender tu ciclo menstrual',
+    },
+    {
+      icon: 'pulse',
+      title: 'Monitorear tus síntomas y patrones de salud',
+    },
+    {
+      icon: 'bulb-outline',
+      title: 'Recibir recomendaciones personalizadas',
+    },
+    {
+      icon: 'book-outline',
+      title: 'Conectar con información sobre salud menstrual',
+    },
+    {
+      icon: 'library-outline',
+      title: 'Acceder a recursos y consejos útiles',
+    },
+    {
+      icon: 'brain',
+      title: 'Tomar decisiones informadas sobre tu bienestar',
+    },
+  ];
 
   return (
-    <View style={styles.container}>
-      {/* Content */}
-      <ScrollView 
-        contentContainerStyle={styles.scrollContent}
+    <SafeAreaView style={styles.container}>
+      <ScrollView
+        contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        {/* Logo - Arriba */}
-        <Image 
-          source={require('../../assets/images/agora-logo.png')}
-          style={styles.welcomeImage}
-        />
-        
-        {/* Título Principal */}
-        <Text style={styles.title}>{screen.title}</Text>
-        
-        {/* Subtítulo */}
-        <Text style={styles.subtitle}>{screen.subtitle}</Text>
-        
-        {/* Sección de Características */}
-        <Text style={styles.sectionTitle}>{screen.sectionTitle}</Text>
-        
-        <View style={styles.featuresList}>
-          {screen.features && screen.features.map((feature, index) => (
-            <View key={index} style={styles.featureItem}>
-              <Text style={styles.featureText}>{feature}</Text>
-            </View>
-          ))}
+        {/* Header con ícono */}
+        <View style={styles.headerSection}>
+          <View style={styles.iconCircle}>
+            <Ionicons name="woman" size={48} color={colors.mossGreen} />
+          </View>
+          <Text style={styles.title}>Ágora Mujeres</Text>
+          <Text style={styles.subtitle}>Tu refugio emocional</Text>
+        </View>
+
+        {/* Descripción */}
+        <View style={styles.descriptionSection}>
+          <Text style={styles.sectionTitle}>¡Hola soy Ágora!</Text>
+          <Text style={styles.description}>Tu acompañante en el cuidado de tu salud</Text>
+        </View>
+
+        {/* Features Grid */}
+        <View style={styles.featuresSection}>
+          <Text style={styles.featuresTitle}>Te ayudaré a</Text>
+          <View style={styles.featuresList}>
+            {features.map((feature, index) => (
+              <View key={index} style={styles.featureItem}>
+                <View style={styles.featureIconBox}>
+                  <Ionicons name={feature.icon as any} size={24} color={colors.mossGreen} />
+                </View>
+                <Text style={styles.featureText}>{feature.title}</Text>
+              </View>
+            ))}
+          </View>
         </View>
 
         {/* Disclaimer */}
         <View style={styles.disclaimerBox}>
-          <Text style={styles.disclaimer}>{screen.disclaimer}</Text>
+          <Text style={styles.disclaimerText}>
+            Ágora es una herramienta de seguimiento y educación. No reemplaza la consulta médica profesional. Si tienes inquietudes de salud, consulta con tu médico.
+          </Text>
         </View>
-      </ScrollView>
 
-      {/* Button Container */}
-      <View style={styles.buttonContainer}>
-        <TouchableOpacity 
-          style={[styles.button, styles.nextButton]}
-          onPress={onComplete}
-        >
-          <Text style={styles.nextButtonText}>Empezar</Text>
+        {/* Button */}
+        <TouchableOpacity style={styles.button} onPress={onComplete}>
+          <Text style={styles.buttonText}>Empezar</Text>
         </TouchableOpacity>
-      </View>
-    </View>
+      </ScrollView>
+    </SafeAreaView>
   );
-}
+};
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#80704f',
+    backgroundColor: colors.background,
   },
-  scrollContent: {
-    flex: 1,
-    paddingHorizontal: isWeb ? spacing.xl : spacing.lg,
-    paddingVertical: isWeb ? spacing.lg : spacing.lg,
+  content: {
+    paddingHorizontal: 24,
+    paddingVertical: 32,
+    alignItems: 'center',
+  },
+  headerSection: {
+    alignItems: 'center',
+    marginBottom: 40,
+  },
+  iconCircle: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: colors.cream,
     justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
   },
-  
-  // Pantalla 1: Bienvenida
-  welcomeImage: {
-    width: isWeb ? Math.min(width - spacing.lg * 2, 400) : '100%',
-    height: isWeb ? 350 : 320,
-    borderRadius: 20,
-    marginBottom: spacing.xl,
-    marginHorizontal: isWeb ? 'auto' : 0,
-    resizeMode: 'contain',
-    alignSelf: 'center',
+  title: {
+    fontSize: 32,
+    fontFamily: 'Cormorant_700Bold',
+    color: colors.text,
+    textAlign: 'center',
   },
-  
-  // Pantalla 2: Características
+  subtitle: {
+    fontSize: 14,
+    fontFamily: 'Nunito_400Regular',
+    color: colors.textSecondary,
+    marginTop: 4,
+  },
+  descriptionSection: {
+    alignItems: 'center',
+    marginBottom: 32,
+    width: '100%',
+  },
+  sectionTitle: {
+    fontSize: 24,
+    fontFamily: 'Cormorant_600SemiBold',
+    color: colors.text,
+    marginBottom: 8,
+  },
+  description: {
+    fontSize: 14,
+    fontFamily: 'Nunito_400Regular',
+    color: colors.textSecondary,
+  },
+  featuresSection: {
+    width: '100%',
+    marginBottom: 32,
+  },
+  featuresTitle: {
+    fontSize: 18,
+    fontFamily: 'Cormorant_600SemiBold',
+    color: colors.text,
+    marginBottom: 16,
+    textAlign: 'center',
+  },
   featuresList: {
-    marginVertical: spacing.xl,
-    paddingHorizontal: spacing.md,
+    gap: 12,
   },
   featureItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: spacing.lg,
-    paddingHorizontal: spacing.md,
-    justifyContent: 'center',
+    paddingHorizontal: 12,
+    gap: 12,
   },
-  featureBullet: {
-    fontSize: 28,
-    color: colors.accent,
-    marginRight: spacing.md,
-    lineHeight: 32,
-    fontWeight: 'bold',
-  },
-  featureText: {
-    flex: 1,
-    fontSize: isWeb ? 18 : 16,
-    fontFamily: 'Nunito_400Regular',
-    color: 'white',
-    lineHeight: 28,
-    fontWeight: '500',
-    textAlign: 'center',
-  },
-  
-  disclaimerBox: {
-    backgroundColor: colors.accent + '30',
-    paddingVertical: spacing.lg,
-    paddingHorizontal: spacing.lg,
-    borderRadius: 12,
-    borderLeftWidth: 4,
-    borderLeftColor: colors.accent,
-    marginTop: spacing.xl,
-  },
-  disclaimer: {
-    fontSize: 15,
-    fontFamily: 'Nunito_600SemiBold',
-    color: colors.text,
-    textAlign: 'center',
-    fontStyle: 'italic',
-  },
-  
-  // Común
-  title: {
-    fontSize: isWeb ? 36 : 32,
-    fontFamily: 'Cormorant_600SemiBold',
-    color: colors.warmBrownLight,
-    textAlign: 'center',
-    marginBottom: spacing.lg,
-    lineHeight: isWeb ? 44 : 40,
-  },
-  subtitle: {
-    fontSize: isWeb ? 18 : 16,
-    fontFamily: 'Nunito_400Regular',
-    color: colors.textOnPrimary,
-    textAlign: 'center',
-    lineHeight: 24,
-    marginBottom: spacing.xl,
-    opacity: 0.95,
-  },
-  sectionTitle: {
-    fontSize: isWeb ? 22 : 20,
-    fontFamily: 'Cormorant_600SemiBold',
-    color: colors.warmBrownLight,
-    textAlign: 'center',
-    marginBottom: spacing.md,
-    marginTop: spacing.xl,
-  },
-  description: {
-    fontSize: isWeb ? 18 : 16,
-    fontFamily: 'Nunito_400Regular',
-    color: colors.textOnPrimary,
-    textAlign: 'center',
-    lineHeight: 32,
-    opacity: 0.95,
-  },
-  
-  buttonContainer: {
-    flexDirection: 'row',
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.xl,
-    gap: spacing.md,
-  },
-  button: {
-    flex: 1,
-    paddingVertical: spacing.md,
-    borderRadius: 12,
+  featureIconBox: {
+    width: 48,
+    height: 48,
+    borderRadius: 8,
+    backgroundColor: colors.cream,
     justifyContent: 'center',
     alignItems: 'center',
+    flexShrink: 0,
   },
-  nextButton: {
-    backgroundColor: colors.warmBrownDark,
+  featureText: {
+    fontSize: 14,
+    fontFamily: 'Nunito_500Medium',
+    color: colors.text,
+    flex: 1,
   },
-  nextButtonText: {
+  disclaimerBox: {
+    backgroundColor: colors.cream,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginBottom: 24,
+    width: '100%',
+  },
+  disclaimerText: {
+    fontSize: 12,
+    fontFamily: 'Nunito_400Regular',
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  button: {
+    backgroundColor: colors.mossGreen,
+    paddingVertical: 14,
+    paddingHorizontal: 48,
+    borderRadius: 8,
+    width: '100%',
+    alignItems: 'center',
+  },
+  buttonText: {
+    color: colors.softWhite,
     fontSize: 16,
-    fontFamily: 'Nunito_700Bold',
-    color: 'white',
+    fontFamily: 'Nunito_600SemiBold',
   },
 });

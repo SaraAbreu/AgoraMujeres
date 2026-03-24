@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#FDFBF9" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="description" content="Ágora Mujeres - Tu refugio emocional" />
+    <title>Ágora Mujeres</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden !important;
+            background-color: #FDFBF9 !important;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+        
+        body {
+            display: flex;
+            align-items: stretch;
+            justify-content: stretch;
+        }
+        
+        #root {
+            width: 100% !important;
+            height: 100% !important;
+            display: flex !important;
+            flex-direction: column !important;
+            flex: 1 !important;
+        }
+        
+        /* Forzar que todo ocupe 100% */
+        #root > * {
+            width: 100% !important;
+            height: 100% !important;
+            flex: 1 !important;
+        }
+        
+        /* Deshabilitar cualquier frame/simulador de Expo */
+        [data-testid="devClient"],
+        [data-testid="preview"],
+        [data-testid="simulator"],
+        .phone-frame,
+        .device-frame,
+        .simulator-frame,
+        [style*="margin: auto"],
+        [style*="alignSelf: center"],
+        [style*="padding: 8px"],
+        [style*="width: 390px"] {
+            display: none !important;
+        }
+        
+        /* Limpiar estilos problemáticos de Expo */
+        .expo-dev-client,
+        .expo-phone-frame,
+        .expo-simulator {
+            display: none !important;
+        }
+        
+        /* Contenedor principal a pantalla completa */
+        [role="main"] {
+            width: 100% !important;
+            height: 100% !important;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+</body>
+</html>

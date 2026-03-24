@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Request
+from fastapi import FastAPI, APIRouter, HTTPException, Request, File, UploadFile
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -15,13 +15,17 @@ import uuid
 from datetime import datetime, timedelta
 import stripe
 import httpx
+import httpx
+from pathlib import Path
+from dotenv import load_dotenv
+load_dotenv()
+env_path = Path(__file__).parent / ".env"
+load_dotenv(dotenv_path=env_path)
 try:
-    from .llm_adapter import MyLLMInterface, UserMessage
-except ImportError:
-    from llm_adapter import MyLLMInterface, UserMessage
-
-ROOT_DIR = Path(__file__).parent
-load_dotenv(ROOT_DIR / '.env')
+    from backend.core.llm_adapter import MyLLMInterface, UserMessage
+except Exception:
+    MyLLMInterface = None
+    UserMessage = None
 
 # Configure logging early
 logging.basicConfig(
@@ -31,7 +35,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # MongoDB connection settings (actual connection tested in lifespan)
-mongo_url = os.environ.get('MONGO_URL', 'mongodb://localhost:27017')
+mongo_url = os.environ.get('MONGO_URI', 'mongodb://localhost:27017')
+print("MONGO_URI =", os.environ.get("MONGO_URI"))
 db_name = os.environ.get('DB_NAME', 'agoramujeres')
 client = None
 db = None
@@ -199,6 +204,10 @@ class ChatRequest(BaseModel):
     message: str
     language: str = "es"  # es, en
     conversation_id: Optional[str] = None  # If None, creates new conversation
+
+class TranscriptionRequest(BaseModel):
+    device_id: str
+    language: str = "es"  # es, en
 
 class CycleEntry(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -641,23 +650,25 @@ def get_fallback_response(language: str = "es") -> str:
 
 SYSTEM_PROMPTS = {
     "es": """
-Eres Ágora, una compañera para mujeres que viven con fibromialgia y dolor crónico. Tu misión es acompañar, escuchar, validar - y solo cuando se te pida, ofrecer alternativas prácticas. NO eres médico, eres una presencia que ENTIENDE.
+Eres Ágora, un refugio emocional para mujeres que viven con dolor crónico. Tu misión es acompañar, escuchar, validar - y solo cuando se te pida, ofrecer alternativas prácticas. NO eres médico, eres una presencia que ENTIENDE el dolor crónico en todas sus formas.
 
 ═══════════════════════════════════════════════════════════════════
 
 👥 QUIÉN ERES TÚ:
-- La única voz que entiende que la fibromialgia es INJUSTA, REAL y SOLITARIA
-- Alguien que cree "el dolor es válido" sin pedir explicaciones
-- Una compañera que ACOMPAÑA sin presionar, sin juzgar, sin recomendar lo que no pide
+- La voz que entiende que el DOLOR CRÓNICO es INJUSTO, REAL e INVISIBLE
+- Alguien que cree "el dolor es válido" sin preguntarle al médico
+- Un refugio para mujeres con fibromialgia, artritis, migrañas crónicas, endometriosis, SFC, POTS, dolor neuropático y cualquier condición de dolor crónico
+- Una compañera que ACOMPAÑA sin presionar, sin juzgar, sin minimizar
 
-QUÉ ENTIENDES DE LA FIBROMIALGIA:
-- El dolor no tiene lógica: unos días "todo duele" sin razón
-- La fatiga es PARALIZANTE e invisible: decides entre ducharte o comer
-- La niebla mental es REAL: olvidar las cosas duele el orgullo
-- Nadie lo entiende: la incomprensión social duele tanto como el cuerpo
-- Las pequeñas cosas son ENORMES: levantarse de la cama es una victoria
-- La frustración viene de no ser creída: ni los médicos entienden
-- La carga emocional es TAN REAL como el dolor físico
+QUÉ ENTIENDES DEL DOLOR CRÓNICO:
+- El dolor no tiene lógica: unos días "todo duele" sin causa clara
+- La fatiga es PARALIZANTE e invisible: decides entre tareas básicas
+- La niebla mental es REAL: afecta memoria, concentración y autoestima
+- Nadie lo entiende: la invalidación social amplifica el sufrimiento
+- Las pequeñas victorias son ENORMES: levantarse, salir, cualquier cosa requiere valor
+- La frustración es constante: cuerpos que no cooperan, médicos que no escuchan
+- La carga emocional es TAN REAL como el dolor físico: ansiedad, depresión, duelo
+- Cada condición es diferente: no hay una solución universal, cada mujer es única
 
 ═══════════════════════════════════════════════════════════════════
 
@@ -714,6 +725,22 @@ CARACTERÍSTICAS DE EJERCICIOS:
 - Forzar ejercicios cuando no es el momento
 - REPETIR TU PRESENTACIÓN si ya hay historial
 
+⚠️ PROHIBICIÓN MÁXIMA - RESPUESTAS GENÉRICAS:
+❌ JAMÁS hacer esto:
+- "Hola, soy Ágora..." (después del primer mensaje inicial)
+- "Entiendo tu dolor" + "¿Cómo te sientes?" (ella ya lo dijo)
+- "Lamento lo que te pasa" (genérico, sin específico)
+- "Estaré aquí para ti" (frase vacía, repite lo que ya sabe)
+- Responder a "Tengo artritis" con "¿Cómo te sientes?" o "¿Qué síntomas tienes?"
+- CUALQUIER respuesta que pueda COPIAR/PEGAR para CUALQUIER enfermedad
+
+✅ OBLIGATORIO cuando ella menciona una enfermedad:
+- Responde CON DETALLES ESPECÍFICOS de CÓMO ENTIENDE ESA ENFERMEDAD
+- Muestra que sabes la diferencia entre artritis (rigidez), fibromialgia (dolor errático), endometriosis (cólicos), migrañas (sensibilidad), SFC (fatiga paralizante)
+- Valida LA ENFERMEDAD ESPECÍFICA con lenguaje que demuestre comprensión profunda
+- Nunca termines con "¿Cómo te sientes?" después que ella ya dijo cómo se siente
+- La respuesta DEBE ser IMPOSIBLE DE GOOGLE O COPIAR-PEGAR - debe ser ESPECÍFICA A LO QUE ELLA DIJO
+
 ═══════════════════════════════════════════════════════════════════
 
 ✨ SIEMPRE HAZ ESTO:
@@ -721,8 +748,13 @@ CARACTERÍSTICAS DE EJERCICIOS:
 - Reconoce el esfuerzo: "escribir aquí YA es valentía"
 - Celebra lo pequeño: "abrir Ágora hoy importa"
 - Entiende los ciclos: "hoy es un día difícil, y está bien que sea así"
-- Responde directamente a lo que ella dijo
+- Responde directamente a lo que ella dijo - SIN REPETIR LO QUE YA MENCIONÓ
 - Acepta cuando solo necesita ser ESCUCHADA, sin ejercicios
+- IMPORTANTE: Si ella menciona HOW se siente, NO TERMINES CON "¿Cómo te sientes?". En su lugar:
+  * Profundiza en LO ESPECÍFICO que mencionó (su dolor, su emoción, su situación)
+  * Pregunta algo MÁS ÚTIL: "¿Es esa rigidez de las mañanas?" "¿El cansancio viene de no dormir?" "¿Es la incertidumbre lo que más agota?"
+  * O simplemente VALIDA sin preguntar si notas que necesita ser escuchada, no analizada
+  * NUNCA cierre con una pregunta genérica ("¿cómo te sientes?") cuando ella ya lo dijo
 
 ═══════════════════════════════════════════════════════════════════
 
@@ -732,9 +764,14 @@ Preséntate reconociendo la REALIDAD de la fibromialgia desde el primer momento:
 
 📌 MENSAJES POSTERIORES (con historial):
 - NO te vuelvas a presentar
-- Responde DIRECTAMENTE a lo que acaba de decir
+- Responde DIRECTAMENTE a lo que acaba de decir - NO hagas preguntas genéricas que ella ya respondió
 - Mantén la continuidad emocional
 - Lee bien: si solo necesita validación, valida; si pide idea, ofrece alternativa
+- Si menciona una CONDICIÓN ESPECÍFICA (artritis, migrañas, endometriosis, etc.):
+  * Valida esa condición ESPECÍFICAMENTE (no genéricamente)
+  * Reconoce lo que la hace diferente (artritis = rigidez + inflamación; migrañas = luz/sonido; endo = cólicos, etc.)
+  * Profundiza en EL CONTEXTO que ella mencionó, no hables de "dolor en general"
+  * NO termines con "¿Cómo te sientes?" si ella ya lo dijo - termina validando o preguntando algo más profundo/útil
 
 ═══════════════════════════════════════════════════════════════════
 
@@ -745,6 +782,55 @@ Preséntate reconociendo la REALIDAD de la fibromialgia desde el primer momento:
 
 ❌ MAL: "Deberías hacer estos 5 ejercicios cada mañana."
 ✅ BIEN: "Si la rigidez mañanera es lo peor, hay unos movimientos MUY suaves que algunos días ayudan - pero sin presión. ¿Quieres que te cuente?"
+
+────────────────────────────────────────────────────────────────────
+
+⚠️ SECCIÓN CRÍTICA - RESPUESTAS POR ENFERMEDAD ESPECÍFICA:
+
+Si MENCIONA ARTRITIS:
+❌ MAL: "Entiendo la artritis. ¿Cómo te sientes?" o "Lamento que te duela"
+✅ BIEN: "La artritis es esa rigidez que hace cada movimiento una negociación con tu cuerpo - levantarse, abrir un frasco, escribir. Algunos días es sordo y otros es un dolor eléctrico que no deja en paz. Es como si tu cuerpo pidiera permiso para moverse. [Acepta el mal día, no hagas preguntas si ella ya dijo cómo se siente]"
+
+Si MENCIONA FIBROMIALGIA:
+❌ MAL: "Entiendo la fibromialgia" (genérico)
+✅ BIEN: "La fibromialgia es esa traición constante - un día te duele el lado izquierdo, otro la punta de los dedos, sin patrón lógico. Y lo peor es que nadie la ve: se ve bien por fuera pero por dentro todo duele. La fatiga que no deja ni respirar hondo."
+
+Si MENCIONA ENDOMETRIOSIS:
+❌ MAL: "Lamento tu dolor"
+✅ BIEN: "La endometriosis es esa frialdad: el dolor de los cólicos, pero invalidado porque "todas menstruamos". Solo que tú no puedes ni moverte. Es dolor que deja sin opciones, sin dignidad."
+
+Si MENCIONA MIGRAÑAS CRÓNICAS:
+❌ MAL: "Un dolor de cabeza fuerte, ¿verdad?"
+✅ BIEN: "Las migrañas crónicas son la traición total: luz como puñaladas, sonido como dolor físico. Tener que esconderse en la oscuridad, estar inutilizable. Y la gente simplemente no entiende que no es 'un dolor de cabeza'."
+
+Si MENCIONA SFC (SÍNDROME DE FATIGA CRÓNICA):
+❌ MAL: "Estás cansada, necesitas descansar"
+✅ BIEN: "El SFC es ese cansancio que no descansa con dormir - que te deja sin energía para nada, ni siquiera pensar. Y el peor castigo es cuando intentas hacer algo y al día siguiente ne puedes ni levantarte."
+
+════════════════════════════════════════════════════════════════════
+
+📋 FLUJO PARA PRIMER MENSAJE DESPUÉS DEL INICIAL:
+
+Usuario: "Hola, me siento mal. Tengo artritis"
+Tu respuesta DEBE:
+1. Validar LA ENFERMEDAD ESPECÍFICA (artritis) con detalles que MUE muestren que entiendes
+2. Validar LA EMOCIÓN (se siente mal)
+3. NO repetir lo que ella dijo ("me siento mal" / "¿Cómo te sientes?")
+4. NO terminar con pregunta genérica
+5. OFRECE APOYO emocional específico para artritis
+
+✅ RESPUESTA CORRECTA:
+"La artritis es una de esas cosas sin tregua - esa rigidez que hace que levantarse sea una negociación con tu cuerpo, ese dolor que algunos días es sordo y otros eléctrico. Es como si tu cuerpo pidiera permiso para moverse cada vez. Entiendo lo difícil que es lidiar con ese dolor y cómo puede afectar cada aspecto de tu vida. Aquí no hay juicios ni preguntas incómodas, solo un espacio para sentirte acompañada. [Si le parece, puedo recomendarte algunos ejercicios gentiles para la artritis, pero sin presión - hoy tal vez necesitas simplemente sentirte entendida]"
+
+════════════════════════════════════════════════════════════════════
+
+CUANDO MENCIONA UNA CONDICIÓN ESPECÍFICA - REGLAS ESTRICTAS:
+❌ MAL: "Entiendo la artritis. ¿Cómo te sientes hoy?" (genérico después que ella ya dijo "me siento mal")
+✅ BIEN: "La artritis es esa rigidez que hace que levantarse sea una negociación con tu cuerpo, ese dolor que algunos días es sordo y otros es eléctrico. Es como si tu cuerpo pidiera permiso para moverse. No hay prisa para nada hoy."
+
+CUANDO ELLA YA DIJO CÓMO SE SIENTE - NUNCA REPITAS:
+❌ MAL: Usuario: "Tengo artritis, me siento mal" / Ágora: "¿Cómo te sientes?" (répite la pregunta) o "Entiendo que te duela"
+✅ BIEN: Usuario: "Tengo artritis, me siento mal" / Ágora: "Esa rigidez de la artritis es particular - no es solo dolor, es que tu cuerpo se siente traidor. Levantarse se vuelve negociación, cada movimiento te lo piensa dos veces. Entiendo lo difícil que es lidiar con ese dolor que a veces no da tregua. Aquí no hay juicios, solo acompañamiento"
 
 ═══════════════════════════════════════════════════════════════════
 
@@ -865,13 +951,9 @@ Make her feel LESS ALONE. Know that her pain is BELIEVED. Feel ACCOMPANIED, not 
 async def create_diary_entry(entry: DiaryEntryCreate):
     """Create a new diary entry"""
     try:
-        entry_dict = entry.model_dump()
-        entry_obj = DiaryEntry(**entry_dict)
-        await db.diary_entries.insert_one(entry_obj.model_dump())
-        
-        # Track usage for trial
-        await track_usage(entry.device_id, 60)  # 1 minute for creating entry
-        
+        entry_obj = DiaryEntry(**entry.model_dump())
+        await db_insert_one(db.diary_entries, entry_obj.model_dump())
+        await track_usage(entry.device_id, 60)
         return entry_obj
     except Exception as e:
         logger.error(f"Error creating diary entry: {e}")
@@ -881,9 +963,13 @@ async def create_diary_entry(entry: DiaryEntryCreate):
 async def get_diary_entries(device_id: str, limit: int = 30, offset: int = 0):
     """Get diary entries for a device"""
     try:
-        entries = await db.diary_entries.find(
-            {"device_id": device_id}
-        ).sort("created_at", -1).skip(offset).limit(limit).to_list(limit)
+        entries = await db_find(
+            db.diary_entries,
+            {"device_id": device_id},
+            sort=("created_at", -1),
+            limit=limit
+        )
+        entries = entries[offset:]
         return [DiaryEntry(**entry) for entry in entries]
     except Exception as e:
         logger.error(f"Error getting diary entries: {e}")
@@ -894,10 +980,11 @@ async def get_patterns(device_id: str, days: int = 7):
     """Analyze patterns from diary entries (local processing)"""
     try:
         start_date = datetime.utcnow() - timedelta(days=days)
-        entries = await db.diary_entries.find({
-            "device_id": device_id,
-            "created_at": {"$gte": start_date}
-        }).to_list(100)
+        entries = await db_find(
+            db.diary_entries,
+            {"device_id": device_id, "created_at": {"$gte": start_date}},
+            limit=200
+        )
         
         if not entries:
             return {"patterns": None, "message": "No hay suficientes datos para analizar patrones"}
@@ -982,241 +1069,336 @@ async def chat_with_agora(request: ChatRequest):
         sub_status = await get_subscription_status_internal(request.device_id)
         if sub_status["status"] == "expired":
             return {
-                "response": "Tu período de prueba ha terminado. Para continuar usando Ágora, activa tu suscripción." if request.language == "es" else "Your trial period has ended. To continue using Ágora, activate your subscription.",
-                "requires_subscription": True
+                "response": "Tu período de prueba ha terminado. Para continuar usando Ágora, activa tu suscripción."
+                if request.language == "es"
+                else "Your trial period has ended. To continue using Ágora, activate your subscription.",
+                "requires_subscription": True,
             }
-        
+
         # Check if this is the user's first message EVER (across all conversations)
-        user_message_count = await db_count_documents(db.chat_messages,
-            {"device_id": request.device_id, "role": "user"}
+        user_message_count = await db_count_documents(
+            db.chat_messages,
+            {"device_id": request.device_id, "role": "user"},
         )
         is_first_message = user_message_count == 0
-        
+
         # Get or create conversation
         conversation_id = request.conversation_id
         if not conversation_id:
-            # Create new conversation
             new_conv = ChatConversation(
                 device_id=request.device_id,
-                title=request.message[:50] + "..." if len(request.message) > 50 else request.message
+                title=request.message[:50] + "..." if len(request.message) > 50 else request.message,
             )
             await db_insert_one(db.chat_conversations, new_conv.model_dump())
             conversation_id = new_conv.id
         else:
-            # Update conversation timestamp
-            await db_update_one(db.chat_conversations,
+            await db_update_one(
+                db.chat_conversations,
                 {"id": conversation_id},
-                {"$set": {"updated_at": datetime.utcnow()}}
+                {"$set": {"updated_at": datetime.utcnow()}},
             )
-        
+
         # Get conversation history for this specific conversation
-        history = await db_find(db.chat_messages,
+        history = await db_find(
+            db.chat_messages,
             {"device_id": request.device_id, "conversation_id": conversation_id},
-            sort=("created_at", -1), limit=10
+            sort=("created_at", -1),
+            limit=10,
         )
         history.reverse()
-        
-        # Limitar historial a los últimos 8 mensajes
         history = history[-8:]
-        
+
         # Get user patterns (last 7 days)
+        has_patterns = False
+        count = 0
+        emotional_avg = {}
+        physical_avg = None
+        highest_emotion = "desconocida"
+        lowest_emotion = "desconocida"
+        avg_pain = 0
+
         try:
             start_date = datetime.utcnow() - timedelta(days=7)
-            entries = await db_find(db.diary_entries, {
-                "device_id": request.device_id,
-                "created_at": {"$gte": start_date}
-            }, limit=100)
-            
+            entries = await db_find(
+                db.diary_entries,
+                {
+                    "device_id": request.device_id,
+                    "created_at": {"$gte": start_date},
+                },
+                limit=100,
+            )
+
             has_patterns = len(entries) > 0
-            
+
             if has_patterns:
-                # Calculate emotional averages
-                emotional_sums = {"calma": 0, "fatiga": 0, "niebla_mental": 0, "dolor_difuso": 0, "gratitud": 0, "tension": 0}
-                physical_sums = {"nivel_dolor": 0, "energia": 0, "sensibilidad": 0}
+                emotional_sums = {
+                    "calma": 0,
+                    "fatiga": 0,
+                    "niebla_mental": 0,
+                    "dolor_difuso": 0,
+                    "gratitud": 0,
+                    "tension": 0,
+                }
+                physical_sums = {
+                    "nivel_dolor": 0,
+                    "energia": 0,
+                    "sensibilidad": 0,
+                }
                 physical_count = 0
-                
+
                 for entry in entries:
                     emotional = entry.get("emotional_state", {})
                     for key in emotional_sums:
                         emotional_sums[key] += emotional.get(key, 0)
-                    
+
                     physical = entry.get("physical_state")
                     if physical:
                         physical_count += 1
                         for key in physical_sums:
                             physical_sums[key] += physical.get(key, 0)
-                
+
                 count = len(entries)
                 emotional_avg = {k: round(v / count, 1) for k, v in emotional_sums.items()}
-                physical_avg = {k: round(v / max(physical_count, 1), 1) for k, v in physical_sums.items()} if physical_count > 0 else None
-                
-                highest_emotion = max(emotional_avg, key=emotional_avg.get) if emotional_avg else "desconocida"
-                lowest_emotion = min(emotional_avg, key=emotional_avg.get) if emotional_avg else "desconocida"
-                avg_pain = round(physical_avg.get("nivel_dolor", 0), 1) if physical_avg else 0
+                physical_avg = (
+                    {k: round(v / max(physical_count, 1), 1) for k, v in physical_sums.items()}
+                    if physical_count > 0
+                    else None
+                )
+
+                if emotional_avg:
+                    highest_emotion = max(emotional_avg, key=emotional_avg.get)
+                    lowest_emotion = min(emotional_avg, key=emotional_avg.get)
+
+                if physical_avg:
+                    avg_pain = round(physical_avg.get("nivel_dolor", 0), 1)
+
         except Exception as e:
             logger.error(f"Error getting patterns: {e}")
             has_patterns = False
-        
-        # Try to use OpenAI, fallback to smart local responses if unavailable
-        api_key = os.environ.get('OPENAI_API_KEY')
-        use_openai = bool(api_key and api_key.strip() and api_key != "sk-your-openai-api-key-here")
-        
-        if use_openai:
+
+        # Try OpenAI first, otherwise use smart local fallback
+        api_key = os.environ.get("OPENAI_API_KEY")
+        has_valid_openai_key = bool(api_key and api_key.startswith("sk-"))
+
+        if has_valid_openai_key and MyLLMInterface is not None:
             try:
                 system_prompt = SYSTEM_PROMPTS.get(request.language, SYSTEM_PROMPTS["es"])
-                
+
                 # Add patterns context if available
                 if has_patterns and count > 0:
                     if request.language == "es":
-                        # Detectar patrones específicos
                         dolor_alto = avg_pain > 6 if avg_pain else False
-                        energia_baja = physical_avg.get('energia', 0) < 4 if physical_avg else False
-                        sensibilidad_alta = physical_avg.get('sensibilidad', 0) > 6 if physical_avg else False
-                        
-                        patterns_context = f"\n\nCONTEXTO DE PATRONES PERSONALIZADOS (últimos 7 días):\n- Total de registros: {count}\n- Dolor promedio: {avg_pain}/10 {'⚠️ BASTANTE ALTO' if dolor_alto else ''}\n- Energía promedio: {physical_avg.get('energia', 'N/A')}/10 {'⚠️ MUY BAJA' if energia_baja else ''}\n- Sensibilidad promedio: {physical_avg.get('sensibilidad', 'N/A')}/10 {'⚠️ MUY ALTA' if sensibilidad_alta else ''}\n- Emoción dominante: {highest_emotion}\n- Emoción más baja: {lowest_emotion}\n\nINSTRUCCIONES ESPECIALES BASADAS EN PATRONES:\nUSA ESTOS DATOS para:\n1. Reconocer específicamente sus patrones: 'He notado que esta semana tu [emoción/energía] ha tendido a...' \n2. Adaptar ejercicios: Si energía es baja (<4), sugiere SOLO movimientos en cama o sentada. Si dolor es alto (>6), sugiere SOLO técnicas de respiración/relajación.\n3. Mencionar horarios: Si nota picos de energía o dolor en momentos específicos, pregunta cuándo se siente mejor/peor para sugerir cuándo hacer ejercicios.\n4. Validar el esfuerzo: Menciona que los cambios pequeños en estos números significan MUCHO esfuerzo real."
+                        energia_baja = physical_avg.get("energia", 0) < 4 if physical_avg else False
+                        sensibilidad_alta = physical_avg.get("sensibilidad", 0) > 6 if physical_avg else False
+
+                        patterns_context = (
+                            "\n\nCONTEXTO DE PATRONES PERSONALIZADOS (últimos 7 días):"
+                            f"\n- Total de registros: {count}"
+                            f"\n- Dolor promedio: {avg_pain}/10 {'⚠️ BASTANTE ALTO' if dolor_alto else ''}"
+                            f"\n- Energía promedio: {physical_avg.get('energia', 'N/A') if physical_avg else 'N/A'}/10 {'⚠️ MUY BAJA' if energia_baja else ''}"
+                            f"\n- Sensibilidad promedio: {physical_avg.get('sensibilidad', 'N/A') if physical_avg else 'N/A'}/10 {'⚠️ MUY ALTA' if sensibilidad_alta else ''}"
+                            f"\n- Emoción dominante: {highest_emotion}"
+                            f"\n- Emoción más baja: {lowest_emotion}"
+                            "\n\nINSTRUCCIONES ESPECIALES BASADAS EN PATRONES:"
+                            "\n1. Reconoce patrones emocionales o físicos cuando aporten valor."
+                            "\n2. Si la energía es baja, sugiere solo alternativas muy suaves."
+                            "\n3. Si el dolor es alto, prioriza validación y calma antes que acción."
+                            "\n4. Valida que pequeños cambios implican esfuerzo real."
+                        )
                     else:
-                        # Detectar patrones específicos
                         dolor_alto = avg_pain > 6 if avg_pain else False
-                        energia_baja = physical_avg.get('energia', 0) < 4 if physical_avg else False
-                        sensibilidad_alta = physical_avg.get('sensibilidad', 0) > 6 if physical_avg else False
-                        
-                        patterns_context = f"\n\nPERSONALIZED PATTERN CONTEXT (last 7 days):\n- Total entries: {count}\n- Average pain: {avg_pain}/10 {'⚠️ QUITE HIGH' if dolor_alto else ''}\n- Average energy: {physical_avg.get('energia', 'N/A')}/10 {'⚠️ VERY LOW' if energia_baja else ''}\n- Average sensitivity: {physical_avg.get('sensibilidad', 'N/A')}/10 {'⚠️ VERY HIGH' if sensibilidad_alta else ''}\n- Dominant emotion: {highest_emotion}\n- Lowest emotion: {lowest_emotion}\n\nSPECIAL INSTRUCTIONS BASED ON PATTERNS:\nUSE THIS DATA to:\n1. Recognize their specific patterns: 'I've noticed that this week your [emotion/energy] has tended to...'\n2. Adapt exercises: If energy is low (<4), suggest ONLY bed or seated movements. If pain is high (>6), suggest ONLY breathing/relaxation techniques.\n3. Mention timing: If you notice spikes in energy or pain at specific times, ask when they feel best/worst to suggest when to do exercises.\n4. Validate the effort: Mention that small changes in these numbers mean REAL effort."
-                    system_prompt = system_prompt + patterns_context
-                
-                # If first message, add special instruction to emphasize understanding fibromyalgia
-                if is_first_message:
-                    first_message_instruction = " IMPORTANTE: Este es el PRIMER MENSAJE de esta persona. Preséntate con calidez mencionando explícitamente que entiendes fibromialgia. Hazla sentir que NO ESTÁ SOLA y que por fin alguien LA ENTIENDE." if request.language == "es" else " IMPORTANT: This is the FIRST MESSAGE from this person. Introduce yourself with warmth, explicitly mentioning that you understand fibromyalgia. Make her feel she's not alone and finally someone UNDERSTANDS her."
-                    system_prompt = system_prompt + "\n\n" + first_message_instruction
-                
+                        energia_baja = physical_avg.get("energia", 0) < 4 if physical_avg else False
+                        sensibilidad_alta = physical_avg.get("sensibilidad", 0) > 6 if physical_avg else False
+
+                        patterns_context = (
+                            "\n\nPERSONALIZED PATTERN CONTEXT (last 7 days):"
+                            f"\n- Total entries: {count}"
+                            f"\n- Average pain: {avg_pain}/10 {'⚠️ QUITE HIGH' if dolor_alto else ''}"
+                            f"\n- Average energy: {physical_avg.get('energia', 'N/A') if physical_avg else 'N/A'}/10 {'⚠️ VERY LOW' if energia_baja else ''}"
+                            f"\n- Average sensitivity: {physical_avg.get('sensibilidad', 'N/A') if physical_avg else 'N/A'}/10 {'⚠️ VERY HIGH' if sensibilidad_alta else ''}"
+                            f"\n- Dominant emotion: {highest_emotion}"
+                            f"\n- Lowest emotion: {lowest_emotion}"
+                            "\n\nSPECIAL INSTRUCTIONS BASED ON PATTERNS:"
+                            "\n1. Recognize emotional or physical patterns when useful."
+                            "\n2. If energy is low, suggest only very gentle options."
+                            "\n3. If pain is high, prioritize validation and calm before action."
+                            "\n4. Validate that even small changes require real effort."
+                        )
+
+                    system_prompt += patterns_context
+
                 chat = MyLLMInterface(
                     api_key=api_key,
                     session_id=f"agora_{request.device_id}_{conversation_id}",
-                    system_message=system_prompt
+                    system_message=system_prompt,
                 ).set_model("openai", "gpt-4o-mini")
-                
-                # Construir mensajes estructurados para OpenAI
-                messages = [
-                    {"role": "system", "content": system_prompt},
-                ]
-                
-                # Añadir historial limitado
+
+                messages = [{"role": "system", "content": system_prompt}]
                 for msg in history:
-                    messages.append({
-                        "role": msg["role"],
-                        "content": msg["content"]
-                    })
-                
-                # Añadir mensaje del usuario
-                messages.append({
-                    "role": "user",
-                    "content": request.message
-                })
-                
-                # Llamada a OpenAI con mensajes estructurados
+                    messages.append({"role": msg["role"], "content": msg["content"]})
+                messages.append({"role": "user", "content": request.message})
+
                 reply = await chat.client.chat.completions.create(
                     model="gpt-4o-mini",
                     messages=messages,
                     temperature=0.7,
-                    max_tokens=300
+                    max_tokens=300,
                 )
-                
+
                 response = reply.choices[0].message.content
                 is_offline_mode = False
-                
+
             except Exception as openai_error:
-                # OpenAI failed, fall back to smart local responses
-                logger.warning(f"OpenAI unavailable, using offline mode: {openai_error}")
+                logger.warning(f"OpenAI error -> fallback: {openai_error}")
                 response = get_smart_response(request.message, request.language, is_first_message)
                 is_offline_mode = True
+
         else:
-            # No OpenAI API key configured - use smart local responses
-            logger.info("No OpenAI API key - using offline smart responses")
+            if has_valid_openai_key and MyLLMInterface is None:
+                logger.error("OPENAI_API_KEY existe pero MyLLMInterface no se pudo importar")
+            else:
+                logger.info("Modo offline activado")
             response = get_smart_response(request.message, request.language, is_first_message)
             is_offline_mode = True
-        
+
         # Save messages with conversation_id
         user_message = ChatMessage(
             device_id=request.device_id,
             conversation_id=conversation_id,
             role="user",
-            content=request.message
+            content=request.message,
         )
         assistant_message = ChatMessage(
             device_id=request.device_id,
             conversation_id=conversation_id,
             role="assistant",
-            content=response
+            content=response,
         )
-        
+
         await db_insert_one(db.chat_messages, user_message.model_dump())
         await db_insert_one(db.chat_messages, assistant_message.model_dump())
-        
+
         # Track usage
-        await track_usage(request.device_id, 30)  # 30 seconds per chat
-        
+        await track_usage(request.device_id, 30)
+
         return {
             "response": response,
             "conversation_id": conversation_id,
             "requires_subscription": False,
             "is_first_time": is_first_message,
-            "is_offline_mode": is_offline_mode
+            "is_offline_mode": is_offline_mode,
         }
+
     except HTTPException:
-        raise  # Re-raise HTTP exceptions as-is
+        raise
     except RuntimeError as e:
-        # Specific LLM errors - use fallback response instead of error
         error_msg = str(e)
         logger.error(f"Chat LLM error: {error_msg}")
-        
-        # Use fallback response to maintain conversation experience
+
         fallback = get_fallback_response(request.language)
-        
-        # Ensure conversation_id is set (initialize if not)
-        if 'conversation_id' not in locals() or not conversation_id:
+
+        if "conversation_id" not in locals() or not conversation_id:
             conversation_id = str(uuid.uuid4())
-        
-        # Still save the conversation attempt
+
         try:
             user_message = ChatMessage(
                 device_id=request.device_id,
                 conversation_id=conversation_id,
                 role="user",
-                content=request.message
+                content=request.message,
             )
             await db_insert_one(db.chat_messages, user_message.model_dump())
-        except:
-            pass  # Don't fail if we can't save
-        
-        # Log specific error type for debugging
+        except Exception:
+            pass
+
         if "API Key inválida" in error_msg or "AuthenticationError" in error_msg:
             logger.warning("OpenAI API Key issue - returning fallback response")
         elif "límite de cuota" in error_msg.lower() or "RateLimitError" in error_msg:
             logger.warning("OpenAI rate limit - returning fallback response")
         elif "conexión" in error_msg.lower() or "ConnectionError" in error_msg:
             logger.warning("OpenAI connection error - returning fallback response")
-        
+
         return {
             "response": fallback,
             "conversation_id": conversation_id,
             "requires_subscription": False,
             "is_fallback": True,
-            "error_type": "llm_error"
+            "error_type": "llm_error",
         }
+
     except Exception as e:
         logger.error(f"Chat unexpected error: {type(e).__name__}: {e}")
-        
-        # Use fallback for any unexpected error too
+
         fallback = get_fallback_response(request.language)
-        
-        # Ensure conversation_id is set (initialize if not)
-        fallback_conv_id = conversation_id if 'conversation_id' in locals() else str(uuid.uuid4())
-        
+        fallback_conv_id = conversation_id if "conversation_id" in locals() else str(uuid.uuid4())
+
         return {
             "response": fallback,
             "conversation_id": fallback_conv_id,
             "requires_subscription": False,
             "is_fallback": True,
-            "error_type": "unexpected_error"
+            "error_type": "unexpected_error",
+        }
+
+# ============== TRANSCRIPTION ENDPOINT ==============
+
+@api_router.post("/transcribe")
+async def transcribe_audio(device_id: str, language: str = "es", file: UploadFile = File(...)):
+    """Transcribe audio file using OpenAI Whisper API."""
+    try:
+        api_key = os.environ.get("OPENAI_API_KEY")
+        
+        if not api_key:
+            logger.warning("⚠️ OPENAI_API_KEY not configured, returning placeholder")
+            return {
+                "text": "[Audio grabado - Transcripción no disponible]",
+                "language": language,
+                "status": "no_api_key"
+            }
+        
+        from openai import OpenAI
+        client = OpenAI(api_key=api_key)
+        
+        # Read file content
+        contents = await file.read()
+        
+        # Create a file-like object for OpenAI
+        from io import BytesIO
+        audio_file = BytesIO(contents)
+        audio_file.name = file.filename or "audio.webm"
+        
+        # Transcribe using Whisper
+        # Map language code to Whisper language
+        lang_map = {
+            "es": "es",
+            "en": "en",
+            # Add more as needed
+        }
+        whisper_lang = lang_map.get(language, "es")
+        
+        transcript = client.audio.transcriptions.create(
+            model="whisper-1",
+            file=audio_file,
+            language=whisper_lang,
+            response_format="json"
+        )
+        
+        transcribed_text = transcript.text
+        logger.info(f"✅ Transcribed audio from {device_id}: '{transcribed_text[:50]}...'")
+        
+        return {
+            "text": transcribed_text,
+            "language": language,
+            "status": "success"
+        }
+        
+    except Exception as e:
+        logger.error(f"Transcription error: {type(e).__name__}: {e}")
+        return {
+            "text": "[Error en transcripción]",
+            "language": language,
+            "status": "error",
+            "error": str(e)
         }
 
 # ============== CONVERSATION ENDPOINTS ==============
@@ -1225,10 +1407,12 @@ async def chat_with_agora(request: ChatRequest):
 async def get_conversations(device_id: str, limit: int = 20):
     """Get all conversations for a device"""
     try:
-        conversations = await db.chat_conversations.find(
-            {"device_id": device_id}
-        ).sort("updated_at", -1).limit(limit).to_list(limit)
-        
+        conversations = await db_find(
+            db.chat_conversations,
+            {"device_id": device_id},
+            sort=("updated_at", -1),
+            limit=limit
+        )
         return [{
             "id": c["id"],
             "title": c.get("title", "Conversación"),
@@ -1243,13 +1427,15 @@ async def get_conversations(device_id: str, limit: int = 20):
 async def get_conversation_messages(device_id: str, conversation_id: str, limit: int = 50):
     """Get messages for a specific conversation"""
     try:
-        messages = await db.chat_messages.find(
-            {"device_id": device_id, "conversation_id": conversation_id}
-        ).sort("created_at", 1).limit(limit).to_list(limit)
-        
+        messages = await db_find(
+            db.chat_messages,
+            {"device_id": device_id, "conversation_id": conversation_id},
+            sort=("created_at", 1),
+            limit=limit
+        )
         return [{
-            "role": m["role"], 
-            "content": m["content"], 
+            "role": m["role"],
+            "content": m["content"],
             "created_at": m.get("created_at").isoformat() if isinstance(m.get("created_at"), datetime) else m.get("created_at")
         } for m in messages]
     except Exception as e:
@@ -1260,8 +1446,8 @@ async def get_conversation_messages(device_id: str, conversation_id: str, limit:
 async def delete_conversation(device_id: str, conversation_id: str):
     """Delete a specific conversation and its messages"""
     try:
-        await db.chat_conversations.delete_one({"id": conversation_id, "device_id": device_id})
-        result = await db.chat_messages.delete_many({"conversation_id": conversation_id, "device_id": device_id})
+        await db_delete_one(db.chat_conversations, {"id": conversation_id, "device_id": device_id})
+        result = await db_delete_many(db.chat_messages, {"conversation_id": conversation_id, "device_id": device_id})
         return {
             "message": "Conversation deleted successfully",
             "deleted_messages": result.deleted_count
@@ -1274,26 +1460,34 @@ async def delete_conversation(device_id: str, conversation_id: str):
 async def get_chat_history(device_id: str, limit: int = 50):
     """Get chat history for a device (legacy - returns latest conversation)"""
     try:
-        # Get the latest conversation
-        latest_conv = await db.chat_conversations.find_one(
+        # Get the latest conversation using db_find (mongomock-safe)
+        convs = await db_find(
+            db.chat_conversations,
             {"device_id": device_id},
-            sort=[("updated_at", -1)]
+            sort=("updated_at", -1),
+            limit=1
         )
-        
+        latest_conv = convs[0] if convs else None
+
         if latest_conv:
-            messages = await db.chat_messages.find(
-                {"device_id": device_id, "conversation_id": latest_conv["id"]}
-            ).sort("created_at", 1).limit(limit).to_list(limit)
+            messages = await db_find(
+                db.chat_messages,
+                {"device_id": device_id, "conversation_id": latest_conv["id"]},
+                sort=("created_at", 1),
+                limit=limit
+            )
         else:
-            # Fallback: get messages without conversation_id (old messages)
-            messages = await db.chat_messages.find(
-                {"device_id": device_id}
-            ).sort("created_at", -1).limit(limit).to_list(limit)
-            messages.reverse()
-        
+            messages = await db_find(
+                db.chat_messages,
+                {"device_id": device_id},
+                sort=("created_at", -1),
+                limit=limit
+            )
+            messages = list(reversed(messages))
+
         return [{
-            "role": m["role"], 
-            "content": m["content"], 
+            "role": m["role"],
+            "content": m["content"],
             "created_at": m.get("created_at").isoformat() if isinstance(m.get("created_at"), datetime) else m.get("created_at"),
             "conversation_id": m.get("conversation_id")
         } for m in messages]
@@ -1305,20 +1499,22 @@ async def get_chat_history(device_id: str, limit: int = 50):
 async def clear_chat_history(device_id: str):
     """Clear current conversation (start new)"""
     try:
-        # Get the latest conversation and delete it
-        latest_conv = await db.chat_conversations.find_one(
+        convs = await db_find(
+            db.chat_conversations,
             {"device_id": device_id},
-            sort=[("updated_at", -1)]
+            sort=("updated_at", -1),
+            limit=1
         )
-        
+        latest_conv = convs[0] if convs else None
+
         if latest_conv:
-            await db.chat_conversations.delete_one({"id": latest_conv["id"]})
-            result = await db.chat_messages.delete_many({"conversation_id": latest_conv["id"]})
+            await db_delete_one(db.chat_conversations, {"id": latest_conv["id"]})
+            result = await db_delete_many(db.chat_messages, {"conversation_id": latest_conv["id"]})
             return {
                 "message": "Current conversation cleared successfully",
                 "deleted_count": result.deleted_count
             }
-        
+
         return {"message": "No conversation to clear", "deleted_count": 0}
     except Exception as e:
         logger.error(f"Error clearing chat history: {e}")
@@ -1342,7 +1538,7 @@ async def crisis_support(request: CrisisRequest):
         immediate = CRISIS_RESPONSES[language].get("immediate")
         
         # Log crisis support request for analytics
-        await db.crisis_logs.insert_one({
+        await db_insert_one(db.crisis_logs, {
             "device_id": request.device_id,
             "pain_level": request.pain_level,
             "symptoms": request.symptoms or [],
@@ -1377,7 +1573,7 @@ async def crisis_support(request: CrisisRequest):
 async def save_favorite_message(msg: FavoriteMessage):
     """Save a favorite Ágora message for later"""
     try:
-        await db.favorite_messages.insert_one(msg.model_dump())
+        await db_insert_one(db.favorite_messages, msg.model_dump())
         return {"id": msg.id, "status": "saved"}
     except Exception as e:
         logger.error(f"Error saving favorite: {e}")
@@ -1390,9 +1586,13 @@ async def get_favorite_messages(device_id: str, category: Optional[str] = None):
         query = {"device_id": device_id}
         if category:
             query["category"] = category
-        
-        messages = await db.favorite_messages.find(query).sort("created_at", -1).to_list(None)
-        
+
+        messages = await db_find(
+            db.favorite_messages,
+            query,
+            sort=("created_at", -1)
+        )
+
         return [{
             "id": m["id"],
             "content": m["message_content"],
@@ -1407,7 +1607,7 @@ async def get_favorite_messages(device_id: str, category: Optional[str] = None):
 async def delete_favorite_message(device_id: str, message_id: str):
     """Delete a favorite message"""
     try:
-        result = await db.favorite_messages.delete_one({"id": message_id, "device_id": device_id})
+        result = await db_delete_one(db.favorite_messages, {"id": message_id, "device_id": device_id})
         return {"deleted": result.deleted_count > 0}
     except Exception as e:
         logger.error(f"Error deleting favorite: {e}")
@@ -1460,9 +1660,8 @@ async def get_message_reactions(device_id: str, message_id: str):
 async def create_cycle_entry(entry: CycleEntryCreate):
     """Create a new cycle entry (hormonal cycle tracking)"""
     try:
-        entry_dict = entry.model_dump()
-        entry_obj = CycleEntry(**entry_dict)
-        await db.cycle_entries.insert_one(entry_obj.model_dump())
+        entry_obj = CycleEntry(**entry.model_dump())
+        await db_insert_one(db.cycle_entries, entry_obj.model_dump())
         return entry_obj
     except Exception as e:
         logger.error(f"Error creating cycle entry: {e}")
@@ -1472,9 +1671,12 @@ async def create_cycle_entry(entry: CycleEntryCreate):
 async def get_cycle_entries(device_id: str, limit: int = 12):
     """Get cycle entries for a device"""
     try:
-        entries = await db.cycle_entries.find(
-            {"device_id": device_id}
-        ).sort("start_date", -1).limit(limit).to_list(limit)
+        entries = await db_find(
+            db.cycle_entries,
+            {"device_id": device_id},
+            sort=("start_date", -1),
+            limit=limit
+        )
         return [CycleEntry(**entry) for entry in entries]
     except Exception as e:
         logger.error(f"Error getting cycle entries: {e}")
@@ -1547,7 +1749,7 @@ async def create_customer(request: CustomerCreate):
             metadata={"device_id": request.device_id}
         )
         
-        await db.subscriptions.update_one(
+        await db_update_one(db.subscriptions,
             {"device_id": request.device_id},
             {"$set": {
                 "stripe_customer_id": customer.id,
@@ -1565,7 +1767,7 @@ async def create_customer(request: CustomerCreate):
 async def create_payment_intent(device_id: str):
     """Create a payment intent for subscription"""
     try:
-        sub = await db.subscriptions.find_one({"device_id": device_id})
+        sub = await db_find_one(db.subscriptions, {"device_id": device_id})
         if not sub or not sub.get("stripe_customer_id"):
             raise HTTPException(status_code=400, detail="Customer not found")
         
@@ -1596,7 +1798,7 @@ async def activate_subscription(device_id: str, payment_intent_id: str):
             raise HTTPException(status_code=400, detail="Payment not successful")
         
         # Activate subscription
-        await db.subscriptions.update_one(
+        await db_update_one(db.subscriptions,
             {"device_id": device_id},
             {"$set": {
                 "status": "active",
@@ -1657,30 +1859,23 @@ async def get_weather(lat: float, lon: float):
 async def get_monthly_record(device_id: str):
     """Get the monthly pain record for a device"""
     try:
-        record = await db.monthly_records.find_one({"device_id": device_id})
+        record = await db_find_one(db.monthly_records, {"device_id": device_id})
         if not record:
-            # Return default new record
             return {
                 "device_id": device_id,
                 "records": [],
                 "cycle_start_date": datetime.utcnow().isoformat(),
                 "created_at": datetime.utcnow().isoformat()
             }
-        
-        # Check if cycle is older than 30 days
+
         cycle_start = record.get("cycle_start_date", datetime.utcnow())
         if isinstance(cycle_start, str):
             cycle_start = datetime.fromisoformat(cycle_start.replace('Z', '+00:00').replace('+00:00', ''))
-        
-        days_passed = (datetime.utcnow() - cycle_start).days
-        if days_passed > 30:
-            # Cycle ended, but keep data for download
-            pass
-        
+
         return {
             "device_id": record["device_id"],
             "records": record.get("records", []),
-            "cycle_start_date": record.get("cycle_start_date").isoformat() if isinstance(record.get("cycle_start_date"), datetime) else record.get("cycle_start_date"),
+            "cycle_start_date": cycle_start.isoformat() if isinstance(cycle_start, datetime) else cycle_start,
             "created_at": record.get("created_at").isoformat() if isinstance(record.get("created_at"), datetime) else record.get("created_at")
         }
     except Exception as e:
@@ -1691,26 +1886,21 @@ async def get_monthly_record(device_id: str):
 async def save_monthly_record(device_id: str, data: MonthlyPainRecordCreate):
     """Save or update the monthly pain record for a device"""
     try:
-        # Parse cycle_start_date
         cycle_start = datetime.fromisoformat(data.cycle_start_date.replace('Z', '+00:00').replace('+00:00', ''))
-        
-        record_data = {
-            "device_id": device_id,
-            "records": data.records,
-            "cycle_start_date": cycle_start,
-            "updated_at": datetime.utcnow()
-        }
-        
-        # Upsert the record
-        await db.monthly_records.update_one(
+        await db_update_one(
+            db.monthly_records,
             {"device_id": device_id},
             {
-                "$set": record_data,
+                "$set": {
+                    "device_id": device_id,
+                    "records": data.records,
+                    "cycle_start_date": cycle_start,
+                    "updated_at": datetime.utcnow()
+                },
                 "$setOnInsert": {"created_at": datetime.utcnow()}
             },
             upsert=True
         )
-        
         return {
             "device_id": device_id,
             "records": data.records,
@@ -1725,7 +1915,7 @@ async def save_monthly_record(device_id: str, data: MonthlyPainRecordCreate):
 async def delete_monthly_record(device_id: str):
     """Delete the monthly pain record (start fresh cycle)"""
     try:
-        await db.monthly_records.delete_one({"device_id": device_id})
+        await db_delete_one(db.monthly_records, {"device_id": device_id})
         return {"message": "Record deleted successfully", "device_id": device_id}
     except Exception as e:
         logger.error(f"Error deleting monthly record: {e}")
@@ -1742,28 +1932,15 @@ async def verify_admin_code(request: AdminCodeRequest):
     """Verify admin code and grant unlimited access"""
     try:
         if request.code == ADMIN_CODE:
-            # Grant admin access
-            await db.subscriptions.update_one(
+            await db_update_one(
+                db.subscriptions,
                 {"device_id": request.device_id},
-                {
-                    "$set": {
-                        "is_admin": True,
-                        "status": "active"
-                    }
-                },
+                {"$set": {"is_admin": True, "status": "active"}},
                 upsert=True
             )
-            return {
-                "success": True,
-                "message": "Admin access granted",
-                "is_admin": True
-            }
+            return {"success": True, "message": "Admin access granted", "is_admin": True}
         else:
-            return {
-                "success": False,
-                "message": "Invalid admin code",
-                "is_admin": False
-            }
+            return {"success": False, "message": "Invalid admin code", "is_admin": False}
     except Exception as e:
         logger.error(f"Error verifying admin code: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -1777,9 +1954,14 @@ async def get_resources(category: Optional[str] = None, language: str = "es", li
         query = {"language": language}
         if category:
             query["category"] = category
-        
-        resources = await db.resources.find(query).sort([("is_featured", -1), ("order", 1), ("created_at", -1)]).limit(limit).to_list(limit)
-        
+
+        resources = await db_find(
+            db.resources,
+            query,
+            sort=("is_featured", -1),
+            limit=limit
+        )
+
         # If no resources in DB, return demo resources about fibromyalgia
         if not resources:
             demo_resources = get_demo_resources(language)
@@ -1830,30 +2012,59 @@ def get_demo_resources(language: str):
 @api_router.get("/resources/categories")
 async def get_resource_categories(language: str = "es"):
     """Get available resource categories with counts"""
+    categories_info = {
+        "breathing":    {"name_es": "Respiraciones",         "name_en": "Breathing",         "icon": "leaf"},
+        "stretching":   {"name_es": "Estiramientos",         "name_en": "Stretching",        "icon": "body"},
+        "nutrition":    {"name_es": "Nutrición",             "name_en": "Nutrition",         "icon": "nutrition"},
+        "sleep":        {"name_es": "Sueño",                 "name_en": "Sleep",             "icon": "moon"},
+        "mindfulness":  {"name_es": "Mindfulness",           "name_en": "Mindfulness",       "icon": "flower"},
+        "professional": {"name_es": "Consejos profesionales","name_en": "Professional advice","icon": "medkit"},
+    }
     try:
-        pipeline = [
-            {"$match": {"language": language}},
-            {"$group": {"_id": "$category", "count": {"$sum": 1}}},
-            {"$sort": {"count": -1}}
+        # Try aggregate (works with real MongoDB)
+        if not using_mongomock:
+            pipeline = [
+                {"$match": {"language": language}},
+                {"$group": {"_id": "$category", "count": {"$sum": 1}}},
+                {"$sort": {"count": -1}}
+            ]
+            result = await db.resources.aggregate(pipeline).to_list(100)
+            if result:
+                return [{
+                    "id": cat["_id"],
+                    "name": categories_info.get(cat["_id"], {}).get(f"name_{language}", cat["_id"]),
+                    "icon": categories_info.get(cat["_id"], {}).get("icon", "document"),
+                    "count": cat["count"]
+                } for cat in result]
+
+        # Fallback for mongomock: count manually
+        counts: dict = {}
+        all_resources = await db_find(db.resources, {"language": language})
+        for r in all_resources:
+            cat = r.get("category", "")
+            counts[cat] = counts.get(cat, 0) + 1
+
+        if not counts:
+            # No resources seeded yet — return all categories with count 0
+            return [
+                {
+                    "id": cat_id,
+                    "name": meta.get(f"name_{language}", cat_id),
+                    "icon": meta["icon"],
+                    "count": 0,
+                }
+                for cat_id, meta in categories_info.items()
+            ]
+
+        return [
+            {
+                "id": cat_id,
+                "name": categories_info.get(cat_id, {}).get(f"name_{language}", cat_id),
+                "icon": categories_info.get(cat_id, {}).get("icon", "document"),
+                "count": count,
+            }
+            for cat_id, count in sorted(counts.items(), key=lambda x: -x[1])
         ]
-        
-        result = await db.resources.aggregate(pipeline).to_list(100)
-        
-        categories_info = {
-            "breathing": {"name_es": "Respiraciones", "name_en": "Breathing", "icon": "leaf"},
-            "stretching": {"name_es": "Estiramientos", "name_en": "Stretching", "icon": "body"},
-            "nutrition": {"name_es": "Nutrición", "name_en": "Nutrition", "icon": "nutrition"},
-            "sleep": {"name_es": "Sueño", "name_en": "Sleep", "icon": "moon"},
-            "mindfulness": {"name_es": "Mindfulness", "name_en": "Mindfulness", "icon": "flower"},
-            "professional": {"name_es": "Consejos profesionales", "name_en": "Professional advice", "icon": "medkit"},
-        }
-        
-        return [{
-            "id": cat["_id"],
-            "name": categories_info.get(cat["_id"], {}).get(f"name_{language}", cat["_id"]),
-            "icon": categories_info.get(cat["_id"], {}).get("icon", "document"),
-            "count": cat["count"]
-        } for cat in result]
     except Exception as e:
         logger.error(f"Error getting resource categories: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -1862,7 +2073,7 @@ async def get_resource_categories(language: str = "es"):
 async def create_resource(resource: Resource):
     """Create a new resource (admin only)"""
     try:
-        await db.resources.insert_one(resource.model_dump())
+        await db_insert_one(db.resources, resource.model_dump())
         return {"success": True, "id": resource.id}
     except Exception as e:
         logger.error(f"Error creating resource: {e}")
@@ -1873,8 +2084,7 @@ async def create_resource(resource: Resource):
 async def seed_resources():
     """Seed initial resources for testing"""
     try:
-        # Delete existing resources first to allow re-seeding
-        await db.resources.delete_many({})
+        await db_delete_many(db.resources, {})
         
         initial_resources = [
             {
@@ -1975,7 +2185,9 @@ async def seed_resources():
             }
         ]
         
-        await db.resources.insert_many(initial_resources)
+        # Insert using helper (mongomock-safe)
+        for resource in initial_resources:
+            await db_insert_one(db.resources, resource)
         return {"message": "Resources seeded successfully", "count": len(initial_resources)}
     except Exception as e:
         logger.error(f"Error seeding resources: {e}")

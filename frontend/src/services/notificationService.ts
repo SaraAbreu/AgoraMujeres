@@ -5,7 +5,7 @@ export interface NotificationPreference {
 }
 
 export const registerNotificationService = async () => {
-  if ('serviceWorker' in navigator) {
+  if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
     try {
       const registration = await navigator.serviceWorker.register('/service-worker.js');
       console.log('Service Worker registered:', registration);
@@ -17,7 +17,7 @@ export const registerNotificationService = async () => {
 };
 
 export const requestNotificationPermission = async (): Promise<boolean> => {
-  if (!('Notification' in window)) {
+  if (typeof window === 'undefined' || !('Notification' in window)) {
     console.log('This browser does not support notifications');
     return false;
   }

@@ -8,31 +8,38 @@ export function useOnboarding() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    checkOnboarding();
-  }, []);
+    const init = async () => {
+      try {
+        let shown: string | null = null;
 
-  const checkOnboarding = async () => {
-    try {
-      // RESET: Siempre mostrar onboarding en web durante desarrollo
-      if (typeof window !== 'undefined') {
+        // 🌐 WEB → usar localStorage (NO AsyncStorage)
+        if (typeof window !== 'undefined') {
+          shown = localStorage.getItem(ONBOARDING_SHOWN_KEY);
+        } 
+        // 📱 NATIVE → usar AsyncStorage
+        else {
+          shown = await AsyncStorage.getItem(ONBOARDING_SHOWN_KEY);
+        }
+
+        setHasSeenOnboarding(shown === 'true');
+      } catch (error) {
+        console.error('Error checking onboarding:', error);
         setHasSeenOnboarding(false);
-        setLoading(false);
-        return;
+      } finally {
+        setLoading(false); // 🔥 ESTO ES CLAVE
       }
-      
-      const shown = await AsyncStorage.getItem(ONBOARDING_SHOWN_KEY);
-      setHasSeenOnboarding(shown === 'true');
-    } catch (error) {
-      console.error('Error checking onboarding:', error);
-      setHasSeenOnboarding(false);
-    } finally {
-      setLoading(false);
-    }
-  };
+    };
+
+    init();
+  }, []);
 
   const markOnboardingAsShown = async () => {
     try {
-      await AsyncStorage.setItem(ONBOARDING_SHOWN_KEY, 'true');
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(ONBOARDING_SHOWN_KEY, 'true');
+      } else {
+        await AsyncStorage.setItem(ONBOARDING_SHOWN_KEY, 'true');
+      }
       setHasSeenOnboarding(true);
     } catch (error) {
       console.error('Error marking onboarding as shown:', error);

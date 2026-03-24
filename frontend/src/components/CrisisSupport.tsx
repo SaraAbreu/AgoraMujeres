@@ -3,45 +3,27 @@ import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator
 import { useRouter } from 'expo-router';
 import { colors } from '../theme/colors';
 import Feather from '@expo/vector-icons/Feather';
-import axios from 'axios';
-
-interface CrisisResponse {
-  immediate?: {
-    title: string;
-    message: string;
-    options: string[];
-  };
-  technique?: {
-    title: string;
-    steps?: string[];
-    message: string;
-  };
-  all_techniques?: Array<{
-    key: string;
-    title: string;
-    steps?: string[];
-    message: string;
-  }>;
-  emergency_contacts?: any;
-}
+import { getCrisisSupport, CrisisResponse } from '../services/api';
+import { useStore } from '../store/useStore';
 
 export function CrisisSupport() {
   const [crisisData, setCrisisData] = useState<CrisisResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [selectedTechnique, setSelectedTechnique] = useState<string | null>(null);
   const router = useRouter();
+  const { deviceId } = useStore();
 
   const callCrisisAPI = async (painLevel: number = 9) => {
     setLoading(true);
     try {
-      const response = await axios.post(`http://localhost:8000/api/crisis`, {
-        device_id: 'user-device',
-        pain_level: painLevel,
-        language: 'es',
-        symptoms: ['mucho_dolor', 'ansiedad']
-      });
-      setCrisisData(response.data);
-      setSelectedTechnique(response.data.technique?.title);
+      const response = await getCrisisSupport(
+        deviceId || 'default-device',
+        painLevel,
+        'es',
+        ['mucho_dolor', 'ansiedad']
+      );
+      setCrisisData(response);
+      setSelectedTechnique(response.technique?.title);
     } catch (error) {
       console.error('Error calling crisis API:', error);
     } finally {

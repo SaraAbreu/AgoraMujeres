@@ -1,97 +1,102 @@
-import React from 'react';
 import { Tabs } from 'expo-router';
-import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
-import { colors } from '../../src/theme/colors';
-import { Platform } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
 
-export default function TabLayout() {
-  const { t } = useTranslation();
+const isWeb = Platform.OS === 'web';
 
+// ─────────────────────────────────────────────────────────────
+// Custom Tab Bar Component
+// ─────────────────────────────────────────────────────────────
+function CustomTabBar() {
+  return <View />;
+}
+
+export default function TabsLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: colors.softWhite,
-        tabBarInactiveTintColor: colors.mossGreenLight,
+        headerShown: false,
         tabBarStyle: {
-          backgroundColor: colors.mossGreenDark,
-          borderTopWidth: 0,
-          paddingTop: 14,
-          paddingBottom: Platform.OS === 'ios' ? 50 : 55,
-          height: Platform.OS === 'ios' ? 115 : 120,
-          elevation: 0,
-          shadowOpacity: 0,
+          height: isWeb ? 70 : 80,
+          backgroundColor: '#FDFBF9',
+          borderTopWidth: 1,
+          borderTopColor: '#D4C9B9',
+          paddingBottom: isWeb ? 12 : 16,
+          paddingTop: 12,
+          paddingHorizontal: isWeb ? 20 : 0,
+          elevation: 20,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: -2 },
+          shadowOpacity: 0.12,
+          shadowRadius: 12,
         },
         tabBarLabelStyle: {
-          fontSize: 11,
-          fontFamily: 'Nunito_500Medium',
-          marginTop: 4,
+          fontSize: isWeb ? 12 : 13,
+          fontWeight: '600',
+          marginTop: isWeb ? 6 : 4,
           marginBottom: 0,
+          fontFamily: 'Nunito_600SemiBold',
         },
         tabBarIconStyle: {
-          marginBottom: 0,
+          marginBottom: isWeb ? 2 : 2,
         },
-        headerStyle: {
-          backgroundColor: colors.mossGreen,
-          elevation: 0,
-          shadowOpacity: 0,
-        },
-        headerTintColor: colors.textOnDark,
-        headerTitleStyle: {
-          fontFamily: 'Cormorant_600SemiBold',
-          fontSize: 22,
-          color: colors.textOnDark,
-        },
-        headerShadowVisible: false,
+        tabBarActiveTintColor: '#80704F',
+        tabBarInactiveTintColor: '#B5A997',
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
-          title: t('home'),
-          headerShown: false,
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="home-outline" size={size} color={color} />
+          title: 'Inicio',
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons 
+              name={focused ? 'home' : 'home-outline'} 
+              size={isWeb ? 22 : 26} 
+              color={color}
+              style={{ fontWeight: focused ? 'bold' : 'normal' }}
+            />
           ),
         }}
       />
-      <Tabs.Screen
-        name="diary"
-        options={{
-          title: t('diary'),
-          headerTitle: t('diary'),
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="book-outline" size={size} color={color} />
-          ),
-        }}
-      />
+
       <Tabs.Screen
         name="chat"
         options={{
-          title: t('chat'),
-          headerShown: false,
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="leaf-outline" size={size} color={color} />
+          title: 'Ágora',
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons 
+              name={focused ? 'chatbubble' : 'chatbubble-outline'} 
+              size={isWeb ? 22 : 26} 
+              color={color}
+            />
           ),
         }}
       />
+
+      <Tabs.Screen
+        name="diary"
+        options={{
+          title: 'Diario',
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons 
+              name={focused ? 'book' : 'book-outline'} 
+              size={isWeb ? 22 : 26} 
+              color={color}
+            />
+          ),
+        }}
+      />
+
       <Tabs.Screen
         name="patterns"
         options={{
-          title: t('patterns'),
-          headerTitle: t('weeklyPatterns'),
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="analytics-outline" size={size} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="settings"
-        options={{
-          title: t('settings'),
-          headerTitle: t('settings'),
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="settings-outline" size={size} color={color} />
+          title: 'Patrones',
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons 
+              name={focused ? 'analytics' : 'analytics-outline'} 
+              size={isWeb ? 22 : 26} 
+              color={color}
+            />
           ),
         }}
       />

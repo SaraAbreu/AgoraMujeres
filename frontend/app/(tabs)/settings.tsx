@@ -1,3 +1,15 @@
+/**
+ * app/(tabs)/settings.tsx
+ *
+ * Pantalla de ajustes — reescrita desde cero.
+ *
+ * Cambios respecto a la versión anterior:
+ *  - ❌ localStorage (rompe en Android/iOS) → ✅ AsyncStorage
+ *  - ❌ /admin/verify → ✅ /subscription/admin/verify (ruta correcta del backend)
+ *  - ❌ fetch directo para comunidad → ✅ getCommunityCount() de api.ts
+ *  - ✅ Secciones conservadas: idioma, notificaciones, suscripción, comunidad, admin, about
+ */
+
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -8,354 +20,402 @@ import {
   Alert,
   TextInput,
   Modal,
+  Switch,
+  Platform,
 } from 'react-native';
-import { useTranslation } from 'react-i18next';
 import { useRouter } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, spacing, borderRadius, typography } from '../../src/theme/colors';
-import { useStore } from '../../src/store/useStore';
-import { verifyAdminCode } from '../../src/services/api';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import i18n from '../../src/i18n';
 
-export default function SettingsScreen() {
-  const { t } = useTranslation();
-  const router = useRouter();
-  const { language, setLanguage, subscriptionStatus, deviceId, setSubscriptionStatus } = useStore();
-  const [showAdminModal, setShowAdminModal] = useState(false);
-  const [adminCode, setAdminCode] = useState('');
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [notificationsEnabled, setNotificationsEnabled] = useState(() => {
-    try {
-      const saved = localStorage?.getItem('notificationsEnabled');
-      return saved ? JSON.parse(saved) : false;
-    } catch {
-      return false;
-    }
-  });
-  const [notificationHour, setNotificationHour] = useState(() => {
-    try {
-      const saved = localStorage?.getItem('notificationHour');
-      return saved ? parseInt(saved) : 8;
-    } catch {
-      return 8;
-    }
-  });
-  const [notificationMinute, setNotificationMinute] = useState(() => {
-    try {
-      const saved = localStorage?.getItem('notificationMinute');
-      return saved ? parseInt(saved) : 0;
-    } catch {
-      return 0;
-    }
-  });
-  const [communityCount, setCommunityCount] = useState(0);
+import { colors, spacing, borderRadius, typography } from '../../src/theme/colors';
+import { useStore } from '../../src/store/useStore';
+import { verifyAdminCode, getCommunityCount } from '../../src/services/api';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Claves AsyncStorage
+// ─────────────────────────────────────────────────────────────────────────────
+
+const KEYS = {
+  notificationsEnabled: 'agora_notif_enabled',
+  notificationHour:     'agora_notif_hour',
+  notificationMinute:   'agora_notif_minute',
+} as const;
+
+const BG = '#80704f';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Componentes pequeños
+// ─────────────────────────────────────────────────────────────────────────────
+
+function SectionTitle({ label }: { label: string }) {
+  return <Text style={styles.sectionTitle}>{label}</Text>;
+}
+
+function Card({ children }: { children: React.ReactNode }) {
+  return <View style={styles.card}>{children}</View>;
+}
+
+function Divider() {
+  return <View style={styles.divider} />;
+}
+
+function Row({
+  icon,
+  iconColor,
+  label,
+  sublabel,
+  right,
+  onPress,
+  selected,
+}: {
+  icon?:      string;
+  iconColor?: string;
+  label:      string;
+  sublabel?:  string;
+  right?:     React.ReactNode;
+  onPress?:   () => void;
+  selected?:  boolean;
+}) {
+  const Inner = (
+    <View style={[styles.row, selected && styles.rowSelected]}>
+      {icon && (
+        <View style={[styles.rowIconBg, { backgroundColor: (iconColor ?? colors.mossGreen) + '20' }]}>
+          <Ionicons name={icon as any} size={18} color={iconColor ?? colors.mossGreen} />
+        </View>
+      )}
+      <View style={styles.rowContent}>
+        <Text style={styles.rowLabel}>{label}</Text>
+        {sublabel ? <Text style={styles.rowSublabel}>{sublabel}</Text> : null}
+      </View>
+      {right}
+    </View>
+  );
+
+  if (onPress) {
+    return (
+      <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
+        {Inner}
+      </TouchableOpacity>
+    );
+  }
+  return Inner;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Pantalla
+// ─────────────────────────────────────────────────────────────────────────────
+
+export default function SettingsScreen() {
+  const router = useRouter();
+  const { language, setLanguage, subscriptionStatus, setSubscriptionStatus, deviceId } = useStore();
+  const isEs = language === 'es';
+
+  // Notificaciones
+  const [notifEnabled, setNotifEnabled] = useState(false);
+  const [notifHour,    setNotifHour]    = useState(8);
+  const [notifMinute,  setNotifMinute]  = useState(0);
+
+  // Admin
+  const [showAdminModal, setShowAdminModal] = useState(false);
+  const [adminCode,      setAdminCode]      = useState('');
+  const [isAdmin,        setIsAdmin]        = useState(false);
+
+  // Comunidad
+  const [communityCount, setCommunityCount] = useState<number | null>(null);
+
+  // ── Cargar preferencias de notificación desde AsyncStorage ─────────────────
+  useEffect(() => {
+    const loadPrefs = async () => {
+      try {
+        const [enabled, hour, minute] = await AsyncStorage.multiGet([
+          KEYS.notificationsEnabled,
+          KEYS.notificationHour,
+          KEYS.notificationMinute,
+        ]);
+        setNotifEnabled(enabled[1] === 'true');
+        setNotifHour(parseInt(hour[1]    ?? '8'));
+        setNotifMinute(parseInt(minute[1] ?? '0'));
+      } catch (e) {
+        console.warn('[Settings] Could not load notification prefs:', e);
+      }
+    };
+    loadPrefs();
+  }, []);
+
+  // ── Cargar comunidad ────────────────────────────────────────────────────────
+  useEffect(() => {
+    getCommunityCount()
+      .then(d => setCommunityCount(d.community_size))
+      .catch(() => setCommunityCount(Math.floor(Math.random() * 500) + 100));
+  }, []);
+
+  // ── Guardar preferencias de notificación ────────────────────────────────────
+  const saveNotifPrefs = async (enabled: boolean, hour: number, minute: number) => {
+    try {
+      await AsyncStorage.multiSet([
+        [KEYS.notificationsEnabled, String(enabled)],
+        [KEYS.notificationHour,     String(hour)],
+        [KEYS.notificationMinute,   String(minute)],
+      ]);
+    } catch (e) {
+      console.warn('[Settings] Could not save notification prefs:', e);
+    }
+  };
+
+  const handleNotifToggle = async (val: boolean) => {
+    setNotifEnabled(val);
+    await saveNotifPrefs(val, notifHour, notifMinute);
+  };
+
+  const handleHourChange = async (raw: string) => {
+    const h = Math.max(0, Math.min(23, parseInt(raw) || 0));
+    setNotifHour(h);
+    await saveNotifPrefs(notifEnabled, h, notifMinute);
+  };
+
+  const handleMinuteChange = async (raw: string) => {
+    const m = Math.max(0, Math.min(59, parseInt(raw) || 0));
+    setNotifMinute(m);
+    await saveNotifPrefs(notifEnabled, notifHour, m);
+  };
+
+  // ── Cambio de idioma ────────────────────────────────────────────────────────
   const handleLanguageChange = async (lang: string) => {
     await setLanguage(lang);
     i18n.changeLanguage(lang);
   };
 
-  const handleNotificationToggle = () => {
-    const newState = !notificationsEnabled;
-    setNotificationsEnabled(newState);
-    localStorage?.setItem('notificationsEnabled', JSON.stringify(newState));
-    if (newState) {
-      localStorage?.setItem('notificationHour', String(notificationHour));
-      localStorage?.setItem('notificationMinute', String(notificationMinute));
-    }
-  };
-
-  const handleHourChange = (value: string) => {
-    const hour = Math.max(0, Math.min(23, parseInt(value) || 0));
-    setNotificationHour(hour);
-    localStorage?.setItem('notificationHour', String(hour));
-  };
-
-  const handleMinuteChange = (value: string) => {
-    const minute = Math.max(0, Math.min(59, parseInt(value) || 0));
-    setNotificationMinute(minute);
-    localStorage?.setItem('notificationMinute', String(minute));
-  };
-
-  // Load community count
-  useEffect(() => {
-    const loadCommunityCount = async () => {
-      try {
-        // Try to fetch from API
-        if (typeof fetch !== 'undefined') {
-          const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000'}/api/community/count`);
-          if (response.ok) {
-            const data = await response.json();
-            setCommunityCount(data.community_size || 0);
-          }
-        }
-      } catch (error) {
-        console.log('Could not load community count:', error);
-        // Set a default inspiring number if API fails
-        setCommunityCount(Math.floor(Math.random() * 500) + 100);
-      }
-    };
-    loadCommunityCount();
-  }, []);
-
+  // ── Tiempo de trial ─────────────────────────────────────────────────────────
   const formatTrialTime = () => {
-    if (isAdmin) return language === 'es' ? 'Ilimitado' : 'Unlimited';
-    if (!subscriptionStatus?.trial_remaining_seconds) return '0h 0m';
-    const hours = Math.floor(subscriptionStatus.trial_remaining_seconds / 3600);
-    const minutes = Math.floor((subscriptionStatus.trial_remaining_seconds % 3600) / 60);
-    return `${hours}h ${minutes}m`;
+    if (isAdmin) return isEs ? 'Ilimitado' : 'Unlimited';
+    const secs = subscriptionStatus?.trial_remaining_seconds ?? 0;
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    return `${h}h ${m}m`;
   };
 
-  const handleAdminCodeSubmit = async () => {
+  // ── Admin ───────────────────────────────────────────────────────────────────
+  const handleAdminSubmit = async () => {
     if (!deviceId || !adminCode.trim()) return;
-    
     try {
       const result = await verifyAdminCode(deviceId, adminCode.trim());
       if (result.success) {
         setIsAdmin(true);
-        setSubscriptionStatus({ ...subscriptionStatus, status: 'active' });
+        setSubscriptionStatus({ ...subscriptionStatus, status: 'active' } as any);
         setShowAdminModal(false);
         setAdminCode('');
-        Alert.alert(
-          '✓',
-          language === 'es' ? 'Acceso de administrador activado' : 'Admin access activated'
-        );
+        Alert.alert('✓', isEs ? 'Acceso de administrador activado' : 'Admin access activated');
       } else {
-        Alert.alert(
-          '',
-          language === 'es' ? 'Código incorrecto' : 'Invalid code'
-        );
+        Alert.alert('', isEs ? 'Código incorrecto' : 'Invalid code');
       }
-    } catch (error) {
-      console.error('Error verifying admin code:', error);
-      Alert.alert('Error', language === 'es' ? 'Error al verificar' : 'Verification error');
+    } catch (e: any) {
+      Alert.alert(isEs ? 'Error' : 'Error', e?.message ?? '');
     }
   };
 
+  // ─────────────────────────────────────────────────────────────────────────────
   return (
-    <ScrollView 
-      style={styles.container} 
-      contentContainerStyle={styles.content}
-      showsVerticalScrollIndicator={false}
-    >
-      {/* Admin Badge */}
-      {isAdmin && (
-        <View style={styles.adminBadge}>
-          <Ionicons name="shield-checkmark" size={16} color={colors.warmBrown} />
-          <Text style={styles.adminBadgeText}>
-            {language === 'es' ? 'Modo Administrador' : 'Admin Mode'}
-          </Text>
-        </View>
-      )}
-
-      {/* Language Section */}
-      <Text style={styles.sectionTitle}>{t('language')}</Text>
-      <View style={styles.card}>
-        <TouchableOpacity
-          style={[
-            styles.optionRow,
-            language === 'es' && styles.optionSelected
-          ]}
-          onPress={() => handleLanguageChange('es')}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.optionText}>🇪🇸 {t('spanish')}</Text>
-          {language === 'es' && (
-            <Ionicons name="checkmark" size={20} color={colors.mossGreen} />
-          )}
-        </TouchableOpacity>
-        <View style={styles.divider} />
-        <TouchableOpacity
-          style={[
-            styles.optionRow,
-            language === 'en' && styles.optionSelected
-          ]}
-          onPress={() => handleLanguageChange('en')}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.optionText}>🇬🇧 {t('english')}</Text>
-          {language === 'en' && (
-            <Ionicons name="checkmark" size={20} color={colors.mossGreen} />
-          )}
-        </TouchableOpacity>
-      </View>
-
-      {/* Notifications Section */}
-      <Text style={styles.sectionTitle}>
-        {language === 'es' ? 'Notificaciones' : 'Notifications'}
-      </Text>
-      <View style={styles.card}>
-        <View style={styles.notificationRow}>
-          <View style={styles.notificationContent}>
-            <Text style={styles.notificationTitle}>
-              {language === 'es' 
-                ? '¿Cómo amaneció tu cuerpo?' 
-                : 'How did you wake up?'
-              }
-            </Text>
-            <Text style={styles.notificationSubtitle}>
-              {language === 'es' 
-                ? 'Recordatorio diario' 
-                : 'Daily reminder'
-              }
+    <SafeAreaView style={styles.safe} edges={['top']}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Badge admin */}
+        {isAdmin && (
+          <View style={styles.adminBadge}>
+            <Ionicons name="shield-checkmark" size={14} color={colors.warmBrown} />
+            <Text style={styles.adminBadgeText}>
+              {isEs ? 'Modo administrador' : 'Admin mode'}
             </Text>
           </View>
-          <TouchableOpacity 
-            style={[styles.toggle, notificationsEnabled && styles.toggleActive]}
-            onPress={handleNotificationToggle}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.toggleText}>
-              {notificationsEnabled ? '✓' : '○'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-        
-        {notificationsEnabled && (
-          <View style={styles.timePickerSection}>
-            <Text style={styles.timeLabel}>
-              {language === 'es' ? 'Hora de la notificación' : 'Notification time'}
-            </Text>
-            <View style={styles.timePicker}>
-              <View style={styles.timeInputGroup}>
-                <TextInput
-                  style={styles.timeInput}
-                  value={String(notificationHour).padStart(2, '0')}
-                  onChangeText={handleHourChange}
-                  keyboardType="number-pad"
-                  maxLength={2}
-                  placeholder="00"
-                />
-                <Text style={styles.timeSeparator}>:</Text>
-                <TextInput
-                  style={styles.timeInput}
-                  value={String(notificationMinute).padStart(2, '0')}
-                  onChangeText={handleMinuteChange}
-                  keyboardType="number-pad"
-                  maxLength={2}
-                  placeholder="00"
-                />
+        )}
+
+        {/* ── Idioma ── */}
+        <SectionTitle label={isEs ? 'Idioma' : 'Language'} />
+        <Card>
+          <Row
+            icon="flag-outline"
+            iconColor="#C08080"
+            label="🇪🇸 Español"
+            selected={language === 'es'}
+            onPress={() => handleLanguageChange('es')}
+            right={language === 'es'
+              ? <Ionicons name="checkmark" size={18} color={colors.mossGreen} />
+              : undefined}
+          />
+          <Divider />
+          <Row
+            icon="flag-outline"
+            iconColor="#6080C0"
+            label="🇬🇧 English"
+            selected={language === 'en'}
+            onPress={() => handleLanguageChange('en')}
+            right={language === 'en'
+              ? <Ionicons name="checkmark" size={18} color={colors.mossGreen} />
+              : undefined}
+          />
+        </Card>
+
+        {/* ── Notificaciones ── */}
+        <SectionTitle label={isEs ? 'Notificaciones' : 'Notifications'} />
+        <Card>
+          <Row
+            icon="notifications-outline"
+            iconColor={colors.warmBrown}
+            label={isEs ? '¿Cómo amaneció tu cuerpo?' : 'How did you wake up?'}
+            sublabel={isEs ? 'Recordatorio diario' : 'Daily reminder'}
+            right={
+              <Switch
+                value={notifEnabled}
+                onValueChange={handleNotifToggle}
+                trackColor={{ false: colors.border, true: colors.mossGreen }}
+                thumbColor={notifEnabled ? colors.surface : '#f4f3f4'}
+              />
+            }
+          />
+          {notifEnabled && (
+            <>
+              <Divider />
+              <View style={styles.timePicker}>
+                <Text style={styles.timePickerLabel}>
+                  {isEs ? 'Hora de aviso' : 'Reminder time'}
+                </Text>
+                <View style={styles.timeInputsRow}>
+                  <TextInput
+                    style={styles.timeInput}
+                    value={String(notifHour).padStart(2, '0')}
+                    onChangeText={handleHourChange}
+                    keyboardType="number-pad"
+                    maxLength={2}
+                    selectTextOnFocus
+                  />
+                  <Text style={styles.timeSep}>:</Text>
+                  <TextInput
+                    style={styles.timeInput}
+                    value={String(notifMinute).padStart(2, '0')}
+                    onChangeText={handleMinuteChange}
+                    keyboardType="number-pad"
+                    maxLength={2}
+                    selectTextOnFocus
+                  />
+                </View>
               </View>
-              <Text style={styles.timeExample}>
-                {String(notificationHour).padStart(2, '0')}:{String(notificationMinute).padStart(2, '0')}
+            </>
+          )}
+        </Card>
+
+        {/* ── Suscripción ── */}
+        <SectionTitle label={isEs ? 'Suscripción' : 'Subscription'} />
+        <Card>
+          {subscriptionStatus?.status === 'active' ? (
+            <Row
+              icon="checkmark-circle"
+              iconColor={colors.success}
+              label={isEs ? 'Suscripción activa' : 'Active subscription'}
+              sublabel="10€ / mes"
+            />
+          ) : subscriptionStatus?.status === 'trial' ? (
+            <>
+              <Row
+                icon="time-outline"
+                iconColor={colors.warmBrown}
+                label={isEs ? 'Tiempo de prueba restante' : 'Trial time remaining'}
+                sublabel={formatTrialTime()}
+              />
+              <Divider />
+              <TouchableOpacity
+                style={styles.subscribeBtn}
+                onPress={() => router.push('/subscription')}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="star" size={16} color={colors.softWhite} />
+                <Text style={styles.subscribeBtnText}>
+                  {isEs ? 'Activar suscripción' : 'Activate subscription'}
+                </Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <>
+              <Row
+                icon="alert-circle"
+                iconColor={colors.error}
+                label={isEs ? 'Período de prueba finalizado' : 'Trial expired'}
+              />
+              <Divider />
+              <TouchableOpacity
+                style={[styles.subscribeBtn, { backgroundColor: colors.warmBrownDark }]}
+                onPress={() => router.push('/subscription')}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.subscribeBtnText}>
+                  {isEs ? 'Activar ahora' : 'Activate now'}
+                </Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </Card>
+
+        {/* Código de acceso (oculto, discreta) */}
+        <TouchableOpacity
+          style={styles.adminLink}
+          onPress={() => setShowAdminModal(true)}
+          activeOpacity={0.5}
+        >
+          <Text style={styles.adminLinkText}>
+            {isEs ? '¿Tienes un código de acceso?' : 'Have an access code?'}
+          </Text>
+        </TouchableOpacity>
+
+        {/* ── Emergencia ── */}
+        <SectionTitle label={isEs ? 'Emergencia' : 'Emergency'} />
+        <Card>
+          <Row
+            icon="call-outline"
+            iconColor={colors.error}
+            label={isEs ? 'Líneas de apoyo' : 'Support lines'}
+            sublabel={isEs ? '024 · 112 · 717 003 717' : '988 · 116 123'}
+            onPress={() => router.push('/crisis')}
+            right={<Ionicons name="chevron-forward" size={16} color={colors.textLight} />}
+          />
+        </Card>
+
+        {/* ── Comunidad ── */}
+        <SectionTitle label={isEs ? 'Comunidad' : 'Community'} />
+        <Card>
+          <View style={styles.communityRow}>
+            <View style={styles.communityIcon}>
+              <Ionicons name="people" size={24} color={colors.mossGreen} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.communityTitle}>
+                {isEs ? 'Juntas somos más fuertes' : 'Together we are stronger'}
+              </Text>
+              <Text style={styles.communityCount}>
+                {communityCount !== null ? communityCount : '…'}
+              </Text>
+              <Text style={styles.communitySubtitle}>
+                {isEs ? 'mujeres en nuestra comunidad 💜' : 'women in our community 💜'}
               </Text>
             </View>
           </View>
-        )}
-      </View>
+        </Card>
 
-      {/* Subscription Section */}
-      <Text style={styles.sectionTitle}>{t('subscription')}</Text>
-      <View style={styles.card}>
-        {subscriptionStatus?.status === 'active' ? (
-          <View style={styles.statusRow}>
-            <Ionicons name="checkmark-circle" size={24} color={colors.success} />
-            <View style={styles.statusContent}>
-              <Text style={styles.statusTitle}>{t('subscriptionActive')}</Text>
-              <Text style={styles.statusSubtitle}>{t('priceMonthly')}</Text>
-            </View>
-          </View>
-        ) : subscriptionStatus?.status === 'trial' ? (
-          <View>
-            <View style={styles.statusRow}>
-              <Ionicons name="time-outline" size={24} color={colors.warmBrown} />
-              <View style={styles.statusContent}>
-                <Text style={styles.statusTitle}>{t('trialRemaining')}</Text>
-                <Text style={styles.trialTime}>{formatTrialTime()}</Text>
-              </View>
-            </View>
-            <TouchableOpacity
-              style={styles.subscribeButton}
-              onPress={() => router.push('/subscription')}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.subscribeButtonText}>{t('activateSubscription')}</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <View>
-            <View style={styles.statusRow}>
-              <Ionicons name="alert-circle" size={24} color={colors.error} />
-              <View style={styles.statusContent}>
-                <Text style={styles.statusTitle}>{t('trialExpired')}</Text>
-              </View>
-            </View>
-            <TouchableOpacity
-              style={styles.subscribeButton}
-              onPress={() => router.push('/subscription')}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.subscribeButtonText}>{t('activateSubscription')}</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-      </View>
-
-      {/* Admin Code (hidden at bottom) */}
-      <TouchableOpacity 
-        style={styles.adminLink}
-        onPress={() => setShowAdminModal(true)}
-        activeOpacity={0.6}
-      >
-        <Text style={styles.adminLinkText}>
-          {language === 'es' ? '¿Tienes un código de acceso?' : 'Have an access code?'}
-        </Text>
-      </TouchableOpacity>
-
-      {/* Crisis Support Button */}
-      <Text style={styles.sectionTitle}>
-        {language === 'es' ? 'Emergencia' : 'Emergency'}
-      </Text>
-      <TouchableOpacity 
-        style={styles.crisisButton}
-        onPress={() => {
-          alert('📞 ' + (language === 'es' ? 'Líneas de apoyo:' : 'Support lines:') + '\n\n🇪🇸 ' + (language === 'es' ? 'España:' : 'Spain:') + '\n- ' + (language === 'es' ? 'Teléfono de la Esperanza' : 'Telephone of Hope') + ': 717 003 717\n- ' + (language === 'es' ? 'Telediagnóstico' : 'Telediagnosis') + ': 971 439 500\n\n🇺🇸 International:\n- Crisis Text Line: Text HOME to 741741');
-        }}
-        activeOpacity={0.85}
-      >
-        <Ionicons name="alert-circle" size={20} color={colors.softWhite} />
-        <Text style={styles.crisisButtonText}>{t('needHelp')}</Text>
-      </TouchableOpacity>
-
-      {/* Community Section */}
-      <Text style={styles.sectionTitle}>
-        {language === 'es' ? 'Comunidad' : 'Community'}
-      </Text>
-      <View style={styles.card}>
-        <View style={styles.communityRow}>
-          <View style={styles.communityIconBg}>
-            <Ionicons name="people" size={24} color={colors.mossGreen} />
-          </View>
-          <View style={styles.communityContent}>
-            <Text style={styles.communityTitle}>
-              {language === 'es' ? 'Juntas somos fuertes' : 'Together we are strong'}
-            </Text>
-            <Text style={styles.communityCount}>
-              {communityCount > 0 ? communityCount : '...'}
-            </Text>
-            <Text style={styles.communitySubtitle}>
-              {language === 'es' 
-                ? `Mujeres en nuestra comunidad 💜` 
-                : `Women in our community 💜`
-              }
-            </Text>
-          </View>
+        {/* ── About ── */}
+        <View style={styles.about}>
+          <Text style={styles.aboutName}>Ágora Mujeres</Text>
+          <Text style={styles.aboutVersion}>v1.0.0</Text>
+          <Text style={styles.aboutTagline}>
+            {isEs ? 'Tu refugio emocional' : 'Your emotional refuge'}
+          </Text>
         </View>
-      </View>
 
-      {/* About */}
-      <View style={styles.aboutSection}>
-        <Text style={styles.appName}>Ágora Mujeres</Text>
-        <Text style={styles.version}>v1.0.0</Text>
-        <Text style={styles.tagline}>
-          {language === 'es' 
-            ? 'Tu refugio emocional' 
-            : 'Your emotional refuge'
-          }
-        </Text>
-      </View>
+        <View style={{ height: 40 }} />
+      </ScrollView>
 
-      {/* Admin Modal */}
+      {/* ── Modal admin ── */}
       <Modal
         visible={showAdminModal}
         animationType="fade"
@@ -363,377 +423,322 @@ export default function SettingsScreen() {
         onRequestClose={() => setShowAdminModal(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <TouchableOpacity 
+          <View style={styles.modalBox}>
+            <TouchableOpacity
               style={styles.modalClose}
               onPress={() => setShowAdminModal(false)}
             >
-              <Ionicons name="close" size={24} color={colors.textSecondary} />
+              <Ionicons name="close" size={22} color={colors.textSecondary} />
             </TouchableOpacity>
-            
-            <Ionicons name="key-outline" size={40} color={colors.mossGreen} style={{ marginBottom: spacing.md }} />
-            
+
+            <Ionicons
+              name="key-outline"
+              size={36}
+              color={colors.mossGreen}
+              style={{ marginBottom: spacing.md }}
+            />
+
             <Text style={styles.modalTitle}>
-              {language === 'es' ? 'Código de administrador' : 'Admin code'}
+              {isEs ? 'Código de administrador' : 'Admin code'}
             </Text>
-            
+
             <TextInput
               style={styles.adminInput}
               value={adminCode}
               onChangeText={setAdminCode}
-              placeholder={language === 'es' ? 'Introduce el código' : 'Enter code'}
+              placeholder={isEs ? 'Introduce el código' : 'Enter code'}
               placeholderTextColor={colors.textLight}
               autoCapitalize="characters"
               autoCorrect={false}
             />
-            
-            <TouchableOpacity 
-              style={styles.adminSubmitButton}
-              onPress={handleAdminCodeSubmit}
-            >
+
+            <TouchableOpacity style={styles.adminSubmitBtn} onPress={handleAdminSubmit}>
               <Text style={styles.adminSubmitText}>
-                {language === 'es' ? 'Verificar' : 'Verify'}
+                {isEs ? 'Verificar' : 'Verify'}
               </Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
-    </ScrollView>
+    </SafeAreaView>
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Estilos
+// ─────────────────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
-  container: {
+  safe: {
+    flex:            1,
+    backgroundColor: BG,
+  },
+  scroll: {
     flex: 1,
-    backgroundColor: '#80704f',
   },
   content: {
-    padding: spacing.lg,
+    padding:       spacing.lg,
     paddingBottom: spacing.xxl,
   },
-  sectionTitle: {
-    fontSize: typography.sizes.sm,
-    fontFamily: 'Nunito_600SemiBold',
-    color: colors.textOnDark,
-    textTransform: 'uppercase',
-    marginBottom: spacing.sm,
-    marginTop: spacing.md,
-    letterSpacing: 1,
-  },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.lg,
-    overflow: 'hidden',
-    shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 1,
-    shadowRadius: 6,
-    elevation: 2,
-  },
-  optionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: spacing.md,
-  },
-  optionSelected: {
-    backgroundColor: colors.creamLight,
-  },
-  optionText: {
-    fontSize: typography.sizes.md,
-    fontFamily: 'Nunito_400Regular',
-    color: colors.text,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: colors.border,
-  },
-  statusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: spacing.md,
-    gap: spacing.md,
-  },
-  statusContent: {
-    flex: 1,
-  },
-  statusTitle: {
-    fontSize: typography.sizes.md,
-    fontFamily: 'Nunito_500Medium',
-    color: colors.text,
-  },
-  statusSubtitle: {
-    fontSize: typography.sizes.sm,
-    fontFamily: 'Nunito_400Regular',
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
-  trialTime: {
-    fontSize: typography.sizes.xl,
-    fontFamily: 'Cormorant_700Bold',
-    color: colors.warmBrown,
-    marginTop: spacing.xs,
-  },
-  subscribeButton: {
-    backgroundColor: colors.mossGreen,
-    margin: spacing.md,
-    marginTop: 0,
-    padding: spacing.md,
-    borderRadius: borderRadius.md,
-    alignItems: 'center',
-  },
-  subscribeButtonText: {
-    fontSize: typography.sizes.md,
-    fontFamily: 'Nunito_600SemiBold',
-    color: colors.softWhite,
-  },
+
+  // Admin badge
   adminBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.surface,
-    paddingVertical: spacing.sm,
+    flexDirection:    'row',
+    alignItems:       'center',
+    justifyContent:   'center',
+    backgroundColor:  colors.surface,
+    paddingVertical:  spacing.sm,
     paddingHorizontal: spacing.md,
-    borderRadius: borderRadius.full,
-    gap: spacing.xs,
-    alignSelf: 'center',
-    marginBottom: spacing.md,
+    borderRadius:     borderRadius.full,
+    gap:              spacing.xs,
+    alignSelf:        'center',
+    marginBottom:     spacing.md,
   },
   adminBadgeText: {
-    fontSize: typography.sizes.sm,
+    fontSize:   typography.sizes.sm,
     fontFamily: 'Nunito_600SemiBold',
-    color: colors.warmBrown,
+    color:      colors.warmBrown,
   },
+
+  // Section title
+  sectionTitle: {
+    fontSize:      typography.sizes.xs,
+    fontFamily:    'Nunito_700Bold',
+    color:         'rgba(245,242,239,0.7)',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginTop:     spacing.lg,
+    marginBottom:  spacing.sm,
+  },
+
+  // Card
+  card: {
+    backgroundColor: colors.surface,
+    borderRadius:    borderRadius.lg,
+    overflow:        'hidden',
+    shadowColor:     colors.shadow,
+    shadowOffset:    { width: 0, height: 2 },
+    shadowOpacity:   0.08,
+    shadowRadius:    6,
+    elevation:       2,
+  },
+
+  divider: {
+    height:          1,
+    backgroundColor: colors.border,
+    marginHorizontal: spacing.md,
+  },
+
+  // Row
+  row: {
+    flexDirection:    'row',
+    alignItems:       'center',
+    padding:          spacing.md,
+    gap:              spacing.md,
+  },
+  rowSelected: {
+    backgroundColor: colors.creamLight,
+  },
+  rowIconBg: {
+    width:          36,
+    height:         36,
+    borderRadius:   10,
+    justifyContent: 'center',
+    alignItems:     'center',
+  },
+  rowContent: {
+    flex: 1,
+  },
+  rowLabel: {
+    fontSize:   typography.sizes.md,
+    fontFamily: 'Nunito_500Medium',
+    color:      colors.text,
+  },
+  rowSublabel: {
+    fontSize:   typography.sizes.sm,
+    fontFamily: 'Nunito_400Regular',
+    color:      colors.textSecondary,
+    marginTop:  2,
+  },
+
+  // Notificaciones — time picker
+  timePicker: {
+    flexDirection:   'row',
+    alignItems:      'center',
+    justifyContent:  'space-between',
+    padding:         spacing.md,
+  },
+  timePickerLabel: {
+    fontSize:   typography.sizes.sm,
+    fontFamily: 'Nunito_500Medium',
+    color:      colors.textSecondary,
+  },
+  timeInputsRow: {
+    flexDirection: 'row',
+    alignItems:    'center',
+    gap:           spacing.xs,
+  },
+  timeInput: {
+    width:           52,
+    height:          40,
+    backgroundColor: colors.creamLight,
+    borderRadius:    borderRadius.md,
+    borderWidth:     1,
+    borderColor:     colors.border,
+    textAlign:       'center',
+    fontSize:        typography.sizes.lg,
+    fontFamily:      'Nunito_600SemiBold',
+    color:           colors.text,
+  },
+  timeSep: {
+    fontSize:   typography.sizes.lg,
+    fontFamily: 'Nunito_600SemiBold',
+    color:      colors.text,
+  },
+
+  // Suscripción
+  subscribeBtn: {
+    flexDirection:   'row',
+    alignItems:      'center',
+    justifyContent:  'center',
+    gap:             spacing.sm,
+    backgroundColor: colors.mossGreen,
+    margin:          spacing.md,
+    marginTop:       spacing.sm,
+    paddingVertical: spacing.md,
+    borderRadius:    borderRadius.md,
+  },
+  subscribeBtnText: {
+    fontSize:   typography.sizes.md,
+    fontFamily: 'Nunito_700Bold',
+    color:      colors.softWhite,
+  },
+
+  // Admin link
   adminLink: {
-    alignItems: 'center',
-    marginTop: spacing.xl,
-    padding: spacing.md,
+    alignItems:  'center',
+    marginTop:   spacing.md,
+    paddingVertical: spacing.sm,
   },
   adminLinkText: {
-    fontSize: typography.sizes.sm,
-    fontFamily: 'Nunito_400Regular',
-    color: colors.mossGreenLight,
+    fontSize:          typography.sizes.sm,
+    fontFamily:        'Nunito_400Regular',
+    color:             colors.mossGreenLight,
     textDecorationLine: 'underline',
+    opacity:           0.8,
   },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: colors.overlay,
+
+  // Comunidad
+  communityRow: {
+    flexDirection: 'row',
+    alignItems:    'center',
+    padding:       spacing.md,
+    gap:           spacing.md,
+  },
+  communityIcon: {
+    width:          52,
+    height:         52,
+    borderRadius:   26,
+    backgroundColor: colors.creamLight,
     justifyContent: 'center',
-    alignItems: 'center',
-    padding: spacing.lg,
+    alignItems:     'center',
   },
-  modalContent: {
+  communityTitle: {
+    fontSize:   typography.sizes.md,
+    fontFamily: 'Nunito_600SemiBold',
+    color:      colors.text,
+  },
+  communityCount: {
+    fontSize:   typography.sizes.xl,
+    fontFamily: 'Cormorant_700Bold',
+    color:      colors.mossGreen,
+    marginTop:  2,
+  },
+  communitySubtitle: {
+    fontSize:   typography.sizes.sm,
+    fontFamily: 'Nunito_400Regular',
+    color:      colors.textSecondary,
+    marginTop:  2,
+  },
+
+  // About
+  about: {
+    alignItems:  'center',
+    marginTop:   spacing.xl,
+    paddingVertical: spacing.xl,
+  },
+  aboutName: {
+    fontSize:   typography.sizes.xl,
+    fontFamily: 'Cormorant_700Bold',
+    color:      colors.softWhite,
+  },
+  aboutVersion: {
+    fontSize:   typography.sizes.sm,
+    fontFamily: 'Nunito_400Regular',
+    color:      'rgba(245,242,239,0.5)',
+    marginTop:  spacing.xs,
+  },
+  aboutTagline: {
+    fontSize:   typography.sizes.sm,
+    fontFamily: 'Nunito_400Regular',
+    color:      'rgba(245,242,239,0.7)',
+    marginTop:  spacing.sm,
+    fontStyle:  'italic',
+  },
+
+  // Modal admin
+  modalOverlay: {
+    flex:            1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent:  'center',
+    alignItems:      'center',
+    padding:         spacing.xl,
+  },
+  modalBox: {
     backgroundColor: colors.surface,
-    borderRadius: borderRadius.xl,
-    padding: spacing.xl,
-    width: '100%',
-    maxWidth: 350,
-    alignItems: 'center',
+    borderRadius:    borderRadius.xl,
+    padding:         spacing.xl,
+    width:           '100%',
+    maxWidth:        340,
+    alignItems:      'center',
   },
   modalClose: {
     position: 'absolute',
-    top: spacing.md,
-    right: spacing.md,
-    padding: spacing.xs,
+    top:      spacing.md,
+    right:    spacing.md,
+    padding:  spacing.xs,
   },
   modalTitle: {
-    fontSize: typography.sizes.lg,
-    fontFamily: 'Cormorant_600SemiBold',
-    color: colors.text,
+    fontSize:     typography.sizes.lg,
+    fontFamily:   'Cormorant_600SemiBold',
+    color:        colors.text,
     marginBottom: spacing.lg,
   },
   adminInput: {
-    backgroundColor: colors.creamLight,
-    borderRadius: borderRadius.md,
-    padding: spacing.md,
-    width: '100%',
-    fontSize: typography.sizes.md,
-    fontFamily: 'Nunito_500Medium',
-    color: colors.text,
-    textAlign: 'center',
-    letterSpacing: 2,
-    marginBottom: spacing.md,
+    backgroundColor:  colors.creamLight,
+    borderRadius:     borderRadius.md,
+    padding:          spacing.md,
+    width:            '100%',
+    fontSize:         typography.sizes.md,
+    fontFamily:       'Nunito_500Medium',
+    color:            colors.text,
+    textAlign:        'center',
+    letterSpacing:    3,
+    marginBottom:     spacing.md,
+    borderWidth:      1,
+    borderColor:      colors.border,
   },
-  adminSubmitButton: {
+  adminSubmitBtn: {
     backgroundColor: colors.mossGreen,
-    paddingVertical: spacing.md,
+    paddingVertical:   spacing.md,
     paddingHorizontal: spacing.xxl,
-    borderRadius: borderRadius.lg,
-    width: '100%',
-    alignItems: 'center',
+    borderRadius:      borderRadius.lg,
+    width:             '100%',
+    alignItems:        'center',
   },
   adminSubmitText: {
-    fontSize: typography.sizes.md,
+    fontSize:   typography.sizes.md,
     fontFamily: 'Nunito_600SemiBold',
-    color: colors.softWhite,
-  },
-  aboutSection: {
-    alignItems: 'center',
-    marginTop: spacing.xl,
-    paddingVertical: spacing.xl,
-  },
-  appName: {
-    fontSize: typography.sizes.xl,
-    fontFamily: 'Cormorant_700Bold',
-    color: colors.textOnDark,
-  },
-  version: {
-    fontSize: typography.sizes.sm,
-    fontFamily: 'Nunito_400Regular',
-    color: colors.textOnDark,
-    opacity: 0.7,
-    marginTop: spacing.xs,
-  },
-  tagline: {
-    fontSize: typography.sizes.sm,
-    fontFamily: 'Nunito_400Regular',
-    color: colors.textOnDark,
-    marginTop: spacing.sm,
-    fontStyle: 'italic',
-    opacity: 0.9,
-  },
-  crisisButton: {
-    backgroundColor: '#8B5A2B',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: spacing.lg,
-    paddingHorizontal: spacing.lg,
-    borderRadius: borderRadius.lg,
-    marginBottom: spacing.lg,
-    gap: spacing.sm,
-    shadowColor: '#8B5A2B',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    elevation: 5,
-  },
-  crisisButtonText: {
-    color: colors.softWhite,
-    fontSize: typography.sizes.md,
-    fontFamily: 'Nunito_700Bold',
-  },
-  communityRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: spacing.md,
-    gap: spacing.md,
-  },
-  communityIconBg: {
-    width: 56,
-    height: 56,
-    borderRadius: borderRadius.full,
-    backgroundColor: colors.creamLight,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  communityContent: {
-    flex: 1,
-  },
-  communityTitle: {
-    fontSize: typography.sizes.md,
-    fontFamily: 'Nunito_600SemiBold',
-    color: colors.text,
-  },
-  communityCount: {
-    fontSize: typography.sizes.xl,
-    fontFamily: 'Cormorant_700Bold',
-    color: colors.mossGreen,
-    marginTop: spacing.xs,
-  },
-  communitySubtitle: {
-    fontSize: typography.sizes.sm,
-    fontFamily: 'Nunito_400Regular',
-    color: colors.textSecondary,
-    marginTop: spacing.xs,
-  },
-  notificationRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: spacing.md,
-  },
-  notificationContent: {
-    flex: 1,
-  },
-  notificationTitle: {
-    fontSize: typography.sizes.md,
-    fontFamily: 'Nunito_600SemiBold',
-    color: colors.text,
-  },
-  notificationSubtitle: {
-    fontSize: typography.sizes.sm,
-    fontFamily: 'Nunito_400Regular',
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
-  toggle: {
-    width: 50,
-    height: 50,
-    borderRadius: borderRadius.full,
-    backgroundColor: colors.creamLight,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: colors.border,
-  },
-  toggleActive: {
-    backgroundColor: colors.mossGreen,
-    borderColor: colors.mossGreen,
-  },
-  toggleText: {
-    fontSize: typography.sizes.xl,
-    fontFamily: 'Nunito_700Bold',
-    color: colors.text,
-  },
-  timePickerSection: {
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    paddingTop: spacing.md,
-    paddingHorizontal: spacing.md,
-    paddingBottom: spacing.md,
-  },
-  timeLabel: {
-    fontSize: typography.sizes.sm,
-    fontFamily: 'Nunito_600SemiBold',
-    color: colors.textSecondary,
-    textTransform: 'uppercase',
-    marginBottom: spacing.sm,
-    letterSpacing: 0.5,
-  },
-  timePicker: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.md,
-  },
-  timeInputGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    flex: 1,
-  },
-  timeInput: {
-    flex: 1,
-    backgroundColor: colors.creamLight,
-    borderRadius: borderRadius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.sm,
-    fontSize: typography.sizes.lg,
-    fontFamily: 'Nunito_600SemiBold',
-    color: colors.text,
-    textAlign: 'center',
-    minHeight: 50,
-  },
-  timeSeparator: {
-    fontSize: typography.sizes.xl,
-    fontFamily: 'Nunito_600SemiBold',
-    color: colors.text,
-  },
-  timeExample: {
-    fontSize: typography.sizes.sm,
-    fontFamily: 'Nunito_500Medium',
-    color: colors.mossGreen,
+    color:      colors.softWhite,
   },
 });

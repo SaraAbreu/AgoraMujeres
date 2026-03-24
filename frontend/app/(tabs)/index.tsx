@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,55 +9,72 @@ import {
   Platform,
   Dimensions,
 } from 'react-native';
-import { useTranslation } from 'react-i18next';
 import { useRouter } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { Image } from 'expo-image';
-import { colors, spacing, borderRadius, typography } from '../../src/theme/colors';
+import { BRAND_COLORS, spacing, borderRadius, typography, shadows } from '../../src/theme/colors';
 import { useStore } from '../../src/store/useStore';
 import { getSubscriptionStatus, getWeather } from '../../src/services/api';
 import { WeeklyStatsCard } from '../../src/components/WeeklyStatsCard';
+import { ResponsiveLayout } from '../../src/components/ResponsiveLayout';
+import { useResponsive } from '../../src/hooks/useResponsive';
 import * as Location from 'expo-location';
 
-const LOGO_URL = require('../../assets/images/agora-logo.png');
-const ICON_SIZE = Platform.OS === 'web' ? 28 : 24;
-const isWeb = Platform.OS === 'web';
 const screenWidth = Dimensions.get('window').width;
-const MAX_WIDTH = isWeb ? 1200 : 800;
+
+// Premium Action Cards
+const PREMIUM_ACTIONS = [
+  { id: 'talk', label: 'Hablar con Ágora', color: '#C98D5E', route: '/(tabs)/chat', emoji: '💬' },
+  { id: 'write', label: 'Escribir Diario', color: '#9FA89F', route: '/diary/new', emoji: '✍️' },
+  { id: 'patterns', label: 'Mis Patrones', color: '#B8956A', route: '/(tabs)/patterns', emoji: '📊' },
+  { id: 'track', label: 'Registro Mensual', color: '#A07B7B', route: '/(tabs)/monthly-record', emoji: '📅' },
+  { id: 'resources', label: 'Recursos', color: '#7A9B8E', route: '/resources', emoji: '📚' },
+  { id: 'wellbeing', label: 'Bienestar', color: '#8FA89F', route: '/cycle', emoji: '🌿' },
+];
+
+// Wellness Tips  
+const WELLNESS_TIPS = [
+  { icon: 'water-outline', title: 'Hidratación', subtitle: 'Bebe agua regularmente para mantener tu cuerpo en equilibrio' },
+  { icon: 'moon-outline', title: 'Descanso', subtitle: 'El sueño es fundamental para tu salud emocional y física' },
+  { icon: 'flower-outline', title: 'Respira', subtitle: 'Tómate un momento para respirar profundamente' },
+  { icon: 'heart-outline', title: 'Cuidados', subtitle: 'Hoy es un buen día para quererte a ti misma' },
+];
 
 export default function HomeScreen() {
-  const { t } = useTranslation();
   const router = useRouter();
   const { deviceId, subscriptionStatus, setSubscriptionStatus } = useStore();
+  const responsive = useResponsive();
+
   const [weather, setWeather] = useState<any>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [tipIndex, setTipIndex] = useState(0);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     if (!deviceId) return;
-    
     try {
       const status = await getSubscriptionStatus(deviceId);
       setSubscriptionStatus(status);
-      
       try {
         const { status: locStatus } = await Location.requestForegroundPermissionsAsync();
         if (locStatus === 'granted') {
-          const location = await Location.getCurrentPositionAsync({});
-          const weatherData = await getWeather(location.coords.latitude, location.coords.longitude);
-          setWeather(weatherData);
+          const loc = await Location.getCurrentPositionAsync({});
+          const w = await getWeather(loc.coords.latitude, loc.coords.longitude);
+          setWeather(w);
         }
-      } catch (e) {
-        console.log('Weather not available');
+      } catch {
+        // Weather optional
       }
-    } catch (error) {
-      console.error('Error loading data:', error);
+    } catch (e) {
+      console.error('[Home] loadData:', e);
     }
-  };
+  }, [deviceId, setSubscriptionStatus]);
 
   useEffect(() => {
     loadData();
-  }, [deviceId]);
+    const tipTimer = setInterval(() => {
+      setTipIndex(prev => (prev + 1) % WELLNESS_TIPS.length);
+    }, 8000);
+    return () => clearInterval(tipTimer);
+  }, [loadData]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -65,472 +82,196 @@ export default function HomeScreen() {
     setRefreshing(false);
   };
 
-  const formatTrialTime = () => {
-    if (!subscriptionStatus?.trial_remaining_seconds) return null;
-    const hours = Math.floor(subscriptionStatus.trial_remaining_seconds / 3600);
-    const minutes = Math.floor((subscriptionStatus.trial_remaining_seconds % 3600) / 60);
-    return `${hours}h ${minutes}m`;
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return { text: 'Buenos días', emoji: '🌅' };
+    if (hour < 18) return { text: 'Buenas tardes', emoji: '☀️' };
+    return { text: 'Buenas noches', emoji: '🌙' };
   };
 
-  const getWeatherIcon = (condition: string) => {
-    const icons: Record<string, string> = {
-      clear: 'sunny-outline',
-      mainly_clear: 'sunny-outline',
-      partly_cloudy: 'partly-sunny-outline',
-      overcast: 'cloudy-outline',
-      fog: 'cloudy-outline',
-      drizzle: 'rainy-outline',
-      rain: 'rainy-outline',
-      snow: 'snow-outline',
-      showers: 'rainy-outline',
-      thunderstorm: 'thunderstorm-outline',
-    };
-    return icons[condition] || 'partly-sunny-outline';
-  };
+  const greeting = getGreeting();
+  const styles = getResponsiveStyles(responsive);
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <ResponsiveLayout backgroundColor="#FDFBF9">
       <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.content}
+        style={styles.scroll}
+        contentContainerStyle={styles.contentContainer}
         refreshControl={
-          <RefreshControl 
-            refreshing={refreshing} 
-            onRefresh={onRefresh} 
-            tintColor={colors.softWhite}
-            colors={[colors.warmBrown]}
-          />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={BRAND_COLORS.crisisBtn} />
         }
         showsVerticalScrollIndicator={false}
       >
-        {/* Header with Logo */}
-        <View style={styles.header}>
-          <Image
-            source={LOGO_URL}
-            style={styles.headerLogo as any}
-            contentFit="contain"
-          />
-        </View>
+        {/* HEADER - Welcome Section */}
+        <View style={styles.headerSection}>
+          <View style={styles.greetingContainer}>
+            <Text style={styles.emoji}>{greeting.emoji}</Text>
+            <View style={styles.greetingText}>
+              <Text style={styles.greetingMain}>{greeting.text}</Text>
+              <Text style={styles.greetingLabel}>Bienvenida a tu espacio</Text>
+            </View>
+          </View>
 
-        {/* Welcome Card */}
-        <View style={styles.welcomeCard}>
-          <Text style={styles.welcomeTitle}>{t('appName')}</Text>
-          <Text style={styles.tagline}>
-            {t('tagline')}
-          </Text>
-          
-          {/* Trial/Subscription Status */}
+          {/* Status Badge */}
           {subscriptionStatus?.status === 'trial' && (
-            <TouchableOpacity 
-              style={styles.trialBadge}
-              onPress={() => router.push('/subscription')}
-            >
-              <Ionicons name="time-outline" size={16} color={colors.warmBrown} />
-              <Text style={styles.trialText}>
-                {t('trialRemaining')}: {formatTrialTime()}
+            <View style={[styles.statusBadge, styles.trialBadge]}>
+              <Ionicons name="time-outline" size={14} color="#80704F" />
+              <Text style={styles.badgeText}>
+                {formatTrialTime(subscriptionStatus.trial_remaining_seconds || 0)}
               </Text>
-              <Ionicons name="chevron-forward" size={16} color={colors.warmBrown} />
-            </TouchableOpacity>
+            </View>
           )}
-
           {subscriptionStatus?.status === 'expired' && (
-            <TouchableOpacity 
-              style={[styles.trialBadge, styles.expiredBadge]}
-              onPress={() => router.push('/subscription')}
-            >
-              <Ionicons name="alert-circle-outline" size={16} color={colors.error} />
-              <Text style={[styles.trialText, { color: colors.error }]}>
-                {t('trialExpired')}
-              </Text>
-              <Ionicons name="chevron-forward" size={16} color={colors.error} />
-            </TouchableOpacity>
+            <View style={[styles.statusBadge, styles.expiredBadge]}>
+              <Ionicons name="alert-circle-outline" size={14} color="#A07B7B" />
+              <Text style={styles.expiredBadgeText}>Prueba finalizada</Text>
+            </View>
+          )}
+          {subscriptionStatus?.status === 'active' && (
+            <View style={[styles.statusBadge, styles.activeBadge]}>
+              <Ionicons name="checkmark-circle" size={14} color="#7A9B8E" />
+              <Text style={styles.activeBadgeText}>Activo</Text>
+            </View>
           )}
         </View>
 
-        {/* Motivational Card */}
-        <View style={styles.reminderCard}>
-          <Ionicons name="heart" size={22} color={colors.warmBrown} />
-          <Text style={styles.reminderText}>
-            {t('dailyReminder')}
-          </Text>
-        </View>
-
-        {/* Crisis Button - Visible & Accessible */}
+        {/* CRISIS BUTTON */}
         <TouchableOpacity
-          style={styles.crisisButton}
+          style={[styles.crisisButton, shadows.lg]}
           onPress={() => router.push('/crisis')}
-          activeOpacity={0.75}
+          activeOpacity={0.85}
         >
-          <Ionicons name="alert-circle" size={22} color={colors.softWhite} />
-          <Text style={styles.crisisButtonText}>{t('hurtsEverywhere')}</Text>
-          <Text style={styles.crisisButtonSub}>{t('hurtsEverywhereSub')}</Text>
+          <View style={styles.crisisGradient}>
+            <View style={styles.crisisLeft}>
+              <Text style={styles.crisisEmoji}>🆘</Text>
+              <View style={styles.crisisTextBlock}>
+                <Text style={styles.crisisTitle}>Necesito ayuda</Text>
+                <Text style={styles.crisisSubtitle}>Crisis 24/7</Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={24} color="#fff" />
+          </View>
         </TouchableOpacity>
 
+        {/* WELLNESS TIP */}
+        <View style={[styles.wellnessTipCard, shadows.md]}>
+          <View style={styles.tipIconWrapper}>
+            <Ionicons name={WELLNESS_TIPS[tipIndex].icon as any} size={20} color="#80704F" />
+          </View>
+          <View style={styles.tipContent}>
+            <Text style={styles.tipTitle}>{WELLNESS_TIPS[tipIndex].title}</Text>
+            <Text style={styles.tipSubtitle}>{WELLNESS_TIPS[tipIndex].subtitle}</Text>
+          </View>
+        </View>
 
-        {/* Weather Card */}
+        {/* QUICK ACTIONS */}
+        <View style={styles.actionsContainer}>
+          <Text style={styles.sectionTitle}>Qué necesitas hoy</Text>
+          <View style={styles.actionsGrid}>
+            {PREMIUM_ACTIONS.map((action) => (
+              <TouchableOpacity
+                key={action.id}
+                style={[styles.actionCard, shadows.md]}
+                onPress={() => router.push(action.route as any)}
+                activeOpacity={0.75}
+              >
+                <View style={[styles.actionColorBg, { backgroundColor: action.color }]}>
+                  <Text style={styles.actionEmojiLarge}>{action.emoji}</Text>
+                </View>
+                <Text style={styles.actionCardLabel}>{action.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        {/* WEATHER */}
         {weather && (
-          <View style={styles.weatherCard}>
-            <Ionicons 
-              name={getWeatherIcon(weather.condition) as any} 
-              size={28} 
-              color={colors.warmBrown} 
-            />
+          <View style={[styles.weatherCard, shadows.sm]}>
+            <Ionicons name="partly-sunny-outline" size={20} color="#80704F" />
             <View style={styles.weatherInfo}>
               <Text style={styles.weatherTemp}>{Math.round(weather.temperature)}°C</Text>
-              <Text style={styles.weatherDetail}>
-                {t('humidity')}: {weather.humidity}%
-              </Text>
+              <Text style={styles.weatherHumidity}>{weather.humidity}% humedad</Text>
             </View>
           </View>
         )}
 
-        {/* Quick Actions */}
-        <Text style={styles.sectionTitle}>{t('quickActions')}</Text>
-        
-        <View style={styles.actionsGrid}>
-          <View style={styles.actionsRow}>
-            <TouchableOpacity
-              style={styles.actionCard}
-              onPress={() => router.push('/diary/new')}
-              activeOpacity={0.8}
-            >
-              <View style={[styles.actionIcon, { backgroundColor: '#8B5A2B' }]}>
-                <Ionicons name="create-outline" size={ICON_SIZE} color={colors.softWhite} />
-              </View>
-              <Text style={styles.actionTitle}>{t('writeEntry')}</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.actionCard}
-              onPress={() => router.push('/(tabs)/chat')}
-              activeOpacity={0.8}
-            >
-              <View style={[styles.actionIcon, { backgroundColor: '#B87333' }]}>
-                <Ionicons name="leaf-outline" size={ICON_SIZE} color={colors.softWhite} />
-              </View>
-              <Text style={styles.actionTitle}>{t('talkToAgora')}</Text>
-            </TouchableOpacity>
+        {/* WEEKLY STATS */}
+        {deviceId && (
+          <View style={styles.statsSection}>
+            <Text style={styles.sectionTitle}>Tu semana</Text>
+            <WeeklyStatsCard deviceId={deviceId} />
           </View>
+        )}
 
-          <View style={styles.actionsRow}>
-            <TouchableOpacity
-              style={styles.actionCard}
-              onPress={() => router.push('/(tabs)/patterns')}
-              activeOpacity={0.8}
-            >
-              <View style={[styles.actionIcon, { backgroundColor: '#D4956A' }]}>
-                <Ionicons name="analytics-outline" size={ICON_SIZE} color={colors.softWhite} />
-              </View>
-              <Text style={styles.actionTitle}>{t('viewPatterns')}</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.actionCard}
-              onPress={() => router.push('/monthly-record')}
-              activeOpacity={0.8}
-            >
-              <View style={[styles.actionIcon, { backgroundColor: '#8A8C6C' }]}>
-                <Ionicons name="medical-outline" size={ICON_SIZE} color={colors.softWhite} />
-              </View>
-              <Text style={styles.actionTitle}>{t('monthlyRecord')}</Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.actionsRow}>
-            <TouchableOpacity
-              style={styles.actionCard}
-              onPress={() => router.push('/resources')}
-              activeOpacity={0.8}
-            >
-              <View style={[styles.actionIcon, { backgroundColor: '#9E7B5D' }]}>
-                <Ionicons name="library-outline" size={ICON_SIZE} color={colors.softWhite} />
-              </View>
-              <Text style={styles.actionTitle}>{t('resources')}</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.actionCard}
-              onPress={() => router.push('/cycle')}
-              activeOpacity={0.8}
-            >
-              <View style={[styles.actionIcon, { backgroundColor: '#A67C5B' }]}>
-                <Ionicons name="calendar-outline" size={ICON_SIZE} color={colors.softWhite} />
-              </View>
-              <Text style={styles.actionTitle}>{t('cycleTracking')}</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Weekly Stats Card */}
-        <WeeklyStatsCard deviceId={deviceId} />
-
+        <View style={{ height: 20 }} />
       </ScrollView>
-    </SafeAreaView>
+    </ResponsiveLayout>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#80704f',
-  },
-  scrollView: {
-    flex: 1,
-    width: '100%',
-    alignSelf: 'center',
-  },
-  content: {
-    paddingHorizontal: isWeb ? Math.max(spacing.lg, (screenWidth - MAX_WIDTH) / 2) : spacing.lg,
-    paddingVertical: isWeb ? spacing.xl : spacing.lg,
-    paddingBottom: spacing.xxl,
-    maxWidth: MAX_WIDTH,
-    alignSelf: 'center',
-    width: '100%',
-  },
-  header: {
-    alignItems: 'center',
-    marginBottom: isWeb ? spacing.md : spacing.lg,
-    backgroundColor: 'transparent',
-  },
-  headerLogo: {
-    width: isWeb ? 240 : 320,
-    height: isWeb ? 240 : 320,
-    backgroundColor: 'transparent',
-    resizeMode: 'contain',
-  },
-  tagline: {
-    fontSize: isWeb ? 16 : typography.sizes.sm,
-    fontFamily: 'Nunito_500Medium',
-    color: '#8B5A2B',
-    textAlign: 'center',
-    marginTop: isWeb ? 0 : spacing.xs,
-    marginBottom: isWeb ? spacing.lg : spacing.md,
-    fontStyle: 'italic',
-    lineHeight: isWeb ? 22 : 20,
-  },
-  welcomeCard: {
-    backgroundColor: colors.surface,
-    padding: isWeb ? spacing.md : spacing.md,
-    borderRadius: borderRadius.lg,
-    marginBottom: spacing.md,
-    shadowColor: colors.shadowDark,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 1,
-    shadowRadius: 12,
-    elevation: 4,
-    alignItems: 'center',
-  },
-  welcomeTitle: {
-    fontSize: isWeb ? 22 : typography.sizes.md,
-    fontFamily: 'Cormorant_700Bold',
-    color: colors.warmBrown,
-    textAlign: 'center',
-    lineHeight: isWeb ? 28 : 26,
-  },
-  howAreYouCard: {
-    backgroundColor: colors.surface,
-    padding: isWeb ? spacing.md : spacing.md,
-    borderRadius: borderRadius.lg,
-    marginBottom: spacing.md,
-    shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 1,
-    shadowRadius: 6,
-    elevation: 2,
-    alignItems: 'center',
-  },
-  howAreYouText: {
-    fontSize: isWeb ? 16 : typography.sizes.md,
-    fontFamily: 'Nunito_500Medium',
-    color: colors.text,
-    lineHeight: 24,
-  },
-  crisisButton: {
-    backgroundColor: '#8B5A2B',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: isWeb ? spacing.lg : spacing.md,
-    paddingHorizontal: spacing.lg,
-    borderRadius: borderRadius.lg,
-    marginBottom: spacing.lg,
-    gap: spacing.sm,
-    shadowColor: '#8B5A2B',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    elevation: 5,
-  },
-  crisisButtonText: {
-    color: colors.softWhite,
-    fontSize: isWeb ? 17 : typography.sizes.md,
-    fontFamily: 'Nunito_700Bold',
-  },
-  quickEntryCard: {
-    backgroundColor: colors.surface,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: isWeb ? spacing.lg : spacing.md,
-    borderRadius: borderRadius.lg,
-    marginBottom: spacing.lg,
-    borderLeftWidth: 4,
-    borderLeftColor: colors.warmBrown,
-    shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 1,
-    shadowRadius: 6,
-    elevation: 2,
-  },
-  quickEntryTitle: {
-    fontSize: isWeb ? 16 : typography.sizes.sm,
-    fontFamily: 'Nunito_600SemiBold',
-    color: colors.text,
-    marginBottom: spacing.xs,
-    lineHeight: 20,
-  },
-  quickEntrySubtitle: {
-    fontSize: isWeb ? 14 : typography.sizes.xs,
-    fontFamily: 'Nunito_400Regular',
-    color: colors.textSecondary,
-  },
-  quickEntryButton: {
-    backgroundColor: colors.warmBrown,
-    width: 44,
-    height: 44,
-    borderRadius: borderRadius.full,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  welcomeSubtitle: {
-    fontSize: typography.sizes.md,
-    fontFamily: 'Nunito_400Regular',
-    color: colors.textSecondary,
-  },
-  trialBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.creamLight,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: borderRadius.full,
-    marginTop: spacing.md,
-    gap: spacing.xs,
-    alignSelf: 'center',
-  },
-  expiredBadge: {
-    backgroundColor: colors.accentLight,
-  },
-  trialText: {
-    fontSize: typography.sizes.sm,
-    fontFamily: 'Nunito_500Medium',
-    color: colors.warmBrown,
-  },
-  weatherCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    padding: isWeb ? spacing.lg : spacing.md,
-    borderRadius: borderRadius.md,
-    marginBottom: spacing.lg,
-    gap: spacing.md,
-    shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 1,
-    shadowRadius: 6,
-    elevation: 2,
-  },
-  weatherInfo: {
-    flex: 1,
-  },
-  weatherTemp: {
-    fontSize: typography.sizes.lg,
-    fontFamily: 'Nunito_600SemiBold',
-    color: colors.text,
-    lineHeight: 22,
-  },
-  weatherDetail: {
-    fontSize: typography.sizes.xs,
-    fontFamily: 'Nunito_400Regular',
-    color: colors.textSecondary,
-  },
-  sectionTitle: {
-    fontSize: isWeb ? 26 : typography.sizes.lg,
-    fontFamily: 'Cormorant_600SemiBold',
-    color: colors.textOnDark,
-    marginBottom: spacing.lg,
-    marginTop: spacing.lg,
-    lineHeight: isWeb ? 30 : 28,
-  },
-  actionsGrid: {
-    marginBottom: spacing.lg,
-    gap: isWeb ? 12 : 8,
-    flexWrap: isWeb ? 'wrap' : undefined,
-    flexDirection: isWeb ? 'row' : undefined,
-  },
-  actionsRow: {
-    flexDirection: 'row',
-    gap: isWeb ? 16 : 0,
-    justifyContent: isWeb ? 'space-around' : 'space-between',
-    width: isWeb ? '100%' : undefined,
-  },
-  actionCard: {
-    flex: isWeb ? undefined : 1,
-    width: isWeb ? '33.33%' : undefined,
-    backgroundColor: colors.surface,
-    padding: isWeb ? spacing.md : spacing.md,
-    borderRadius: borderRadius.lg,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 1,
-    shadowRadius: 6,
-    elevation: 2,
-    minHeight: isWeb ? 130 : 100,
-    marginHorizontal: isWeb ? 1 : undefined,
-  },
-  actionIcon: {
-    width: isWeb ? 56 : 52,
-    height: isWeb ? 56 : 52,
-    borderRadius: borderRadius.md,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: spacing.sm,
-  },
-  actionTitle: {
-    fontSize: isWeb ? 14 : typography.sizes.sm,
-    fontFamily: 'Nunito_500Medium',
-    color: colors.text,
-    textAlign: 'center',
-    lineHeight: 18,
-  },
-  reminderCard: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: colors.surface,
-    padding: isWeb ? spacing.xl : spacing.lg,
-    borderRadius: borderRadius.lg,
-    gap: spacing.md,
-    shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 1,
-    shadowRadius: 6,
-    elevation: 2,
-  },
-  reminderText: {
-    flex: 1,
-    fontSize: isWeb ? 15 : typography.sizes.sm,
-    fontFamily: 'Nunito_400Regular',
-    color: colors.text,
-    lineHeight: 24,
-    fontStyle: 'italic',
-  },
-  crisisButtonSub: {
-    fontSize: isWeb ? 12 : 11,
-    fontFamily: 'Nunito_400Regular',
-    color: colors.softWhite,
-    opacity: 0.9,
-    lineHeight: 16,
-  },
-});
+function formatTrialTime(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
+function getResponsiveStyles(responsive: ReturnType<typeof useResponsive>) {
+  const { isDesktop, isTablet } = responsive;
+  const paddingX = isDesktop ? 60 : isTablet ? 40 : 20;
+
+  return StyleSheet.create({
+    scroll: { flex: 1 },
+    contentContainer: { paddingHorizontal: paddingX, paddingTop: spacing.lg, paddingBottom: 40 },
+    
+    // HEADER
+    headerSection: { marginBottom: spacing.xl, paddingBottom: spacing.lg, borderBottomWidth: 1, borderBottomColor: 'rgba(0,0,0,0.05)' },
+    greetingContainer: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.lg },
+    emoji: { fontSize: isDesktop ? 48 : isTablet ? 40 : 36 },
+    greetingText: { flex: 1 },
+    greetingMain: { fontSize: isDesktop ? 28 : isTablet ? 24 : 22, fontWeight: '700', fontFamily: 'Cormorant_700Bold', color: '#3D2B1A', marginBottom: 2 },
+    greetingLabel: { fontSize: isDesktop ? 13 : 12, color: '#B5A997', fontFamily: 'Nunito_400Regular' },
+
+    // Status Badge
+    statusBadge: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: borderRadius.full, alignSelf: 'flex-start' },
+    trialBadge: { backgroundColor: '#F5EFE5' },
+    badgeText: { fontSize: 12, fontWeight: '600', color: '#80704F', fontFamily: 'Nunito_600SemiBold' },
+    expiredBadge: { backgroundColor: 'rgba(160,123,123,0.1)' },
+    expiredBadgeText: { fontSize: 12, fontWeight: '600', color: '#A07B7B', fontFamily: 'Nunito_600SemiBold' },
+    activeBadge: { backgroundColor: 'rgba(122,155,142,0.1)' },
+    activeBadgeText: { fontSize: 12, fontWeight: '600', color: '#7A9B8E', fontFamily: 'Nunito_600SemiBold' },
+
+    // CRISIS BUTTON
+    crisisButton: { backgroundColor: '#7A3D36', borderRadius: borderRadius.lg, marginBottom: spacing.xl, overflow: 'hidden' },
+    crisisGradient: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.lg, paddingVertical: spacing.lg },
+    crisisLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, flex: 1 },
+    crisisEmoji: { fontSize: 32 },
+    crisisTextBlock: { flex: 1 },
+    crisisTitle: { fontSize: 16, fontWeight: '700', color: '#fff', fontFamily: 'Nunito_700Bold', marginBottom: 2 },
+    crisisSubtitle: { fontSize: 12, color: 'rgba(255,255,255,0.85)', fontFamily: 'Nunito_400Regular' },
+
+    // WELLNESS TIP
+    wellnessTipCard: { backgroundColor: '#fff', borderRadius: borderRadius.md, paddingHorizontal: spacing.lg, paddingVertical: spacing.lg, marginBottom: spacing.xl, flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+    tipIconWrapper: { width: 48, height: 48, backgroundColor: 'rgba(128,112,79,0.1)', borderRadius: borderRadius.md, justifyContent: 'center', alignItems: 'center' },
+    tipContent: { flex: 1 },
+    tipTitle: { fontSize: 14, fontWeight: '700', color: '#3D2B1A', fontFamily: 'Nunito_700Bold', marginBottom: 2 },
+    tipSubtitle: { fontSize: 12, color: '#8FA89F', fontFamily: 'Nunito_400Regular', lineHeight: 16 },
+
+    // ACTIONS
+    actionsContainer: { marginBottom: spacing.xl },
+    sectionTitle: { fontSize: isDesktop ? 18 : 16, fontWeight: '700', color: '#3D2B1A', fontFamily: 'Cormorant_700Bold', marginBottom: spacing.lg },
+    actionsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, justifyContent: 'space-between' },
+    actionCard: { width: isDesktop ? '31%' : '48%', backgroundColor: '#fff', borderRadius: borderRadius.lg, padding: spacing.md, alignItems: 'center', gap: spacing.sm },
+    actionColorBg: { width: '100%', aspectRatio: 1, borderRadius: borderRadius.md, justifyContent: 'center', alignItems: 'center', marginBottom: spacing.xs },
+    actionEmojiLarge: { fontSize: 36 },
+    actionCardLabel: { fontSize: 12, fontWeight: '600', color: '#3D2B1A', fontFamily: 'Nunito_600SemiBold', textAlign: 'center', lineHeight: 16 },
+
+    // WEATHER
+    weatherCard: { backgroundColor: '#fff', borderRadius: borderRadius.md, paddingHorizontal: spacing.lg, paddingVertical: spacing.md, marginBottom: spacing.xl, flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+    weatherInfo: { flex: 1 },
+    weatherTemp: { fontSize: 16, fontWeight: '700', color: '#3D2B1A', fontFamily: 'Nunito_700Bold' },
+    weatherHumidity: { fontSize: 12, color: '#B5A997', fontFamily: 'Nunito_400Regular' },
+
+    // STATS
+    statsSection: { marginTop: spacing.lg },
+  });
+}

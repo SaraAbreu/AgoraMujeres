@@ -6,690 +6,480 @@ import {
   TextInput,
   TouchableOpacity,
   FlatList,
+  SafeAreaView,
   KeyboardAvoidingView,
   Platform,
-  ActivityIndicator,
-  Image,
   Alert,
-  ImageBackground,
+  Animated,
+  Easing,
   Dimensions,
-  useColorScheme,
+  Switch,
+  Clipboard,
+  Share,
 } from 'react-native';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Feather } from '@expo/vector-icons';
 import Constants from 'expo-constants';
-import { useRouter } from 'expo-router';
-import { sendChatMessage, saveMessageReaction, getMessageReactions } from '../../src/services/api';
+import { colors } from '../../src/theme/colors';
+import { ChatBackground } from '../../src/components/ChatBackground';
+import { PaywallModal } from '../../src/components/PaywallModal';
+import { VoiceButton } from '../../src/components/VoiceButton';
+import { MessageActionsMenu } from '../../src/components/MessageActionsMenu';
+
+// Importamos los servicios y el store que ya están refactorizados
+import { sendChatMessage, saveMessageReaction, ChatMessage, Exercise } from '../../src/services/api';
 import { useStore } from '../../src/store/useStore';
+import { useVoice } from '../../src/hooks/useVoice';
 
-// Color scheme support for light and dark mode
-const createColors = (isDark: boolean) => ({
-  mossGreen: isDark ? '#6B8476' : '#7A9B82',
-  mossGreenDark: isDark ? '#4A5E54' : '#5A7A63',
-  mossGreenLight: isDark ? '#8FA799' : '#A3B8AB',
-  cream: isDark ? '#2A2A2A' : '#FDFBF9',
-  text: isDark ? '#E8E8E8' : '#3D3D3D',
-  lightText: isDark ? '#A8A8A8' : '#8B8B8B',
-  accentWarm: isDark ? '#C99563' : '#D4A574',
-  accentSoft: isDark ? '#3E3B38' : '#E8D5C4',
-  background: isDark ? '#1A1A1A' : '#F5F3F0',
-});
-
-interface Message {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  exercises?: Exercise[];
-}
-
-interface Exercise {
-  title: string;
-  description: string;
-  duration: string;
-  difficulty: 'fácil' | 'moderado' | 'avanzado';
-}
-
-interface ExerciseFeedback {
-  exerciseTitle: string;
-  status: 'attempted' | 'skipped';
-  messageId: string;
-}
+// Dimensiones para diseño responsivo
+const isWeb = Platform.OS === 'web';
+const screenWidth = Dimensions.get('window').width;
+const isSmallScreen = screenWidth < 480;
 
 const INITIAL_MESSAGE = `Hola, soy Ágora 💚
 
-Fui creada especialmente para ti - para acompañarte en tu experiencia con fibromialgia, dolor crónico y fatiga. Aquí no hay prisa, no hay juicio. 
+Fui creada especialmente para acompañar a mujeres que viven con dolor crónico. Aquí no hay prisa, no hay juicio. 
 
-💙 Entiendo que:
-• Tu dolor es real y válido
-• Algunos días son más difíciles que otros
-• A veces ni tú misma entiendes qué te duele
-• Necesitas sentirte escuchada
+Soy tu espacio seguro. Aquí puedes contar TODO: lo físico, lo emocional, lo que nadie entiende. ✨ No estás sola en esto.`;
 
-Soy tu espacio seguro. Cuéntame cómo te sientes hoy - qué duele, qué te agota, qué te preocupa. Y si lo considero útil, te ofreceré ejercicios gentiles adaptados a lo que compartiste.
+// Componente para los puntos de escritura (Animación)
+function TypingDot({ delay }: { delay: number }) {
+  const anim = useRef(new Animated.Value(0)).current;
 
-✨ Aquí estoy por ti.`;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.delay(delay),
+        Animated.timing(anim, {
+          toValue: -10,
+          duration: 300,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(anim, {
+          toValue: 0,
+          duration: 300,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.delay(800),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [delay, anim]);
+
+  return (
+    <Animated.View style={[styles.typingDot, { transform: [{ translateY: anim }] }]} />
+  );
+}
 
 export default function ChatScreen() {
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
-  const colors = createColors(isDark);
-  
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      role: 'assistant',
-      content: INITIAL_MESSAGE,
-    }
-  ]);
-  
+  const { deviceId, diaryMessageToPushToChat, setDiaryMessageToPushToChat, enableVoiceOutput, setEnableVoiceOutput, loadSettings } = useStore();
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [conversationId, setConversationId] = useState<string>('');
-  const [exerciseFeedback, setExerciseFeedback] = useState<ExerciseFeedback[]>([]);
-  const [messageReactions, setMessageReactions] = useState<Record<string, Record<string, number>>>({});
-  const flatListRef = useRef<FlatList<Message>>(null);
-  const [deviceId] = useState(() => `device-${Date.now()}`);
-  const screenWidth = Dimensions.get('window').width;
-  
-  // Get API URL from constants
-  const getApiUrl = () => {
-    try {
-      const extraUrl = Constants.expoConfig?.extra?.EXPO_PUBLIC_BACKEND_URL;
-      if (extraUrl) {
-        console.log('[Chat] Using backend URL:', extraUrl);
-        return extraUrl;
-      }
-    } catch (e) {
-      console.log('[Chat] Could not read expo config:', e);
-    }
-    console.log('[Chat] Using fallback localhost URL');
-    return 'http://localhost:8000';
-  };
-  
-  const apiUrl = getApiUrl();
+  const [showPaywall, setShowPaywall] = useState(false);
+  const [showMessageMenu, setShowMessageMenu] = useState(false);
+  const [selectedMessageIndex, setSelectedMessageIndex] = useState<number | null>(null);
+  const flatListRef = useRef<FlatList>(null);
 
-  const sendMessage = async () => {
-    if (!input.trim()) return;
+  // Hook de voz
+  const backendUrl = Constants.expoConfig?.extra?.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+  
+  const {
+    isListening,
+    isSpeaking,
+    startListening,
+    stopListening,
+    speak,
+    cleanup,
+  } = useVoice({
+    language: 'es-ES',
+    deviceId: deviceId || 'default-device',
+    baseUrl: backendUrl,
+    enableSpeak: enableVoiceOutput,  // Pasar la preferencia del usuario
+    onResult: (text) => {
+      // Agregar el texto reconocido al input
+      setInput(prev => prev + (prev.trim() ? ' ' : '') + text);
+    },
+    onError: (error) => {
+      Alert.alert('Error de voz', error);
+    },
+  });
+
+  // Inicializar con mensaje de bienvenida
+  useEffect(() => {
+    if (messages.length === 0) {
+      setMessages([{
+        role: 'assistant',
+        content: INITIAL_MESSAGE,
+        created_at: new Date().toISOString(),
+      }]);
+    }
     
-    setMessages(prev => [...prev, { id: Date.now().toString(), role: 'user', content: input }]);
-    const userMessage = input;
-    setInput('');
+    // Cargar preferencias guardadas
+    loadSettings();
+    
+    return () => {
+      cleanup();
+    };
+  }, [cleanup, loadSettings]);
+
+  // Escuchar si viene un mensaje desde el Diario (handleWantToTalk)
+  useEffect(() => {
+    if (diaryMessageToPushToChat && deviceId) {
+      handleSendMessage(diaryMessageToPushToChat);
+      setDiaryMessageToPushToChat(null); // Limpiar mensaje procesado
+    }
+  }, [diaryMessageToPushToChat, deviceId]);
+
+  // Auto-scroll al final cuando hay mensajes nuevos
+  useEffect(() => {
+    if (flatListRef.current && messages.length > 0) {
+      flatListRef.current.scrollToEnd({ animated: true });
+    }
+  }, [messages, loading]);
+
+  const handleSendMessage = async (textOverride?: string) => {
+    const messageText = textOverride || input.trim();
+    if (!messageText || loading || !deviceId) return;
+
+    // 1. Añadir mensaje del usuario localmente
+    const userMessage: ChatMessage = {
+      role: 'user',
+      content: messageText,
+      created_at: new Date().toISOString(),
+    };
+
+    setMessages(prev => [...prev, userMessage]);
+    if (!textOverride) setInput('');
     setLoading(true);
 
     try {
-      const data = await sendChatMessage(userMessage, conversationId, deviceId);
-      
-      if (data.conversation_id) {
-        setConversationId(data.conversation_id);
+      // 2. Llamada a la API sólida
+      const data = await sendChatMessage(messageText, conversationId, deviceId);
+
+      // 3. Verificar si requiere suscripción
+      if (data.requires_subscription) {
+        setShowPaywall(true);
+        // Eliminamos el último mensaje del usuario para que no parezca enviado si no hubo respuesta
+        setMessages(prev => prev.slice(0, -1));
+        return;
       }
-      
+
+      if (data.conversation_id) setConversationId(data.conversation_id);
+
+      // 4. Añadir respuesta de Ágora
       setMessages(prev => [...prev, {
-        id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: data.response || 'Error',
+        content: data.response,
         exercises: data.exercises,
+        created_at: new Date().toISOString(),
       }]);
+
+      // 5. Reproducir respuesta si síntesis de voz está habilitada
+      if (enableVoiceOutput && data.response) {
+        await speak(data.response, 'es-ES');
+      }
+
     } catch (error) {
-      console.error('Error sending message:', error);
-      Alert.alert('Error', 'No se pudo enviar el mensaje. Por favor, intenta de nuevo.');
+      console.error('[Chat] Error:', error);
+      Alert.alert("Error", "No pude conectar con Ágora. Revisa tu conexión.");
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    flatListRef.current?.scrollToEnd({ animated: true });
-  }, [messages]);
-
-  useEffect(() => {
-    const sendDiaryMessage = async () => {
-      const { diaryMessageToPushToChat, setDiaryMessageToPushToChat } = useStore.getState();
-      
-      if (diaryMessageToPushToChat && diaryMessageToPushToChat.trim()) {
-        setMessages(prev => [...prev, { 
-          id: Date.now().toString(), 
-          role: 'user', 
-          content: diaryMessageToPushToChat 
-        }]);
-        
-        setLoading(true);
-        try {
-          const data = await sendChatMessage(diaryMessageToPushToChat, conversationId, deviceId);
-          
-          if (data.conversation_id) {
-            setConversationId(data.conversation_id);
-          }
-          
-          setMessages(prev => [...prev, {
-            id: (Date.now() + 1).toString(),
-            role: 'assistant',
-            content: data.response || 'Error',
-            exercises: data.exercises,
-          }]);
-        } catch (error) {
-          console.error('Error sending diary message:', error);
-        } finally {
-          setLoading(false);
-          setDiaryMessageToPushToChat(null);
-        }
-      }
-    };
+  // Copiar mensaje al portapapeles
+  const handleCopyMessage = async () => {
+    if (selectedMessageIndex === null) return;
     
-    sendDiaryMessage();
-  }, []);
-
-  const TypingIndicator = () => (
-    <View style={styles.typingContainer}>
-      <View style={[styles.typingDot, styles.dot1]} />
-      <View style={[styles.typingDot, styles.dot2]} />
-      <View style={[styles.typingDot, styles.dot3]} />
-    </View>
-  );
-
-  const router = useRouter();
-
-  const startNewConversation = () => {
-    setMessages([{
-      id: '1',
-      role: 'assistant',
-      content: INITIAL_MESSAGE,
-    }]);
-    setConversationId('');
-  };
-
-  const handleCrisis = () => {
-    router.push('/crisis');
-  };
-
-  const handleHistory = () => {
-    router.push('/conversations');
-  };
-
-  const handleExerciseFeedback = (messageId: string, exerciseTitle: string, status: 'attempted' | 'skipped') => {
-    setExerciseFeedback(prev => [
-      ...prev,
-      { messageId, exerciseTitle, status }
-    ]);
-    
-    const message = status === 'attempted' 
-      ? `¡Qué bien! Empezaste "${exerciseTitle}" 💚` 
-      : `Sin problema, puedes intentarlo en otro momento 🙏`;
-    
-    Alert.alert(
-      status === 'attempted' ? '¡Bien hecho!' : 'De acuerdo',
-      message,
-      [{ text: 'Continuar', onPress: () => {} }]
-    );
-  };
-
-  const handleReaction = async (messageId: string, reaction: string) => {
+    const message = messages[selectedMessageIndex];
     try {
-      await saveMessageReaction(deviceId, conversationId, messageId, reaction);
-      
-      setMessageReactions(prev => ({
-        ...prev,
-        [messageId]: {
-          ...prev[messageId],
-          [reaction]: (prev[messageId]?.[reaction] || 0) + 1
-        }
-      }));
+      await Clipboard.setString(message.content);
+      Alert.alert('Copiado', 'Mensaje copiado al portapapeles');
     } catch (error) {
-      console.error('Error saving reaction:', error);
+      console.error('Error copying message:', error);
+      Alert.alert('Error', 'No se pudo copiar el mensaje');
     }
   };
 
-  return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={[styles.header, { backgroundColor: colors.mossGreenDark, borderBottomColor: colors.mossGreen }]}>
-          <View style={styles.headerContent}>
-            <MaterialCommunityIcons name="leaf" size={24} color={colors.cream} />
-            <View>
-              <Text style={[styles.headerTitle, { color: colors.cream }]}>Conversa con Ágora</Text>
-              <Text style={[styles.headerSubtitle, { color: colors.mossGreenLight }]}>Tu espacio seguro</Text>
-            </View>
-          </View>
-          <View style={styles.headerButtons}>
-            <TouchableOpacity style={styles.emergencyBtn} onPress={handleCrisis}>
-              <Ionicons name="alert-circle" size={24} color="#FF6B6B" />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.headerBtn} onPress={handleHistory}>
-              <Ionicons name="time-outline" size={22} color={colors.cream} />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.headerBtn} onPress={startNewConversation}>
-              <Ionicons name="add-circle-outline" size={22} color={colors.cream} />
-            </TouchableOpacity>
-          </View>
-        </View>
+  // Compartir mensaje
+  const handleShareMessage = async () => {
+    if (selectedMessageIndex === null) return;
+    
+    const message = messages[selectedMessageIndex];
+    try {
+      await Share.share({
+        message: message.content,
+        title: 'Compartir mensaje de Ágora',
+      });
+    } catch (error) {
+      console.error('Error sharing message:', error);
+    }
+  };
 
-        <Image
-          source={require('../../assets/images/agora-logo.png')}
-          style={styles.logoWatermark}
-        />
+  // Eliminar mensaje
+  const handleDeleteMessage = async () => {
+    if (selectedMessageIndex === null) return;
+    
+    Alert.alert(
+      'Eliminar mensaje',
+      '¿Estás segura de que quieres eliminar este mensaje?',
+      [
+        { text: 'Cancelar', onPress: () => {}, style: 'cancel' },
+        {
+          text: 'Eliminar',
+          onPress: () => {
+            setMessages(prev => prev.filter((_, i) => i !== selectedMessageIndex));
+            setSelectedMessageIndex(null);
+          },
+          style: 'destructive',
+        },
+      ]
+    );
+  };
 
-        <FlatList
-          ref={flatListRef}
-          data={messages}
-          renderItem={({ item }) => (
-            <View style={styles.messageSectionContainer}>
-              <View>
-                <View style={[styles.messageBubble, item.role === 'user' ? styles.userMsg : styles.agoraMsg]}>
-                  {item.role === 'assistant' && (
-                    <View style={[styles.agoraAvatar, { backgroundColor: colors.mossGreenLight }]}>
-                      <MaterialCommunityIcons name="leaf" size={16} color={colors.mossGreen} />
-                    </View>
-                  )}
-                  <Text style={[styles.text, item.role === 'user' ? { ...styles.userText, color: colors.cream, backgroundColor: colors.accentWarm } : { ...styles.agoraText, color: colors.text, backgroundColor: colors.cream }]}>
-                    {item.content}
-                  </Text>
-                </View>
-                
-                {item.exercises && item.exercises.length > 0 && (
-                  <View style={styles.exercisesContainer}>
-                    <Text style={[styles.exercisesTitle, { color: colors.text }]}>💚 Ejercicios que podrían ayudarte:</Text>
-                    {item.exercises.map((exercise: Exercise, idx: number) => (
-                      <View key={idx} style={[styles.exerciseCard, { borderLeftColor: colors.mossGreen }]}>
-                        <View style={styles.exerciseHeader}>
-                          <Text style={[styles.exerciseTitle, { color: colors.text }]}>{exercise.title}</Text>
-                          <Text style={[styles.exerciseDifficulty, { 
-                            backgroundColor: exercise.difficulty === 'fácil' ? '#C8E6C9' : 
-                                           exercise.difficulty === 'moderado' ? '#FFE0B2' : '#FFCCBC'
-                          }]}>
-                            {exercise.difficulty}
-                          </Text>
-                        </View>
-                        <Text style={[styles.exerciseDescription, { color: colors.text }]}>{exercise.description}</Text>
-                        <Text style={[styles.exerciseDuration, { color: colors.lightText }]}>⏱️ {exercise.duration}</Text>
-                        
-                        <View style={styles.exerciseActionButtons}>
-                          <TouchableOpacity 
-                            style={styles.exerciseAttemptBtn}
-                            onPress={() => handleExerciseFeedback(item.id, exercise.title, 'attempted')}
-                          >
-                            <Ionicons name="checkmark-circle" size={18} color="#4CAF50" />
-                            <Text style={styles.exerciseAttemptBtnText}>Lo intentaré</Text>
-                          </TouchableOpacity>
-                          
-                          <TouchableOpacity 
-                            style={styles.exerciseSkipBtn}
-                            onPress={() => handleExerciseFeedback(item.id, exercise.title, 'skipped')}
-                          >
-                            <Ionicons name="close-circle" size={18} color="#9E9E9E" />
-                            <Text style={styles.exerciseSkipBtnText}>Saltear</Text>
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-                    ))}
-                  </View>
-                )}
+  const renderMessage = ({ item, index }: { item: ChatMessage; index: number }) => {
+    const isUser = item.role === 'user';
 
-                {item.role === 'assistant' && (
-                  <View style={styles.reactionButtons}>
-                    <TouchableOpacity 
-                      style={[styles.reactionBtn, { backgroundColor: colors.accentSoft }]}
-                      onPress={() => handleReaction(item.id, '💜')}
-                    >
-                      <Text style={styles.reactionEmoji}>💜</Text>
-                      {messageReactions[item.id]?.['💜'] ? (
-                        <Text style={[styles.reactionCount, { color: colors.text }]}>{messageReactions[item.id]?.['💜']}</Text>
-                      ) : null}
-                    </TouchableOpacity>
-                    <TouchableOpacity 
-                      style={[styles.reactionBtn, { backgroundColor: colors.accentSoft }]}
-                      onPress={() => handleReaction(item.id, '🙏')}
-                    >
-                      <Text style={styles.reactionEmoji}>🙏</Text>
-                      {messageReactions[item.id]?.['🙏'] ? (
-                        <Text style={[styles.reactionCount, { color: colors.text }]}>{messageReactions[item.id]?.['🙏']}</Text>
-                      ) : null}
-                    </TouchableOpacity>
-                    <TouchableOpacity 
-                      style={[styles.reactionBtn, { backgroundColor: colors.accentSoft }]}
-                      onPress={() => handleReaction(item.id, '✨')}
-                    >
-                      <Text style={styles.reactionEmoji}>✨</Text>
-                      {messageReactions[item.id]?.['✨'] ? (
-                        <Text style={[styles.reactionCount, { color: colors.text }]}>{messageReactions[item.id]?.['✨']}</Text>
-                      ) : null}
-                    </TouchableOpacity>
-                  </View>
-                )}
-              </View>
-            </View>
-          )}
-          keyExtractor={item => item.id}
-          contentContainerStyle={styles.messagesList}
-          scrollEnabled={true}
-        />
-
-        {loading && (
-          <View style={styles.typingSection}>
-            <View style={[styles.agoraAvatar, { backgroundColor: colors.mossGreenLight }]}>
-              <MaterialCommunityIcons name="leaf" size={16} color={colors.mossGreen} />
-            </View>
-            <TypingIndicator />
+    return (
+      <TouchableOpacity 
+        style={[styles.messageWrapper, isUser ? styles.wrapperUser : styles.wrapperAssistant]}
+        onLongPress={() => {
+          setSelectedMessageIndex(index);
+          setShowMessageMenu(true);
+        }}
+        activeOpacity={0.7}
+      >
+        {!isUser && (
+          <View style={styles.avatar}>
+            <Text style={styles.avatarEmoji}>🍃</Text>
           </View>
         )}
-
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={[styles.inputArea, { backgroundColor: colors.mossGreenDark, borderTopColor: colors.mossGreen }]}>
-          <View style={styles.inputContainer}>
-            <View style={[styles.inputWrapper, { backgroundColor: colors.cream }]}>
-              <TextInput
-                style={[styles.input, { color: colors.text }]}
-                placeholder="Cuéntame cómo te sientes..."
-                placeholderTextColor={colors.lightText}
-                value={input}
-                onChangeText={setInput}
-                multiline
-                editable={!loading}
-                maxLength={500}
-              />
-              <Text style={[styles.charCount, { color: colors.lightText }]}>{input.length}/500</Text>
+        <View style={[styles.messageBubble, isUser ? styles.bubbleUser : styles.bubbleAssistant]}>
+          <Text style={[styles.messageText, isUser ? styles.textUser : styles.textAssistant]}>
+            {item.content}
+          </Text>
+          
+          {/* Renderizado de Ejercicios si existen */}
+          {item.exercises && item.exercises.map((ex, idx) => (
+            <View key={idx} style={styles.exerciseCard}>
+              <Text style={styles.exerciseTitle}>🧘 {ex.title}</Text>
+              <Text style={styles.exerciseDesc}>{ex.description}</Text>
+              <View style={styles.exerciseFooter}>
+                <Text style={styles.exerciseTag}>{ex.duration}</Text>
+                <Text style={styles.exerciseTag}>{ex.difficulty}</Text>
+              </View>
             </View>
-            <TouchableOpacity
-              style={[styles.sendBtn, { backgroundColor: colors.mossGreenDark }, loading && styles.sendBtnDisabled]}
-              onPress={sendMessage}
+          ))}
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <ChatBackground>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.flex}
+          keyboardVerticalOffset={90}
+        >
+          {/* Header */}
+          <View style={styles.header}>
+            <View>
+              <Text style={styles.headerTitle}>Ágora</Text>
+              <Text style={styles.headerSubtitle}>En línea contigo</Text>
+            </View>
+            <View style={styles.headerActions}>
+              <View style={styles.voiceToggle}>
+                <Feather 
+                  name={enableVoiceOutput ? "volume-2" : "volume-x"} 
+                  size={18} 
+                  color="#F5F2EF" 
+                  style={{ marginRight: 8 }}
+                />
+                <Switch
+                  value={enableVoiceOutput}
+                  onValueChange={setEnableVoiceOutput}
+                  trackColor={{ false: '#767577', true: '#81C784' }}
+                  thumbColor={enableVoiceOutput ? '#4CAF50' : '#f4f3f4'}
+                />
+              </View>
+              <TouchableOpacity onPress={() => setMessages([])}>
+                <Feather name="refresh-cw" size={20} color="#F5F2EF" />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Lista de Mensajes */}
+          <FlatList
+            ref={flatListRef}
+            data={messages}
+            keyExtractor={(_, index) => index.toString()}
+            contentContainerStyle={styles.messagesList}
+            renderItem={renderMessage}
+            ListFooterComponent={loading ? (
+              <View style={styles.typingIndicator}>
+                <TypingDot delay={0} />
+                <TypingDot delay={200} />
+                <TypingDot delay={400} />
+              </View>
+            ) : null}
+          />
+
+          {/* Area de Input */}
+          <View style={styles.inputArea}>
+            <TextInput
+              style={styles.messageInput}
+              placeholder="Cuéntame cómo te sientes..."
+              placeholderTextColor="#aaa"
+              value={input}
+              onChangeText={setInput}
+              multiline
+              editable={!loading}
+            />
+            <VoiceButton
+              isListening={isListening}
+              isSpeaking={isSpeaking}
+              onPressStart={startListening}
+              onPressStop={stopListening}
               disabled={loading}
+            />
+            <TouchableOpacity
+              style={[styles.sendBtn, (!input.trim() || loading) && styles.sendBtnDisabled]}
+              onPress={() => handleSendMessage()}
+              disabled={loading || !input.trim()}
             >
-              {loading ? (
-                <ActivityIndicator color={colors.cream} size="small" />
-              ) : (
-                <Ionicons name="send" size={18} color={colors.cream} />
-              )}
+              <Feather name="send" size={20} color="#fff" />
             </TouchableOpacity>
           </View>
         </KeyboardAvoidingView>
-      </SafeAreaView>
-    );
+      </ChatBackground>
+
+      <PaywallModal 
+        visible={showPaywall} 
+        onClose={() => setShowPaywall(false)} 
+        deviceId={deviceId || ''} 
+      />
+
+      <MessageActionsMenu
+        visible={showMessageMenu}
+        messageContent={selectedMessageIndex !== null ? messages[selectedMessageIndex]?.content || '' : ''}
+        onDismiss={() => {
+          setShowMessageMenu(false);
+          setSelectedMessageIndex(null);
+        }}
+        onCopy={handleCopyMessage}
+        onDelete={handleDeleteMessage}
+        onShare={handleShareMessage}
+      />
+    </SafeAreaView>
+  );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
+  container: { flex: 1 },
+  flex: { flex: 1 },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    padding: 15,
+    backgroundColor: 'rgba(0,0,0,0.3)',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
   },
-  headerContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  headerTitle: {
-    fontSize: 19,
-    fontWeight: '700',
-    letterSpacing: 0.3,
-  },
-  headerSubtitle: {
-    fontSize: 12,
-    fontWeight: '400',
-  },
-  headerButtons: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  headerBtn: {
-    padding: 8,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  emergencyBtn: {
-    padding: 8,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 107, 107, 0.15)',
-  },
-  reactionButtons: {
-    flexDirection: 'row',
-    marginLeft: 36,
-    marginTop: 8,
-    marginBottom: 12,
-    gap: 8,
-  },
-  reactionBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+  headerTitle: { color: '#F5F2EF', fontSize: 18, fontWeight: '700' },
+  headerSubtitle: { color: 'rgba(245,242,239,0.7)', fontSize: 12 },
+  messagesList: { padding: 15, paddingBottom: 20 },
+  messageWrapper: { flexDirection: 'row', marginBottom: 15, alignItems: 'flex-end' },
+  wrapperUser: { justifyContent: 'flex-end' },
+  wrapperAssistant: { justifyContent: 'flex-start' },
+  avatar: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: '#C8E6C9',
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  reactionEmoji: {
-    fontSize: 18,
-  },
-  reactionCount: {
-    fontSize: 10,
-    fontWeight: '600',
-    marginTop: 1,
-  },
-  messagesList: {
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-  },
-  messageBubble: {
-    marginVertical: 10,
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-  },
-  userMsg: {
-    justifyContent: 'flex-end',
-  },
-  agoraMsg: {
-    justifyContent: 'flex-start',
-  },
-  agoraAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 1,
-  },
-  text: {
-    maxWidth: '78%',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 20,
-    fontSize: 15,
-    lineHeight: 22,
-  },
-  userText: {
     marginRight: 8,
-    borderBottomRightRadius: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 2,
   },
-  agoraText: {
-    borderBottomLeftRadius: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
+  avatarEmoji: { fontSize: 16 },
+  messageBubble: {
+    maxWidth: '80%',
+    padding: 12,
+    borderRadius: 15,
   },
-  typingSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    marginBottom: 8,
+  bubbleUser: {
+    backgroundColor: '#D4A5A0',
+    borderBottomRightRadius: 2,
   },
-  typingContainer: {
-    flexDirection: 'row',
-    gap: 6,
-    marginLeft: 42,
+  bubbleAssistant: {
+    backgroundColor: '#FFF9F0',
+    borderBottomLeftRadius: 2,
   },
-  typingDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  dot1: {
-    opacity: 0.3,
-  },
-  dot2: {
-    opacity: 0.6,
-  },
-  dot3: {
-    opacity: 1,
-  },
+  messageText: { fontSize: 15, lineHeight: 20 },
+  textUser: { color: '#fff' },
+  textAssistant: { color: '#333' },
   inputArea: {
-    borderTopWidth: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 3,
-  },
-  inputContainer: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 12,
+    padding: 10,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    alignItems: 'center',
   },
-  inputWrapper: {
+  messageInput: {
     flex: 1,
-    borderRadius: 26,
-    paddingHorizontal: 16,
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    paddingHorizontal: 15,
     paddingVertical: 8,
-    justifyContent: 'center',
-  },
-  input: {
-    fontSize: 15,
-    padding: 0,
-    minHeight: 40,
-  },
-  charCount: {
-    fontSize: 11,
-    marginTop: 4,
-    textAlign: 'right',
+    maxHeight: 100,
+    marginRight: 10,
   },
   sendBtn: {
     width: 40,
     height: 40,
+    backgroundColor: '#769656',
     borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  sendBtnDisabled: {
-    opacity: 0.6,
+  sendBtnDisabled: { opacity: 0.5 },
+  typingIndicator: {
+    flexDirection: 'row',
+    padding: 15,
+    gap: 5,
   },
-  exercisesContainer: {
-    marginLeft: 36,
-    marginTop: 12,
-    marginBottom: 8,
-  },
-  exercisesTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 10,
+  typingDot: {
+    width: 8,
+    height: 8,
+    backgroundColor: '#769656',
+    borderRadius: 4,
   },
   exerciseCard: {
+    marginTop: 10,
+    backgroundColor: '#fff',
+    padding: 10,
+    borderRadius: 10,
     borderLeftWidth: 4,
-    paddingLeft: 12,
-    paddingRight: 12,
-    paddingVertical: 10,
-    marginBottom: 8,
-    borderRadius: 8,
-    backgroundColor: 'rgba(200, 230, 201, 0.1)',
+    borderLeftColor: '#769656',
   },
-  exerciseHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  exerciseTitle: {
-    fontSize: 13,
-    fontWeight: '600',
-    flex: 1,
-  },
-  exerciseDifficulty: {
-    fontSize: 10,
-    fontWeight: '600',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 4,
-    overflow: 'hidden',
-  },
-  exerciseDescription: {
-    fontSize: 12,
-    lineHeight: 16,
-    marginBottom: 6,
-  },
-  exerciseDuration: {
-    fontSize: 11,
-    fontWeight: '500',
-  },
-  exerciseActionButtons: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 12,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#E8DDD4',
-  },
-  exerciseAttemptBtn: {
-    flex: 1,
+  exerciseTitle: { fontWeight: 'bold', marginBottom: 4 },
+  exerciseDesc: { fontSize: 13, color: '#666' },
+  exerciseFooter: { flexDirection: 'row', marginTop: 5, gap: 10 },
+  exerciseTag: { fontSize: 11, color: '#769656', fontStyle: 'italic' },
+  headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    backgroundColor: '#F1F8F5',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#4CAF50',
-    gap: 6,
+    gap: 15,
   },
-  exerciseAttemptBtnText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#4CAF50',
-  },
-  exerciseSkipBtn: {
-    flex: 1,
+  voiceToggle: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    backgroundColor: '#FAFAFA',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#BDBDBD',
-    gap: 6,
-  },
-  exerciseSkipBtnText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#9E9E9E',
-  },
-  logoWatermark: {
-    position: 'absolute',
-    width: 200,
-    height: 200,
-    opacity: 0.08,
-    top: '30%',
-    left: '50%',
-    marginLeft: -100,
-    zIndex: -1,
-  },
-  messageSectionContainer: {
-    paddingHorizontal: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 20,
   },
 });

@@ -23,7 +23,7 @@ export function useLazyLoad<T>(
     const threshold = options?.threshold ?? 0.1;
 
     // Usar Intersection Observer para cargar cuando sea visible
-    if ('IntersectionObserver' in window && elementRef.current) {
+    if (typeof window !== 'undefined' && 'IntersectionObserver' in window && elementRef.current) {
       observerRef.current = new IntersectionObserver(
         ([entry]) => {
           if (entry.isIntersecting) {

@@ -21,6 +21,7 @@ interface AppState {
   
   // UI State
   isLoading: boolean;
+  enableVoiceOutput: boolean;  // Toggle para síntesis de voz
   
   // Diary to Chat integration
   diaryMessageToPushToChat: string | null;
@@ -32,6 +33,8 @@ interface AppState {
   setLoading: (loading: boolean) => void;
   getDeviceId: () => Promise<string>;
   setDiaryMessageToPushToChat: (message: string | null) => void;
+  setEnableVoiceOutput: (enabled: boolean) => Promise<void>;
+  loadSettings: () => Promise<void>;
 }
 
 // Helper for secure storage (works on web and native)
@@ -59,6 +62,7 @@ export const useStore = create<AppState>((set, get) => ({
   language: 'es',
   subscriptionStatus: null,
   isLoading: false,
+  enableVoiceOutput: true,  // Por defecto habilitado
   diaryMessageToPushToChat: null,
   
   // Initialize device ID (create if not exists)
@@ -110,5 +114,34 @@ export const useStore = create<AppState>((set, get) => ({
   // Set diary message to push to chat
   setDiaryMessageToPushToChat: (message: string | null) => {
     set({ diaryMessageToPushToChat: message });
-  }
+  },
+
+  // Set voice output preference
+  setEnableVoiceOutput: async (enabled: boolean) => {
+    try {
+      await AsyncStorage.setItem('agora_enable_voice_output', JSON.stringify(enabled));
+      set({ enableVoiceOutput: enabled });
+    } catch (error) {
+      console.error('Error saving voice output preference:', error);
+    }
+  },
+
+  // Load all settings from storage
+  loadSettings: async () => {
+    try {
+      // Load language
+      const savedLang = await secureStorage.getItem('agora_language');
+      if (savedLang) {
+        set({ language: savedLang });
+      }
+
+      // Load voice output preference
+      const savedVoiceOutput = await AsyncStorage.getItem('agora_enable_voice_output');
+      if (savedVoiceOutput !== null) {
+        set({ enableVoiceOutput: JSON.parse(savedVoiceOutput) });
+      }
+    } catch (error) {
+      console.error('Error loading settings:', error);
+    }
+  },
 }));

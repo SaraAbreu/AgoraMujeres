@@ -14,11 +14,10 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors, spacing, borderRadius, typography } from '../theme/colors';
 import { useStore } from '../store/useStore';
 import {
-  createStripeCustomer,
+  createCustomer,
   createPaymentIntent,
   activateSubscription,
-  stripeConfig,
-} from '../config/stripeConfig';
+} from '../services/api';
 
 interface PaywallModalProps {
   visible: boolean;
@@ -52,7 +51,7 @@ export const PaywallModal: React.FC<PaywallModalProps> = ({
     setLoading(true);
     try {
       // Create customer
-      const customerRes = await createStripeCustomer(
+      const customerRes = await createCustomer(
         deviceId,
         email.trim(),
         name.trim() || (language === 'es' ? 'Usuario Ágora' : 'Ágora User')
@@ -301,8 +300,8 @@ const styles = StyleSheet.create({
   },
   container: {
     backgroundColor: colors.background,
-    borderTopLeftRadius: borderRadius.large,
-    borderTopRightRadius: borderRadius.large,
+    borderTopLeftRadius: borderRadius.lg,
+    borderTopRightRadius: borderRadius.lg,
     paddingBottom: spacing.xl,
     maxHeight: '90%',
   },
@@ -322,8 +321,9 @@ const styles = StyleSheet.create({
     padding: spacing.sm,
   },
   title: {
-    ...typography.title,
-    fontSize: 20,
+    fontSize: typography.sizes.lg,
+    fontWeight: typography.weights.bold as any,
+    fontFamily: typography.fonts.heading,
     color: colors.text,
   },
   content: {
@@ -331,13 +331,15 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.lg,
   },
   subtitle: {
-    ...typography.subtitle,
+    fontSize: typography.sizes.md,
+    fontWeight: typography.weights.semibold as any,
     color: colors.textSecondary,
     marginBottom: spacing.lg,
     textAlign: 'center',
   },
   paymentSubtitle: {
-    ...typography.body,
+    fontSize: typography.sizes.md,
+    fontWeight: typography.weights.medium as any,
     color: colors.textSecondary,
     marginBottom: spacing.lg,
     textAlign: 'center',
@@ -358,17 +360,19 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   featureTitle: {
-    ...typography.subtitle,
+    fontSize: typography.sizes.md,
+    fontWeight: typography.weights.semibold as any,
     color: colors.text,
     marginBottom: spacing.xs,
   },
   featureDesc: {
-    ...typography.caption,
+    fontSize: typography.sizes.xs,
+    fontWeight: typography.weights.regular as any,
     color: colors.textSecondary,
   },
   pricingBox: {
     backgroundColor: colors.primary + '15',
-    borderRadius: borderRadius.medium,
+    borderRadius: borderRadius.md,
     paddingVertical: spacing.lg,
     paddingHorizontal: spacing.md,
     alignItems: 'center',
@@ -382,14 +386,15 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   pricingNote: {
-    ...typography.caption,
+    fontSize: typography.sizes.xs,
+    fontWeight: typography.weights.regular as any,
     color: colors.textSecondary,
   },
   input: {
     backgroundColor: colors.background + '5',
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: borderRadius.medium,
+    borderRadius: borderRadius.md,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
     marginBottom: spacing.md,
@@ -404,7 +409,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
   },
   securityText: {
-    ...typography.caption,
+    fontSize: typography.sizes.xs,
+    fontWeight: typography.weights.regular as any,
     color: colors.primary,
     marginLeft: spacing.sm,
   },
@@ -412,7 +418,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     marginHorizontal: spacing.lg,
     paddingVertical: spacing.md,
-    borderRadius: borderRadius.medium,
+    borderRadius: borderRadius.md,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: spacing.md,
@@ -427,7 +433,7 @@ const styles = StyleSheet.create({
   },
   buttonText: {
     color: colors.background,
-    ...typography.subtitle,
+    fontSize: typography.sizes.md,
     fontWeight: '600',
   },
   skipButton: {
@@ -435,7 +441,8 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   skipText: {
-    ...typography.body,
+    fontSize: typography.sizes.md,
+    fontWeight: typography.weights.regular as any,
     color: colors.textSecondary,
   },
 });

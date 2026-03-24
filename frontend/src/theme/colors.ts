@@ -1,134 +1,181 @@
-// Ágora Mujeres - Paleta de colores estilo Boho/Natural
-// Basada en las imágenes de referencia proporcionadas
-// Verde musgo, marrón cálido, beige crema
+// Ágora Mujeres - Color Palette
+// Premium feminine aesthetic: warm browns, soft beige, elegant typography
 
+export const BRAND_COLORS = {
+  // Primary Background - Warm Brown/Gold
+  bg: '#80704f',
+  bgLight: '#9B8F6D',
+  bgDark: '#6B5D42',
+  
+  // Card Backgrounds - Soft Beige
+  card: '#EDE8E0',
+  cardAlt: '#DDD5C8',
+  
+  // Text & Foreground
+  white: '#F5F0E8',
+  textDark: '#3D2B1A',
+  textMedium: '#6B5340',
+  textLight: '#A0907F',
+  
+  // Accent Colors
+  crisisBtn: '#5C3D20',
+  crisisBtnLight: '#8B5A2B',
+  
+  // Icon Colors
+  iconWrite: '#8B5A2B',
+  iconChat: '#B87333',
+  iconPatterns: '#C4956A',
+  iconRecord: '#8A8C6C',
+  iconResources: '#9E7B5D',
+  iconCycle: '#A67C5B',
+  
+  // Trial & Status
+  trialBg: '#C8BAA8',
+  trialText: '#5C4A32',
+  expiredBg: '#F5E8E8',
+  expiredText: '#cc0000',
+  
+  // UI Elements
+  border: '#C8BAA8',
+  borderLight: '#E8E1D6',
+  tabBar: '#FDFBF9',
+  
+  // Status Colors
+  success: '#7A9B82',
+  warning: '#D4A574',
+  error: '#C9596F',
+};
+
+// ─────────────────────────────────────────────────────────────
+// LEGACY COLOR COMPATIBILITY LAYER
+// Maps old color names to new BRAND_COLORS
+// ─────────────────────────────────────────────────────────────
 export const colors = {
-  // Verde musgo - Color principal de fondo (de la imagen de referencia)
+  // Primary colors (maps to BRAND_COLORS)
   mossGreen: '#8A8C6C',
   mossGreenLight: '#A5A78A',
   mossGreenDark: '#6B6D52',
-  
-  // Marrón cálido/terracota - Para cabeceras y acentos (de la imagen de referencia)
   warmBrown: '#B87333',
   warmBrownLight: '#D4956A',
   warmBrownDark: '#8B5A2B',
   
-  // Beige/crema - Para cards y superficies (de la imagen de referencia)
-  cream: '#D4C8BE',
-  creamLight: '#EDE8E3',
-  creamDark: '#C4B5A8',
+  // Surfaces
+  cream: '#EDE8E0',
+  creamLight: '#F5F0E8',
+  creamDark: '#DDD5C8',
   
-  // Primary (usando verde musgo)
-  primary: '#8A8C6C',
-  primaryLight: '#A5A78A',
-  primaryDark: '#6B6D52',
-  
-  // Secondary (usando marrón cálido)
-  secondary: '#B87333',
-  secondaryLight: '#D4956A',
-  secondaryDark: '#8B5A2B',
-  
-  // Accent (dusty rose suave)
-  accent: '#C9A59A',
-  accentLight: '#E8D5CE',
-  accentDark: '#A8857A',
-  
-  // Background - Verde musgo como principal
+  // Backgrounds
   background: '#8A8C6C',
   backgroundAlt: '#7D7F61',
-  surface: '#EDE8E3',        // Crema claro para cards
-  surfaceAlt: '#D4C8BE',     // Beige para cards secundarias
+  surface: '#EDE8E0',
+  surfaceAlt: '#D4C8BE',
   
   // Text colors
-  text: '#3D3628',           // Marrón muy oscuro para texto principal
-  textSecondary: '#5D4E43',  // Marrón medio
-  textLight: '#8B7B6B',      // Marrón claro
-  textOnDark: '#F5F2EF',     // Blanco cálido para texto sobre fondo oscuro
-  textOnPrimary: '#F5F2EF',  // Texto sobre verde musgo
+  text: '#3D2B1A',
+  textSecondary: '#6B5340',
+  textLight: '#A0907F',
+  textOnDark: '#F5F0E8',
+  textOnPrimary: '#F5F0E8',
+  softWhite: '#F5F0E8',
   
-  // Emotional state colors (tonos pastel suaves)
-  emotion: {
-    calma: '#9CAF88',        // Verde salvia suave
-    fatiga: '#C4A484',       // Tan cálido
-    niebla: '#B8AFA7',       // Gris cálido
-    dolor: '#C9A59A',        // Rosa polvo
-    gratitud: '#D4B896',     // Dorado cálido
-    tension: '#C9A587',      // Terracota suave
-    saturada: '#C9A59A',     // Rosa polvo (sensación de saturación)
-    desconectada: '#B8AFA7', // Gris cálido (sensación de desapego)
-    sensible: '#D4B896',     // Dorado cálido (sensación de sensibilidad)
-    abrumada: '#C9A587',     // Terracota suave (sensación de agobio)
-    vulnerable: '#C4A484',   // Tan cálido (sensación de vulnerabilidad)
-    tranquila: '#9CAF88',    // Verde salvia suave (sensación de calma)
-  },
-  
-  // Status colors (versiones suaves)
-  success: '#9CAF88',
-  warning: '#D4956A',
-  error: '#C08080',
-  info: '#A5B8C4',
-  
-  // Utility
-  border: '#D4C8BE',
-  borderLight: '#EDE8E3',
+  // Accents and utilities
+  accentWarm: '#D4956A',
+  accentSoft: '#E8D5C4',
+  accentDark: '#A8857A',
+  border: '#C8BAA8',
+  borderLight: '#E8E1D6',
   shadow: 'rgba(61, 54, 40, 0.12)',
   shadowDark: 'rgba(61, 54, 40, 0.2)',
   overlay: 'rgba(61, 54, 40, 0.5)',
-  
-  // Transparent
   transparent: 'transparent',
   white: '#FFFFFF',
   black: '#000000',
-  softWhite: '#F5F2EF',
+  
+  // Status
+  success: '#7A9B82',
+  warning: '#D4A574',
+  error: '#C9596F',
 };
 
-// Spacing scale (8pt grid)
+// ─────────────────────────────────────────────────────────────
+// SPACING SCALE (8pt baseline grid)
+// ─────────────────────────────────────────────────────────────
 export const spacing = {
   xs: 4,
   sm: 8,
-  md: 16,
-  lg: 24,
-  xl: 32,
-  xxl: 48,
+  md: 12,
+  lg: 16,
+  xl: 24,
+  xxl: 32,
+  xxxl: 48,
 };
 
-// Border radius - más redondeados para sensación orgánica
+// ─────────────────────────────────────────────────────────────
+// BORDER RADIUS
+// ─────────────────────────────────────────────────────────────
 export const borderRadius = {
+  xs: 8,
   sm: 12,
   md: 16,
-  lg: 24,
-  xl: 32,
+  lg: 20,
+  xl: 24,
   full: 9999,
 };
 
-// Typography
+// ─────────────────────────────────────────────────────────────
+// TYPOGRAPHY
+// ─────────────────────────────────────────────────────────────
 export const typography = {
-  sizes: {
-    xs: 12,
-    sm: 14,
-    md: 16,
-    lg: 20,
-    xl: 28,
-    xxl: 36,
-  },
-  weights: {
-    regular: '400' as const,
-    medium: '500' as const,
-    semibold: '600' as const,
-    bold: '700' as const,
-  },
   fonts: {
-    heading: 'Cormorant_600SemiBold',
     headingBold: 'Cormorant_700Bold',
-    body: 'Nunito_400Regular',
-    bodyMedium: 'Nunito_500Medium',
+    heading: 'Cormorant_600SemiBold',
     bodySemibold: 'Nunito_600SemiBold',
+    bodyMedium: 'Nunito_500Medium',
+    body: 'Nunito_400Regular',
+  },
+  sizes: {
+    xs: 11,
+    sm: 12,
+    md: 13,
+    lg: 14,
+    xl: 15,
+    title: 18,
+    heading: 24,
+    heroHeading: 28,
   },
   lineHeight: {
     tight: 1.2,
     normal: 1.5,
     relaxed: 1.75,
-  }
+    loose: 2,
+  },
 };
 
-export default { colors, spacing, borderRadius, typography };
+// ─────────────────────────────────────────────────────────────
+// SHADOWS  
+// ─────────────────────────────────────────────────────────────
+export const shadows = {
+  sm: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  md: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  lg: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+};
+
+export default { BRAND_COLORS, colors, spacing, borderRadius, typography, shadows };

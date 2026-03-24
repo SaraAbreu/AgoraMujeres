@@ -1,12 +1,2 @@
-/// <reference types="react" />
-/// <reference types="react-native" />
-
-declare global {
-  namespace JSX {
-    interface IntrinsicElements {
-      [key: string]: any;
-    }
-  }
-}
-
-export {};
+// JSX types are handled by React 17+ automatic JSX transform
+// No manual declarations needed

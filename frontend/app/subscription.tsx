@@ -1,453 +1,785 @@
-import React, { useState } from 'react';
+/**
+ * app/subscription.tsx
+ *
+ * Pantalla de suscripción — tres estados:
+ *   1. trial   → muestra tiempo restante + botón de activar
+ *   2. active  → confirmación, gestión
+ *   3. expired → bloqueo suave + CTA urgente
+ *
+ * Flujo de pago (preparado para Stripe Payment Sheet):
+ *   createCustomer → createPaymentIntent → [Stripe Sheet] → activateSubscription
+ *
+ * En desarrollo/sin Stripe SDK: muestra Alert de simulación (igual que antes)
+ * pero la activación se verifica en el backend (no bypass).
+ */
+
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  TextInput,
+  ScrollView,
   TouchableOpacity,
-  KeyboardAvoidingView,
-  Platform,
+  TextInput,
   Alert,
   ActivityIndicator,
-  ScrollView,
+  Platform,
 } from 'react-native';
-import { useTranslation } from 'react-i18next';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { Image } from 'expo-image';
+
 import { colors, spacing, borderRadius, typography } from '../src/theme/colors';
 import { useStore } from '../src/store/useStore';
-import { createCustomer, createPaymentIntent, activateSubscription, getSubscriptionStatus } from '../src/services/api';
+import {
+  getSubscriptionStatus,
+  createCustomer,
+  createPaymentIntent,
+  activateSubscription,
+  SubscriptionStatus,
+} from '../src/services/api';
 
-const LOGO_URL = 'https://customer-assets.emergentagent.com/job_safe-refuge/artifacts/ywgi4kxk_Gemini_Generated_Image_529exc529exc529e.jpg';
+// ─────────────────────────────────────────────────────────────────────────────
+// Constantes
+// ─────────────────────────────────────────────────────────────────────────────
+
+const BG      = '#80704f';
+const PRICE   = '10€';
+const PERIOD  = '/mes';
+
+const FEATURES = [
+  { icon: 'chatbubbles-outline',  es: 'Chat ilimitado con Ágora',           en: 'Unlimited chat with Ágora'        },
+  { icon: 'analytics-outline',    es: 'Análisis de patrones personalizados', en: 'Personalized pattern analysis'    },
+  { icon: 'calendar-outline',     es: 'Registro mensual de dolor',           en: 'Monthly pain tracking'            },
+  { icon: 'leaf-outline',         es: 'Técnicas de bienestar guiadas',       en: 'Guided wellness techniques'       },
+  { icon: 'heart-outline',        es: 'Soporte de crisis 24/7',              en: 'Crisis support 24/7'              },
+  { icon: 'library-outline',      es: 'Acceso a todos los recursos',         en: 'Access to all resources'          },
+];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+function formatSeconds(secs: number): string {
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = secs % 60;
+  return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+function FeatureRow({ icon, text }: { icon: string; text: string }) {
+  return (
+    <View style={styles.featureRow}>
+      <View style={styles.featureIconBg}>
+        <Ionicons name={icon as any} size={16} color={colors.mossGreen} />
+      </View>
+      <Text style={styles.featureText}>{text}</Text>
+    </View>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Pantalla
+// ─────────────────────────────────────────────────────────────────────────────
 
 export default function SubscriptionScreen() {
-  const { t } = useTranslation();
   const router = useRouter();
-  const { deviceId, language, setSubscriptionStatus, subscriptionStatus } = useStore();
-  
-  const [email, setEmail] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [step, setStep] = useState<'email' | 'payment' | 'success'>('email');
+  const { deviceId, language, setSubscriptionStatus } = useStore();
+  const isEs = language === 'es';
 
-  const handleCreateCustomer = async () => {
-    if (!email.trim() || !deviceId) return;
-    
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email.trim())) {
+  const [status,  setStatus]  = useState<SubscriptionStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  // Formulario de pago
+  const [step,    setStep]    = useState<'features' | 'form'>('features');
+  const [email,   setEmail]   = useState('');
+  const [name,    setName]    = useState('');
+  const [paying,  setPaying]  = useState(false);
+
+  // ── Cargar estado de suscripción ─────────────────────────────────────────
+  useEffect(() => {
+    if (!deviceId) return;
+    getSubscriptionStatus(deviceId)
+      .then(s => { setStatus(s); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, [deviceId]);
+
+  // ── Flujo de pago ────────────────────────────────────────────────────────
+  const handlePay = async () => {
+    if (!email.trim()) {
       Alert.alert(
-        '',
-        language === 'es' ? 'Por favor, introduce un email válido' : 'Please enter a valid email'
+        isEs ? 'Email requerido' : 'Email required',
+        isEs ? 'Introduce tu correo electrónico' : 'Please enter your email'
       );
       return;
     }
-    
-    setLoading(true);
-    try {
-      await createCustomer(deviceId, email.trim());
-      setStep('payment');
-    } catch (error) {
-      console.error('Error creating customer:', error);
+    if (!email.includes('@')) {
       Alert.alert(
-        '',
-        language === 'es' ? 'No se pudo procesar. Inténtalo de nuevo.' : 'Could not process. Please try again.'
+        isEs ? 'Email inválido' : 'Invalid email',
+        isEs ? 'Introduce un email válido' : 'Please enter a valid email'
       );
-    } finally {
-      setLoading(false);
+      return;
     }
-  };
-
-  const handlePayment = async () => {
     if (!deviceId) return;
-    
-    setLoading(true);
+
+    setPaying(true);
     try {
-      const paymentIntent = await createPaymentIntent(deviceId);
-      
+      // 1. Crear cliente en Stripe
+      await createCustomer(
+        deviceId,
+        email.trim(),
+        name.trim() || undefined
+      );
+
+      // 2. Crear PaymentIntent
+      const { client_secret, payment_intent_id } = await createPaymentIntent(deviceId);
+
+      // 3. Mostrar Stripe Payment Sheet
+      //    Si tienes @stripe/stripe-react-native instalado, sustituye el Alert
+      //    por initPaymentSheet + presentPaymentSheet.
+      //    Por ahora: simulación que llama al backend para activar.
+
       Alert.alert(
-        language === 'es' ? 'Pago en modo prueba' : 'Payment in test mode',
-        language === 'es' 
-          ? 'El sistema de pagos está en modo de prueba. Tu suscripción será activada.' 
-          : 'The payment system is in test mode. Your subscription will be activated.',
+        isEs ? '💳 Pago' : '💳 Payment',
+        isEs
+          ? `Integra @stripe/stripe-react-native para el pago real.\n\n¿Simular pago exitoso? (solo para desarrollo)`
+          : `Integrate @stripe/stripe-react-native for real payment.\n\nSimulate successful payment? (dev only)`,
         [
           {
-            text: 'OK',
+            text: isEs ? 'Simular pago' : 'Simulate payment',
             onPress: async () => {
               try {
-                await activateSubscription(deviceId, paymentIntent.payment_intent_id);
-                const status = await getSubscriptionStatus(deviceId);
-                setSubscriptionStatus(status);
-                setStep('success');
-              } catch (e) {
-                setStep('success');
+                await activateSubscription(deviceId, payment_intent_id);
+                const newStatus = await getSubscriptionStatus(deviceId);
+                setStatus(newStatus);
+                setSubscriptionStatus(newStatus);
+                setStep('features');
+                Alert.alert(
+                  '✓',
+                  isEs ? '¡Suscripción activada! Bienvenida a Ágora Premium.' : 'Subscription activated! Welcome to Ágora Premium.'
+                );
+              } catch (e: any) {
+                Alert.alert(isEs ? 'Error' : 'Error', e?.message ?? '');
               }
-            }
-          }
+            },
+          },
+          { text: isEs ? 'Cancelar' : 'Cancel', style: 'cancel' },
         ]
       );
-    } catch (error) {
-      console.error('Error processing payment:', error);
-      Alert.alert(
-        '',
-        language === 'es' ? 'No se pudo procesar el pago' : 'Could not process payment'
-      );
+    } catch (e: any) {
+      Alert.alert(isEs ? 'Error' : 'Error', e?.message ?? '');
     } finally {
-      setLoading(false);
+      setPaying(false);
     }
   };
 
-  const formatTrialTime = () => {
-    if (!subscriptionStatus?.trial_remaining_seconds) return '0h 0m';
-
-    // Asegurarse de que el valor sea válido
-    const totalSeconds = Math.max(subscriptionStatus.trial_remaining_seconds, 0);
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-
-    return `${hours}h ${minutes}m`;
-  };
-
-  return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <KeyboardAvoidingView
-        style={styles.keyboardView}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.closeButton}>
-            <Ionicons name="close" size={28} color={colors.text} />
-          </TouchableOpacity>
+  // ─────────────────────────────────────────────────────────────────────────
+  // Loading
+  // ─────────────────────────────────────────────────────────────────────────
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.safe} edges={['top']}>
+        <View style={styles.loader}>
+          <ActivityIndicator size="large" color={colors.softWhite} />
         </View>
+      </SafeAreaView>
+    );
+  }
 
-        <ScrollView 
-          style={styles.scrollView}
-          contentContainerStyle={styles.content}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          {/* Logo */}
-          <View style={styles.logoContainer}>
-            <Image
-              source={{ uri: LOGO_URL }}
-              style={styles.logo}
-              contentFit="contain"
-            />
+  // ─────────────────────────────────────────────────────────────────────────
+  // Estado: ACTIVE
+  // ─────────────────────────────────────────────────────────────────────────
+  if (status?.status === 'active') {
+    return (
+      <SafeAreaView style={styles.safe} edges={['top']}>
+        <Header onBack={() => router.back()} isEs={isEs} />
+        <ScrollView contentContainerStyle={styles.content}>
+
+          {/* Confirmación */}
+          <View style={styles.activeCard}>
+            <View style={styles.activeIconBg}>
+              <Ionicons name="checkmark-circle" size={48} color={colors.mossGreen} />
+            </View>
+            <Text style={styles.activeTitle}>
+              {isEs ? '¡Suscripción activa!' : 'Subscription active!'}
+            </Text>
+            <Text style={styles.activeSub}>
+              {isEs
+                ? 'Tienes acceso completo a todas las funciones de Ágora.'
+                : 'You have full access to all Ágora features.'}
+            </Text>
+            {status.is_admin && (
+              <View style={styles.adminBadge}>
+                <Ionicons name="shield-checkmark" size={14} color={colors.warmBrown} />
+                <Text style={styles.adminBadgeText}>
+                  {isEs ? 'Acceso de administrador' : 'Admin access'}
+                </Text>
+              </View>
+            )}
           </View>
 
-          {/* Title */}
-          <Text style={styles.title}>
-            {step === 'success' 
-              ? (language === 'es' ? '¡Gracias!' : 'Thank you!')
-              : (language === 'es' ? 'Activa tu suscripción' : 'Activate your subscription')
-            }
+          {/* Lista de features */}
+          <Text style={styles.sectionLabel}>
+            {isEs ? 'Incluido en tu plan' : "What's included"}
           </Text>
+          <View style={styles.featuresCard}>
+            {FEATURES.map((f, i) => (
+              <FeatureRow
+                key={i}
+                icon={f.icon}
+                text={isEs ? f.es : f.en}
+              />
+            ))}
+          </View>
 
-          {step !== 'success' && (
-            <>
-              {/* Trial Status */}
-              {subscriptionStatus?.status === 'trial' && (
-                <View style={styles.trialBadge}>
-                  <Ionicons name="time-outline" size={16} color={colors.warmBrown} />
-                  <Text style={styles.trialBadgeText}>
-                    {t('trialRemaining')}: {formatTrialTime()}
-                  </Text>
-                </View>
-              )}
+          <TouchableOpacity
+            style={styles.backHomeBtn}
+            onPress={() => router.replace('/(tabs)')}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="home-outline" size={18} color={colors.softWhite} />
+            <Text style={styles.backHomeBtnText}>
+              {isEs ? 'Volver al inicio' : 'Back to home'}
+            </Text>
+          </TouchableOpacity>
 
-              {subscriptionStatus?.status === 'expired' && (
-                <View style={[styles.trialBadge, styles.expiredBadge]}>
-                  <Ionicons name="alert-circle-outline" size={16} color={colors.error} />
-                  <Text style={[styles.trialBadgeText, { color: colors.error }]}>
-                    {t('trialExpired')}
-                  </Text>
-                </View>
-              )}
-
-              {/* Description */}
-              <Text style={styles.description}>
-                {t('continueUsing')}
-              </Text>
-
-              {/* Price Card */}
-              <View style={styles.priceCard}>
-                <View style={styles.priceHeader}>
-                  <Text style={styles.priceTitle}>Ágora Premium</Text>
-                  <View style={styles.priceBadge}>
-                    <Text style={styles.priceBadgeText}>10€</Text>
-                    <Text style={styles.priceMonth}>/mes</Text>
-                  </View>
-                </View>
-                <View style={styles.features}>
-                  <View style={styles.featureRow}>
-                    <Ionicons name="checkmark" size={20} color={colors.mossGreen} />
-                    <Text style={styles.featureText}>{t('unlimitedDiary')}</Text>
-                  </View>
-                  <View style={styles.featureRow}>
-                    <Ionicons name="checkmark" size={20} color={colors.mossGreen} />
-                    <Text style={styles.featureText}>{t('conversationsWithAgora')}</Text>
-                  </View>
-                  <View style={styles.featureRow}>
-                    <Ionicons name="checkmark" size={20} color={colors.mossGreen} />
-                    <Text style={styles.featureText}>{t('patternAnalysis')}</Text>
-                  </View>
-                  <View style={styles.featureRow}>
-                    <Ionicons name="checkmark" size={20} color={colors.mossGreen} />
-                    <Text style={styles.featureText}>{t('totalPrivacy')}</Text>
-                  </View>
-                </View>
-              </View>
-
-              {/* Email Step */}
-              {step === 'email' && (
-                <>
-                  <TextInput
-                    style={styles.emailInput}
-                    placeholder={t('enterEmail')}
-                    placeholderTextColor={colors.textLight}
-                    value={email}
-                    onChangeText={setEmail}
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                  />
-                  <TouchableOpacity
-                    style={[
-                      styles.continueButton,
-                      (!email.trim() || loading) && styles.buttonDisabled
-                    ]}
-                    onPress={handleCreateCustomer}
-                    disabled={!email.trim() || loading}
-                    activeOpacity={0.8}
-                  >
-                    {loading ? (
-                      <ActivityIndicator color={colors.softWhite} />
-                    ) : (
-                      <Text style={styles.continueButtonText}>{t('continue')}</Text>
-                    )}
-                  </TouchableOpacity>
-                </>
-              )}
-
-              {/* Payment Step */}
-              {step === 'payment' && (
-                <TouchableOpacity
-                  style={[
-                    styles.continueButton,
-                    loading && styles.buttonDisabled
-                  ]}
-                  onPress={handlePayment}
-                  disabled={loading}
-                  activeOpacity={0.8}
-                >
-                  {loading ? (
-                    <ActivityIndicator color={colors.softWhite} />
-                  ) : (
-                    <Text style={styles.continueButtonText}>
-                      {t('subscribe')}
-                    </Text>
-                  )}
-                </TouchableOpacity>
-              )}
-            </>
-          )}
-
-          {/* Success Step */}
-          {step === 'success' && (
-            <>
-              <View style={styles.successIcon}>
-                <Ionicons name="checkmark-circle" size={64} color={colors.mossGreen} />
-              </View>
-              <Text style={styles.successText}>
-                {language === 'es' 
-                  ? 'Tu suscripción está activa. Ahora puedes disfrutar de todas las funciones de Ágora.'
-                  : 'Your subscription is active. You can now enjoy all of Ágora\'s features.'
-                }
-              </Text>
-              <TouchableOpacity
-                style={styles.continueButton}
-                onPress={() => router.replace('/(tabs)')}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.continueButtonText}>
-                  {language === 'es' ? 'Comenzar' : 'Get started'}
-                </Text>
-              </TouchableOpacity>
-            </>
-          )}
-
-          {/* Privacy Note */}
-          <Text style={styles.privacyNote}>
-            {language === 'es' 
-              ? 'Tus datos permanecen privados y seguros en tu dispositivo.'
-              : 'Your data stays private and secure on your device.'
-            }
-          </Text>
         </ScrollView>
-      </KeyboardAvoidingView>
+      </SafeAreaView>
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Estado: EXPIRED
+  // ─────────────────────────────────────────────────────────────────────────
+  if (status?.status === 'expired') {
+    return (
+      <SafeAreaView style={styles.safe} edges={['top']}>
+        <Header onBack={() => router.back()} isEs={isEs} />
+        <ScrollView contentContainerStyle={styles.content}>
+
+          <View style={styles.expiredBanner}>
+            <Ionicons name="time-outline" size={32} color="#fff" />
+            <Text style={styles.expiredTitle}>
+              {isEs ? 'Tu prueba ha terminado' : 'Your trial has ended'}
+            </Text>
+            <Text style={styles.expiredSub}>
+              {isEs
+                ? 'Activa tu suscripción para seguir hablando con Ágora y registrando tu bienestar.'
+                : 'Activate your subscription to keep talking with Ágora and tracking your wellbeing.'}
+            </Text>
+          </View>
+
+          <PaymentForm
+            step={step}
+            setStep={setStep}
+            email={email}
+            setEmail={setEmail}
+            name={name}
+            setName={setName}
+            paying={paying}
+            onPay={handlePay}
+            isEs={isEs}
+            urgent
+          />
+
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Estado: TRIAL (default)
+  // ─────────────────────────────────────────────────────────────────────────
+  const remaining = status?.trial_remaining_seconds ?? 0;
+
+  return (
+    <SafeAreaView style={styles.safe} edges={['top']}>
+      <Header onBack={() => router.back()} isEs={isEs} />
+      <ScrollView contentContainerStyle={styles.content}>
+
+        {/* Timer de prueba */}
+        <View style={styles.trialBanner}>
+          <Text style={styles.trialBannerLabel}>
+            {isEs ? 'Tiempo de prueba restante' : 'Trial time remaining'}
+          </Text>
+          <Text style={styles.trialTimer}>{formatSeconds(remaining)}</Text>
+          <Text style={styles.trialBannerSub}>
+            {isEs
+              ? 'Cuando expire, necesitarás una suscripción para continuar.'
+              : 'When it expires, you will need a subscription to continue.'}
+          </Text>
+        </View>
+
+        {/* Precio */}
+        <View style={styles.priceRow}>
+          <Text style={styles.price}>{PRICE}</Text>
+          <Text style={styles.pricePeriod}>{PERIOD}</Text>
+          <Text style={styles.priceNote}>
+            {isEs ? '· Cancela cuando quieras' : '· Cancel anytime'}
+          </Text>
+        </View>
+
+        {/* Features */}
+        <Text style={styles.sectionLabel}>
+          {isEs ? '¿Qué incluye?' : "What's included?"}
+        </Text>
+        <View style={styles.featuresCard}>
+          {FEATURES.map((f, i) => (
+            <FeatureRow key={i} icon={f.icon} text={isEs ? f.es : f.en} />
+          ))}
+        </View>
+
+        {/* Formulario de pago */}
+        <PaymentForm
+          step={step}
+          setStep={setStep}
+          email={email}
+          setEmail={setEmail}
+          name={name}
+          setName={setName}
+          paying={paying}
+          onPay={handlePay}
+          isEs={isEs}
+        />
+
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Sub-componentes
+// ─────────────────────────────────────────────────────────────────────────────
+
+function Header({ onBack, isEs }: { onBack: () => void; isEs: boolean }) {
+  return (
+    <View style={styles.header}>
+      <TouchableOpacity onPress={onBack} style={styles.backBtn}>
+        <Ionicons name="chevron-back" size={24} color={colors.softWhite} />
+      </TouchableOpacity>
+      <View>
+        <Text style={styles.headerTitle}>
+          {isEs ? 'Ágora Premium' : 'Ágora Premium'}
+        </Text>
+        <Text style={styles.headerSub}>
+          {isEs ? 'Tu refugio sin límites' : 'Your limitless refuge'}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+function PaymentForm({
+  step, setStep,
+  email, setEmail,
+  name, setName,
+  paying, onPay,
+  isEs, urgent = false,
+}: {
+  step:     'features' | 'form';
+  setStep:  (s: 'features' | 'form') => void;
+  email:    string;
+  setEmail: (v: string) => void;
+  name:     string;
+  setName:  (v: string) => void;
+  paying:   boolean;
+  onPay:    () => void;
+  isEs:     boolean;
+  urgent?:  boolean;
+}) {
+  if (step === 'features') {
+    return (
+      <TouchableOpacity
+        style={[styles.ctaBtn, urgent && styles.ctaBtnUrgent]}
+        onPress={() => setStep('form')}
+        activeOpacity={0.85}
+      >
+        <Ionicons name="star" size={18} color="#fff" />
+        <Text style={styles.ctaBtnText}>
+          {isEs ? 'Activar suscripción — 10€/mes' : 'Activate subscription — €10/month'}
+        </Text>
+      </TouchableOpacity>
+    );
+  }
+
+  return (
+    <View style={styles.formCard}>
+      <View style={styles.formHeader}>
+        <TouchableOpacity onPress={() => setStep('features')} style={{ padding: 4 }}>
+          <Ionicons name="chevron-back" size={20} color={colors.textSecondary} />
+        </TouchableOpacity>
+        <Text style={styles.formTitle}>
+          {isEs ? 'Información de pago' : 'Payment info'}
+        </Text>
+      </View>
+
+      <TextInput
+        style={styles.input}
+        placeholder={isEs ? 'Tu nombre (opcional)' : 'Your name (optional)'}
+        placeholderTextColor={colors.textLight}
+        value={name}
+        onChangeText={setName}
+        editable={!paying}
+        autoCapitalize="words"
+      />
+
+      <TextInput
+        style={styles.input}
+        placeholder="correo@ejemplo.com"
+        placeholderTextColor={colors.textLight}
+        value={email}
+        onChangeText={setEmail}
+        keyboardType="email-address"
+        autoCapitalize="none"
+        editable={!paying}
+      />
+
+      <View style={styles.securityNote}>
+        <Ionicons name="lock-closed-outline" size={13} color={colors.mossGreen} />
+        <Text style={styles.securityText}>
+          {isEs
+            ? 'Tu información está protegida por Stripe'
+            : 'Your information is secured by Stripe'}
+        </Text>
+      </View>
+
+      <TouchableOpacity
+        style={[styles.payBtn, paying && styles.payBtnDisabled]}
+        onPress={onPay}
+        disabled={paying}
+        activeOpacity={0.85}
+      >
+        {paying
+          ? <ActivityIndicator color="#fff" />
+          : <>
+              <Ionicons name="card-outline" size={18} color="#fff" />
+              <Text style={styles.payBtnText}>
+                {isEs ? 'Pagar 10€ y activar' : 'Pay €10 and activate'}
+              </Text>
+            </>
+        }
+      </TouchableOpacity>
+
+      <Text style={styles.cancelNote}>
+        {isEs
+          ? 'Cancela en cualquier momento desde ajustes.'
+          : 'Cancel anytime from settings.'}
+      </Text>
+    </View>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Estilos
+// ─────────────────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#80704f',
+  safe: {
+    flex:            1,
+    backgroundColor: BG,
   },
-  keyboardView: {
-    flex: 1,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    padding: spacing.md,
-  },
-  closeButton: {
-    padding: spacing.xs,
-  },
-  scrollView: {
-    flex: 1,
+  loader: {
+    flex:           1,
+    justifyContent: 'center',
+    alignItems:     'center',
   },
   content: {
-    padding: spacing.xl,
-    alignItems: 'center',
+    padding:       spacing.lg,
+    paddingBottom: 60,
   },
-  logoContainer: {
-    marginBottom: spacing.lg,
+
+  // Header
+  header: {
+    flexDirection:    'row',
+    alignItems:       'center',
+    paddingHorizontal: spacing.lg,
+    paddingVertical:  spacing.md,
+    gap:              spacing.md,
   },
-  logo: {
-    width: 120,
-    height: 120,
-    borderRadius: borderRadius.lg,
+  backBtn: {
+    padding: spacing.xs,
   },
-  title: {
-    fontSize: typography.sizes.xl,
+  headerTitle: {
+    fontSize:   typography.sizes.lg,
     fontFamily: 'Cormorant_700Bold',
-    color: colors.warmBrown,
-    textAlign: 'center',
-    marginBottom: spacing.md,
+    color:      colors.softWhite,
   },
-  trialBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.creamLight,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: borderRadius.full,
-    gap: spacing.xs,
-    marginBottom: spacing.md,
+  headerSub: {
+    fontSize:   typography.sizes.xs,
+    fontFamily: 'Nunito_400Regular',
+    color:      'rgba(245,242,239,0.7)',
+    marginTop:  1,
   },
-  expiredBadge: {
-    backgroundColor: colors.accentLight,
+
+  // Trial banner
+  trialBanner: {
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    borderRadius:    borderRadius.lg,
+    padding:         spacing.lg,
+    alignItems:      'center',
+    marginBottom:    spacing.lg,
+    borderWidth:     1,
+    borderColor:     'rgba(255,255,255,0.1)',
   },
-  trialBadgeText: {
-    fontSize: typography.sizes.sm,
+  trialBannerLabel: {
+    fontSize:     typography.sizes.sm,
+    fontFamily:   'Nunito_500Medium',
+    color:        'rgba(245,242,239,0.8)',
+    marginBottom: spacing.sm,
+  },
+  trialTimer: {
+    fontSize:     36,
+    fontFamily:   'Cormorant_700Bold',
+    color:        colors.softWhite,
+    letterSpacing: 2,
+    marginBottom:  spacing.sm,
+  },
+  trialBannerSub: {
+    fontSize:   typography.sizes.sm,
+    fontFamily: 'Nunito_400Regular',
+    color:      'rgba(245,242,239,0.65)',
+    textAlign:  'center',
+    lineHeight: 20,
+  },
+
+  // Precio
+  priceRow: {
+    flexDirection:  'row',
+    alignItems:     'baseline',
+    justifyContent: 'center',
+    gap:            4,
+    marginBottom:   spacing.lg,
+  },
+  price: {
+    fontSize:   32,
+    fontFamily: 'Cormorant_700Bold',
+    color:      colors.softWhite,
+  },
+  pricePeriod: {
+    fontSize:   typography.sizes.md,
     fontFamily: 'Nunito_500Medium',
-    color: colors.warmBrown,
+    color:      'rgba(245,242,239,0.8)',
   },
-  description: {
-    fontSize: typography.sizes.md,
+  priceNote: {
+    fontSize:   typography.sizes.sm,
     fontFamily: 'Nunito_400Regular',
-    color: colors.textSecondary,
-    textAlign: 'center',
-    marginBottom: spacing.lg,
-    lineHeight: 24,
+    color:      'rgba(245,242,239,0.6)',
   },
-  priceCard: {
-    width: '100%',
+
+  // Section label
+  sectionLabel: {
+    fontSize:     typography.sizes.sm,
+    fontFamily:   'Nunito_600SemiBold',
+    color:        'rgba(245,242,239,0.85)',
+    marginBottom: spacing.sm,
+  },
+
+  // Features card
+  featuresCard: {
     backgroundColor: colors.surface,
-    borderRadius: borderRadius.lg,
-    padding: spacing.lg,
-    marginBottom: spacing.lg,
-    shadowColor: colors.shadowDark,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 1,
-    shadowRadius: 12,
-    elevation: 4,
-  },
-  priceHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.lg,
-  },
-  priceTitle: {
-    fontSize: typography.sizes.lg,
-    fontFamily: 'Cormorant_600SemiBold',
-    color: colors.text,
-  },
-  priceBadge: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-  },
-  priceBadgeText: {
-    fontSize: typography.sizes.xxl,
-    fontFamily: 'Cormorant_700Bold',
-    color: colors.mossGreen,
-  },
-  priceMonth: {
-    fontSize: typography.sizes.md,
-    fontFamily: 'Nunito_400Regular',
-    color: colors.textSecondary,
-  },
-  features: {
-    gap: spacing.md,
+    borderRadius:    borderRadius.lg,
+    padding:         spacing.md,
+    marginBottom:    spacing.lg,
+    gap:             spacing.sm,
   },
   featureRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
+    alignItems:    'center',
+    gap:           spacing.md,
+    paddingVertical: 2,
+  },
+  featureIconBg: {
+    width:          32,
+    height:         32,
+    borderRadius:   8,
+    backgroundColor: colors.mossGreen + '18',
+    justifyContent: 'center',
+    alignItems:     'center',
   },
   featureText: {
-    fontSize: typography.sizes.md,
+    flex:       1,
+    fontSize:   typography.sizes.sm,
     fontFamily: 'Nunito_400Regular',
-    color: colors.text,
+    color:      colors.text,
+    lineHeight: 20,
   },
-  emailInput: {
-    width: '100%',
+
+  // CTA button
+  ctaBtn: {
+    flexDirection:   'row',
+    alignItems:      'center',
+    justifyContent:  'center',
+    gap:             spacing.sm,
+    backgroundColor: colors.warmBrownDark,
+    paddingVertical: spacing.lg,
+    borderRadius:    borderRadius.lg,
+    marginBottom:    spacing.md,
+    shadowColor:     '#000',
+    shadowOffset:    { width: 0, height: 3 },
+    shadowOpacity:   0.2,
+    shadowRadius:    6,
+    elevation:       4,
+  },
+  ctaBtnUrgent: {
+    backgroundColor: '#8B2020',
+  },
+  ctaBtnText: {
+    fontSize:   typography.sizes.md,
+    fontFamily: 'Nunito_700Bold',
+    color:      '#fff',
+  },
+
+  // Payment form card
+  formCard: {
     backgroundColor: colors.surface,
-    borderRadius: borderRadius.lg,
-    padding: spacing.md,
-    fontSize: typography.sizes.md,
-    fontFamily: 'Nunito_400Regular',
-    color: colors.text,
-    borderWidth: 1,
-    borderColor: colors.border,
-    marginBottom: spacing.md,
+    borderRadius:    borderRadius.lg,
+    padding:         spacing.lg,
+    marginBottom:    spacing.md,
   },
-  continueButton: {
-    width: '100%',
-    backgroundColor: colors.mossGreen,
-    padding: spacing.md,
-    borderRadius: borderRadius.lg,
-    alignItems: 'center',
-    marginBottom: spacing.lg,
+  formHeader: {
+    flexDirection:  'row',
+    alignItems:     'center',
+    gap:            spacing.sm,
+    marginBottom:   spacing.lg,
   },
-  buttonDisabled: {
-    backgroundColor: colors.mossGreenLight,
-  },
-  continueButtonText: {
-    fontSize: typography.sizes.md,
+  formTitle: {
+    fontSize:   typography.sizes.md,
     fontFamily: 'Nunito_600SemiBold',
-    color: colors.softWhite,
+    color:      colors.text,
   },
-  successIcon: {
-    marginBottom: spacing.lg,
+  input: {
+    backgroundColor: colors.creamLight,
+    borderRadius:    borderRadius.md,
+    borderWidth:     1,
+    borderColor:     colors.border,
+    paddingHorizontal: spacing.md,
+    paddingVertical:   spacing.md,
+    fontSize:        typography.sizes.md,
+    fontFamily:      'Nunito_400Regular',
+    color:           colors.text,
+    marginBottom:    spacing.md,
   },
-  successText: {
-    fontSize: typography.sizes.md,
+  securityNote: {
+    flexDirection:  'row',
+    alignItems:     'center',
+    justifyContent: 'center',
+    gap:            spacing.xs,
+    marginBottom:   spacing.lg,
+  },
+  securityText: {
+    fontSize:   typography.sizes.xs,
     fontFamily: 'Nunito_400Regular',
-    color: colors.textSecondary,
-    textAlign: 'center',
-    marginBottom: spacing.xl,
-    lineHeight: 24,
+    color:      colors.mossGreen,
   },
-  privacyNote: {
-    fontSize: typography.sizes.xs,
+  payBtn: {
+    flexDirection:   'row',
+    alignItems:      'center',
+    justifyContent:  'center',
+    gap:             spacing.sm,
+    backgroundColor: colors.mossGreen,
+    paddingVertical: spacing.lg,
+    borderRadius:    borderRadius.md,
+    marginBottom:    spacing.sm,
+  },
+  payBtnDisabled: {
+    opacity: 0.6,
+  },
+  payBtnText: {
+    fontSize:   typography.sizes.md,
+    fontFamily: 'Nunito_700Bold',
+    color:      '#fff',
+  },
+  cancelNote: {
+    fontSize:   typography.sizes.xs,
     fontFamily: 'Nunito_400Regular',
-    color: colors.textLight,
-    textAlign: 'center',
-    fontStyle: 'italic',
+    color:      colors.textLight,
+    textAlign:  'center',
+  },
+
+  // Active state
+  activeCard: {
+    backgroundColor: colors.surface,
+    borderRadius:    borderRadius.lg,
+    padding:         spacing.xl,
+    alignItems:      'center',
+    marginBottom:    spacing.lg,
+  },
+  activeIconBg: {
+    width:          80,
+    height:         80,
+    borderRadius:   40,
+    backgroundColor: colors.mossGreen + '15',
+    justifyContent: 'center',
+    alignItems:     'center',
+    marginBottom:   spacing.md,
+  },
+  activeTitle: {
+    fontSize:     typography.sizes.xl,
+    fontFamily:   'Cormorant_700Bold',
+    color:        colors.text,
+    marginBottom: spacing.sm,
+    textAlign:    'center',
+  },
+  activeSub: {
+    fontSize:   typography.sizes.md,
+    fontFamily: 'Nunito_400Regular',
+    color:      colors.textSecondary,
+    textAlign:  'center',
+    lineHeight: 22,
+  },
+  adminBadge: {
+    flexDirection:    'row',
+    alignItems:       'center',
+    gap:              4,
+    backgroundColor:  colors.warmBrown + '15',
+    paddingHorizontal: spacing.md,
+    paddingVertical:  spacing.xs,
+    borderRadius:     borderRadius.full,
+    marginTop:        spacing.md,
+  },
+  adminBadgeText: {
+    fontSize:   typography.sizes.sm,
+    fontFamily: 'Nunito_600SemiBold',
+    color:      colors.warmBrown,
+  },
+
+  // Expired state
+  expiredBanner: {
+    backgroundColor: '#8B2020',
+    borderRadius:    borderRadius.lg,
+    padding:         spacing.xl,
+    alignItems:      'center',
+    marginBottom:    spacing.lg,
+    gap:             spacing.sm,
+  },
+  expiredTitle: {
+    fontSize:   typography.sizes.lg,
+    fontFamily: 'Cormorant_700Bold',
+    color:      '#fff',
+    textAlign:  'center',
+  },
+  expiredSub: {
+    fontSize:   typography.sizes.sm,
+    fontFamily: 'Nunito_400Regular',
+    color:      'rgba(255,255,255,0.85)',
+    textAlign:  'center',
+    lineHeight: 20,
+  },
+
+  // Back home button (estado active)
+  backHomeBtn: {
+    flexDirection:   'row',
+    alignItems:      'center',
+    justifyContent:  'center',
+    gap:             spacing.sm,
+    backgroundColor: colors.warmBrownDark,
+    paddingVertical: spacing.lg,
+    borderRadius:    borderRadius.lg,
+    marginTop:       spacing.md,
+  },
+  backHomeBtnText: {
+    fontSize:   typography.sizes.md,
+    fontFamily: 'Nunito_700Bold',
+    color:      colors.softWhite,
   },
 });

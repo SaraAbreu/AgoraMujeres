@@ -10,7 +10,7 @@
     "newArchEnabled": false,
     "extra": {
       "EXPO_PUBLIC_BACKEND_URL": "http://localhost:8000",
-      "EXPO_PUBLIC_STRIPE_KEY": "pk_live_51SRw7PL07UaiQy6MZzVJ6DHIRrZYNUvqRaoyLkkDi3LBXl5I6qUsN2Ky4Kqry0eOq1y0mS1mzYIqFIVlPFGE00pUYNlVzO"
+      "EXPO_PUBLIC_STRIPE_KEY": "pk_test_51SRw7PL07UaiQy6MzTESTKEYXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
     },
     "ios": {
       "supportsTablet": true,
@@ -33,7 +33,45 @@
     "web": {
       "bundler": "metro",
       "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/favicon.png",
+      "viewport": "width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover",
+      "display": "standalone",
+      "preferRelatedApplications": false,
+      "htmlMetaTags": [
+        {
+          "tagName": "meta",
+          "attributes": {
+            "name": "viewport",
+            "content": "width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"
+          }
+        },
+        {
+          "tagName": "meta",
+          "attributes": {
+            "name": "theme-color",
+            "content": "#FDFBF9"
+          }
+        },
+        {
+          "tagName": "meta",
+          "attributes": {
+            "name": "apple-mobile-web-app-capable",
+            "content": "yes"
+          }
+        },
+        {
+          "tagName": "meta",
+          "attributes": {
+            "name": "apple-mobile-web-app-status-bar-style",
+            "content": "black-translucent"
+          }
+        }
+      ],
+      "env": {
+        "development": {
+          "bundler": "metro"
+        }
+      }
     },
     "plugins": [
       "expo-router",

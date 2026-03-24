@@ -35,7 +35,7 @@ config.transformer = {
       comments: false,
     },
     compress: {
-      drop_console: true, // Remove console.log in production
+      drop_console: true,
       evaluate: true,
       reduce_vars: true,
     },
@@ -47,5 +47,23 @@ config.transformer = {
 // 🚀 OPTIMIZACIÓN 5: Optimizaciones de Red
 // ============================================
 config.resetCache = process.env.RESET_CACHE === 'true';
+
+// ============================================
+// 🚀 WEB CONFIG: Deshabilitar phone frame
+// ============================================
+if (process.env.EXPO_OS === 'web' || process.argv.includes('--web')) {
+  config.server = {
+    enhanceMiddleware: (middleware) => {
+      return (req, res, next) => {
+        // Inyectar headers para deshabilitar phone frame
+        res.setHeader('X-UA-Compatible', 'IE=edge');
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        next();
+      };
+    },
+  };
+}
+
+module.exports = config;
 
 module.exports = config;

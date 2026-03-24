@@ -10,8 +10,8 @@ import {
   TextInput,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { colors, spacing, borderRadius, typography } from '../theme/colors';
+import { Ionicons } from '@expo/vector-icons';
+import { COLORS, SPACING, RADIUS, TYPO } from '../theme';
 import { useStore } from '../store/useStore';
 import {
   createCustomer,
@@ -123,59 +123,42 @@ export const PaywallModal: React.FC<PaywallModalProps> = ({
                   <Ionicons 
                     name="close" 
                     size={24} 
-                    color={colors.text}
+                    color={COLORS.textPrimary}
                   />
                 </TouchableOpacity>
-                <Text style={styles.title}>
-                  {language === 'es' ? '✨ Desbloquea Premium' : '✨ Unlock Premium'}
-                </Text>
               </View>
 
               {/* Content */}
               <View style={styles.content}>
-                <Text style={styles.subtitle}>
-                  {language === 'es'
-                    ? 'Acceso ilimitado a todas las funciones'
-                    : 'Unlimited access to all features'}
+                <Text style={styles.title}>
+                  {language === 'es' ? '✨ Acceso Premium' : '✨ Premium Access'}
                 </Text>
 
+                <Text style={styles.subtitle}>
+                  {language === 'es'
+                    ? 'Desbloquea todo el potencial de Ágora'
+                    : 'Unlock Ágora\'s full potential'}
+                </Text>
+
+                {/* 3 Benefits Only */}
                 <View style={styles.featuresList}>
                   {[
                     {
                       icon: '💬',
-                      title: language === 'es' ? 'Chat sin límites' : 'Unlimited chat',
-                      desc: language === 'es'
-                        ? 'Habla con Ágora todo lo que necesites'
-                        : 'Chat with Ágora as much as you need',
-                    },
-                    {
-                      icon: '🧠',
-                      title: language === 'es' ? 'Análisis avanzado' : 'Advanced analysis',
-                      desc: language === 'es'
-                        ? 'Patrones personalizados de tu salud'
-                        : 'Personalized health patterns',
+                      title: language === 'es' ? 'Chat ilimitado' : 'Unlimited chat',
                     },
                     {
                       icon: '📊',
                       title: language === 'es' ? 'Reportes completos' : 'Full reports',
-                      desc: language === 'es'
-                        ? 'Datos detallados de tu progreso'
-                        : 'Detailed progress tracking',
                     },
                     {
-                      icon: '🌙',
-                      title: language === 'es' ? 'Tema oscuro' : 'Dark mode',
-                      desc: language === 'es'
-                        ? 'Mejor experiencia nocturna'
-                        : 'Better night experience',
+                      icon: '🎯',
+                      title: language === 'es' ? 'Recomendaciones personalizadas' : 'Personalized tips',
                     },
                   ].map((feature, idx) => (
                     <View key={idx} style={styles.feature}>
                       <Text style={styles.featureIcon}>{feature.icon}</Text>
-                      <View style={styles.featureText}>
-                        <Text style={styles.featureTitle}>{feature.title}</Text>
-                        <Text style={styles.featureDesc}>{feature.desc}</Text>
-                      </View>
+                      <Text style={styles.featureTitle}>{feature.title}</Text>
                     </View>
                   ))}
                 </View>
@@ -199,8 +182,8 @@ export const PaywallModal: React.FC<PaywallModalProps> = ({
               >
                 <Text style={styles.buttonText}>
                   {language === 'es'
-                    ? '🔓 Activar Suscripción'
-                    : '🔓 Activate Subscription'}
+                    ? 'Activar Suscripción'
+                    : 'Activate Subscription'}
                 </Text>
               </TouchableOpacity>
 
@@ -221,25 +204,20 @@ export const PaywallModal: React.FC<PaywallModalProps> = ({
                   <Ionicons 
                     name="chevron-back" 
                     size={24} 
-                    color={colors.text}
+                    color={COLORS.textPrimary}
                   />
                 </TouchableOpacity>
-                <Text style={styles.title}>
-                  {language === 'es' ? '💳 Información de Pago' : '💳 Payment Info'}
-                </Text>
               </View>
 
               <View style={styles.content}>
-                <Text style={styles.paymentSubtitle}>
-                  {language === 'es'
-                    ? 'Ingresa tus datos para completar la suscripción'
-                    : 'Enter your details to complete'}
+                <Text style={styles.title}>
+                  {language === 'es' ? 'Completar suscripción' : 'Complete subscription'}
                 </Text>
 
                 <TextInput
                   style={styles.input}
                   placeholder={language === 'es' ? 'Tu nombre' : 'Your name'}
-                  placeholderTextColor={colors.textSecondary}
+                  placeholderTextColor={COLORS.textSecondary}
                   value={name}
                   onChangeText={setName}
                   editable={!loading}
@@ -248,7 +226,7 @@ export const PaywallModal: React.FC<PaywallModalProps> = ({
                 <TextInput
                   style={styles.input}
                   placeholder="correo@ejemplo.com"
-                  placeholderTextColor={colors.textSecondary}
+                  placeholderTextColor={COLORS.textSecondary}
                   value={email}
                   onChangeText={setEmail}
                   keyboardType="email-address"
@@ -259,12 +237,12 @@ export const PaywallModal: React.FC<PaywallModalProps> = ({
                   <Ionicons 
                     name="lock-closed" 
                     size={16} 
-                    color={colors.primary}
+                    color={COLORS.primary}
                   />
                   <Text style={styles.securityText}>
                     {language === 'es'
-                      ? 'Tu información está protegida por Stripe'
-                      : 'Your information is secured by Stripe'}
+                      ? 'Protegido por Stripe'
+                      : 'Secured by Stripe'}
                   </Text>
                 </View>
               </View>
@@ -275,12 +253,12 @@ export const PaywallModal: React.FC<PaywallModalProps> = ({
                 disabled={loading}
               >
                 {loading ? (
-                  <ActivityIndicator color={colors.background} />
+                  <ActivityIndicator color={COLORS.white} />
                 ) : (
                   <Text style={styles.buttonText}>
                     {language === 'es'
-                      ? '💳 Pagar y Activar'
-                      : '💳 Pay & Activate'}
+                      ? 'Pagar'
+                      : 'Pay'}
                   </Text>
                 )}
               </TouchableOpacity>
@@ -295,154 +273,127 @@ export const PaywallModal: React.FC<PaywallModalProps> = ({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'flex-end',
   },
   container: {
-    backgroundColor: colors.background,
-    borderTopLeftRadius: borderRadius.lg,
-    borderTopRightRadius: borderRadius.lg,
-    paddingBottom: spacing.xl,
+    backgroundColor: COLORS.background,
+    borderTopLeftRadius: RADIUS.lg,
+    borderTopRightRadius: RADIUS.lg,
+    paddingBottom: SPACING.xl,
     maxHeight: '90%',
   },
   header: {
-    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    paddingHorizontal: SPACING.lg,
+    paddingTop: SPACING.lg,
+    paddingBottom: SPACING.md,
   },
   closeButton: {
     position: 'absolute',
-    left: spacing.lg,
-    padding: spacing.sm,
+    left: SPACING.lg,
+    top: SPACING.lg,
+    padding: SPACING.sm,
   },
   title: {
-    fontSize: typography.sizes.lg,
-    fontWeight: typography.weights.bold as any,
-    fontFamily: typography.fonts.heading,
-    color: colors.text,
+    ...TYPO.h2,
+    color: COLORS.textPrimary,
+    textAlign: 'center',
+    marginBottom: SPACING.lg,
   },
   content: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.lg,
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.lg,
   },
   subtitle: {
-    fontSize: typography.sizes.md,
-    fontWeight: typography.weights.semibold as any,
-    color: colors.textSecondary,
-    marginBottom: spacing.lg,
-    textAlign: 'center',
-  },
-  paymentSubtitle: {
-    fontSize: typography.sizes.md,
-    fontWeight: typography.weights.medium as any,
-    color: colors.textSecondary,
-    marginBottom: spacing.lg,
+    ...TYPO.body,
+    color: COLORS.textSecondary,
+    marginBottom: SPACING.lg,
     textAlign: 'center',
   },
   featuresList: {
-    marginBottom: spacing.xl,
+    marginVertical: SPACING.xl,
   },
   feature: {
     flexDirection: 'row',
-    marginBottom: spacing.md,
-    alignItems: 'flex-start',
+    alignItems: 'center',
+    marginBottom: SPACING.lg,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
   },
   featureIcon: {
-    fontSize: 24,
-    marginRight: spacing.md,
-  },
-  featureText: {
-    flex: 1,
+    fontSize: 28,
+    marginRight: SPACING.md,
   },
   featureTitle: {
-    fontSize: typography.sizes.md,
-    fontWeight: typography.weights.semibold as any,
-    color: colors.text,
-    marginBottom: spacing.xs,
-  },
-  featureDesc: {
-    fontSize: typography.sizes.xs,
-    fontWeight: typography.weights.regular as any,
-    color: colors.textSecondary,
+    ...TYPO.body,
+    color: COLORS.textPrimary,
   },
   pricingBox: {
-    backgroundColor: colors.primary + '15',
-    borderRadius: borderRadius.md,
-    paddingVertical: spacing.lg,
-    paddingHorizontal: spacing.md,
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.lg,
+    paddingVertical: SPACING.lg,
+    paddingHorizontal: SPACING.lg,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: colors.primary + '30',
+    borderColor: COLORS.border,
   },
   price: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: colors.primary,
-    marginBottom: spacing.xs,
+    fontSize: 32,
+    fontWeight: '700',
+    color: COLORS.primary,
+    marginBottom: SPACING.sm,
   },
   pricingNote: {
-    fontSize: typography.sizes.xs,
-    fontWeight: typography.weights.regular as any,
-    color: colors.textSecondary,
+    ...TYPO.bodySmall,
+    color: COLORS.textSecondary,
   },
   input: {
-    backgroundColor: colors.background + '5',
+    backgroundColor: COLORS.white,
     borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: borderRadius.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    marginBottom: spacing.md,
-    color: colors.text,
-    fontSize: 16,
+    borderColor: COLORS.border,
+    borderRadius: RADIUS.md,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.md,
+    marginBottom: SPACING.md,
+    color: COLORS.textPrimary,
+    ...TYPO.body,
   },
   securityNote: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: spacing.lg,
-    paddingHorizontal: spacing.md,
+    marginTop: SPACING.lg,
+    paddingHorizontal: SPACING.md,
   },
   securityText: {
-    fontSize: typography.sizes.xs,
-    fontWeight: typography.weights.regular as any,
-    color: colors.primary,
-    marginLeft: spacing.sm,
+    ...TYPO.caption,
+    color: COLORS.primary,
+    marginLeft: SPACING.sm,
   },
   button: {
-    backgroundColor: colors.primary,
-    marginHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.md,
+    backgroundColor: COLORS.primary,
+    marginHorizontal: SPACING.lg,
+    paddingVertical: SPACING.lg,
+    borderRadius: RADIUS.lg,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: spacing.md,
-    shadowColor: colors.primary,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
+    marginBottom: SPACING.md,
   },
   buttonDisabled: {
     opacity: 0.6,
   },
   buttonText: {
-    color: colors.background,
-    fontSize: typography.sizes.md,
-    fontWeight: '600',
+    color: COLORS.white,
+    ...TYPO.h3,
   },
   skipButton: {
     alignItems: 'center',
-    paddingVertical: spacing.sm,
+    paddingVertical: SPACING.md,
+    marginHorizontal: SPACING.lg,
   },
   skipText: {
-    fontSize: typography.sizes.md,
-    fontWeight: typography.weights.regular as any,
-    color: colors.textSecondary,
+    ...TYPO.body,
+    color: COLORS.textSecondary,
   },
 });

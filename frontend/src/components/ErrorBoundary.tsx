@@ -4,9 +4,8 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  useColorScheme,
 } from 'react-native';
-import { colors } from '../theme/colors';
+import { COLORS, SPACING, RADIUS, TYPO } from '../theme';
 
 interface Props {
   children: any;
@@ -55,81 +54,41 @@ interface ErrorFallbackProps {
 }
 
 function ErrorFallback({ error, onReset }: ErrorFallbackProps) {
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
-
-  const themeColors = {
-    background: isDark ? '#1A1A1A' : '#F5F3F0',
-    text: isDark ? '#E8E8E8' : '#3D3D3D',
-    lightText: isDark ? '#A8A8A8' : '#8B8B8B',
-    errorRed: '#FF6B6B',
-    mossGreen: isDark ? '#6B8476' : '#7A9B82',
-    cream: isDark ? '#2A2A2A' : '#FDFBF9',
-  };
-
   return (
-    <View style={[styles.container, { backgroundColor: themeColors.background }]}>
-      <View style={[styles.content, { backgroundColor: themeColors.cream }]}>
+    <View style={styles.container}>
+      <View style={styles.content}>
         {/* Icon */}
         <Text style={styles.icon}>⚠️</Text>
 
         {/* Error Title */}
-        <Text style={[styles.title, { color: themeColors.text }]}>
-          Oops, algo salió mal
+        <Text style={styles.title}>
+          Algo inesperado ocurrió
         </Text>
 
         {/* Error Description */}
-        <Text style={[styles.description, { color: themeColors.lightText }]}>
-          Encontramos un problema. No es tu culpa. Vamos a arreglarlo.
+        <Text style={styles.description}>
+          No es tu culpa. Estamos aquí para ayudarte.
         </Text>
 
         {/* Error Details (only in development) */}
         {__DEV__ && error && (
-          <View style={[styles.errorDetails, { borderColor: themeColors.errorRed }]}>
-            <Text style={[styles.errorTitle, { color: themeColors.errorRed }]}>
-              Detalles del error (desarrollo):
+          <View style={styles.errorDetails}>
+            <Text style={styles.errorTitle}>
+              Detalles del error
             </Text>
-            <Text style={[styles.errorText, { color: themeColors.lightText }]}>
+            <Text style={styles.errorText}>
               {error.message}
             </Text>
           </View>
         )}
 
-        {/* Help Text */}
-        <View style={styles.helpSection}>
-          <Text style={[styles.helpTitle, { color: themeColors.text }]}>
-            ¿Qué puedes hacer?
-          </Text>
-          <Text style={[styles.helpItem, { color: themeColors.lightText }]}>
-            • Recarga la app
-          </Text>
-          <Text style={[styles.helpItem, { color: themeColors.lightText }]}>
-            • Comprueba tu conexión
-          </Text>
-          <Text style={[styles.helpItem, { color: themeColors.lightText }]}>
-            • Si el problema persiste, contacta con soporte
-          </Text>
-        </View>
-
-        {/* Buttons */}
+        {/* Actions */}
         <TouchableOpacity
-          style={[styles.resetButton, { backgroundColor: themeColors.mossGreen }]}
+          style={styles.resetButton}
           onPress={onReset}
         >
-          <Text style={[styles.resetButtonText, { color: themeColors.cream }]}>
+          <Text style={styles.resetButtonText}>
             Reintentar
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.homeButton, { borderColor: themeColors.mossGreen }]}
-          onPress={() => {
-            // Would navigate home, but this is a fallback
-            onReset();
-          }}
-        >
-          <Text style={[styles.homeButtonText, { color: themeColors.mossGreen }]}>
-            Ir al inicio
           </Text>
         </TouchableOpacity>
       </View>
@@ -142,88 +101,79 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
+    backgroundColor: COLORS.background,
+    padding: SPACING.lg,
   },
   content: {
-    borderRadius: 16,
-    padding: 24,
-    maxWidth: 400,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.xl,
+    width: '100%',
+    maxWidth: 450,
   },
   icon: {
     fontSize: 64,
     textAlign: 'center',
-    marginBottom: 16,
+    marginBottom: SPACING.lg,
   },
   title: {
-    fontSize: 22,
-    fontWeight: '700',
+    ...TYPO.h2,
+    color: COLORS.textPrimary,
     textAlign: 'center',
-    marginBottom: 12,
+    marginBottom: SPACING.md,
   },
   description: {
-    fontSize: 16,
+    ...TYPO.body,
+    color: COLORS.textSecondary,
     textAlign: 'center',
     lineHeight: 24,
-    marginBottom: 24,
+    marginBottom: SPACING.xl,
   },
   errorDetails: {
     borderWidth: 1,
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 24,
-    backgroundColor: 'rgba(255, 107, 107, 0.05)',
+    borderColor: COLORS.danger,
+    borderRadius: RADIUS.md,
+    padding: SPACING.md,
+    marginBottom: SPACING.xl,
+    backgroundColor: COLORS.danger + '08',
   },
   errorTitle: {
-    fontWeight: '700',
-    marginBottom: 8,
-    fontSize: 14,
+    ...TYPO.caption,
+    color: COLORS.danger,
+    marginBottom: SPACING.sm,
   },
   errorText: {
-    fontSize: 12,
+    ...TYPO.bodySmall,
+    color: COLORS.textSecondary,
     fontFamily: 'monospace',
     lineHeight: 18,
   },
   helpSection: {
-    marginBottom: 24,
-    paddingBottom: 24,
+    marginBottom: SPACING.xl,
+    paddingBottom: SPACING.lg,
     borderBottomWidth: 1,
-    borderBottomColor: '#E0DCD8',
+    borderBottomColor: COLORS.border,
   },
   helpTitle: {
-    fontWeight: '700',
-    marginBottom: 12,
-    fontSize: 16,
+    ...TYPO.h3,
+    color: COLORS.textPrimary,
+    marginBottom: SPACING.md,
   },
   helpItem: {
-    fontSize: 14,
-    lineHeight: 20,
-    marginBottom: 8,
+    ...TYPO.body,
+    color: COLORS.textSecondary,
+    lineHeight: 22,
+    marginBottom: SPACING.sm,
   },
   resetButton: {
-    paddingVertical: 14,
-    borderRadius: 10,
+    backgroundColor: COLORS.primary,
+    paddingVertical: SPACING.lg,
+    borderRadius: RADIUS.lg,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 12,
   },
   resetButtonText: {
-    fontWeight: '700',
-    fontSize: 16,
-  },
-  homeButton: {
-    paddingVertical: 14,
-    borderRadius: 10,
-    borderWidth: 2,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  homeButtonText: {
-    fontWeight: '700',
-    fontSize: 16,
+    ...TYPO.h3,
+    color: COLORS.white,
   },
 });

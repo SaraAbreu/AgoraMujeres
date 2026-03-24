@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
-import { colors } from '../theme/colors';
-import Feather from '@expo/vector-icons/Feather';
+import { COLORS, SPACING, RADIUS, TYPO } from '../theme';
+import { Ionicons } from '@expo/vector-icons';
 import { getCrisisSupport, CrisisResponse } from '../services/api';
 import { useStore } from '../store/useStore';
 
@@ -38,26 +38,18 @@ export function CrisisSupport() {
   if (loading) {
     return (
       <View style={styles.container}>
-        <ActivityIndicator size="large" color={colors.primary} />
+        <ActivityIndicator size="large" color={COLORS.primary} />
       </View>
     );
   }
 
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-      {/* Immediate Support */}
-      {crisisData?.immediate && (
-        <View style={styles.immediateCard}>
-          <Text style={styles.immediateTitle}>{crisisData.immediate.title}</Text>
-          <Text style={styles.immediateMessage}>{crisisData.immediate.message}</Text>
-        </View>
-      )}
-
-      {/* Recommended Technique */}
+      {/* Suggested Technique */}
       {crisisData?.technique && (
-        <View style={styles.techniqueCard}>
-          <Text style={styles.techniqueTitle}>{crisisData.technique.title}</Text>
-          <Text style={styles.techniqueMessage}>{crisisData.technique.message}</Text>
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>{crisisData.technique.title}</Text>
+          <Text style={styles.cardMessage}>{crisisData.technique.message}</Text>
           
           {crisisData.technique.steps && (
             <View style={styles.stepsContainer}>
@@ -74,36 +66,19 @@ export function CrisisSupport() {
         </View>
       )}
 
-      {/* Other Techniques */}
-      {crisisData?.all_techniques && (
-        <View style={styles.techniquesSection}>
-          <Text style={styles.sectionTitle}>Otras técnicas disponibles</Text>
-          {crisisData.all_techniques.map((tech) => (
-            <TouchableOpacity
-              key={tech.key}
-              style={[
-                styles.techniqueButton,
-                selectedTechnique === tech.title && styles.techniqueButtonActive
-              ]}
-              onPress={() => setSelectedTechnique(tech.title)}
-            >
-              <Text style={styles.techniqueButtonText}>{tech.title}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      )}
-
       {/* Emergency Resources */}
-      <View style={styles.emergencySection}>
-        <Text style={styles.emergencyTitle}>🆘 Recursos de Emergencia</Text>
-        <View style={styles.emergencyCard}>
-          <Feather name="phone-call" size={20} color={colors.accent} />
-          <Text style={styles.emergencyText}>024 - Teléfono de la Esperanza</Text>
-        </View>
-        <View style={styles.emergencyCard}>
-          <Feather name="phone-call" size={20} color={colors.accent} />
-          <Text style={styles.emergencyText}>112 - Emergencias</Text>
-        </View>
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>🆘 Recursos de apoyo</Text>
+        
+        {[
+          { icon: 'call', label: '024 - Teléfono de la Esperanza' },
+          { icon: 'call', label: '112 - Emergencias' },
+        ].map((resource, idx) => (
+          <TouchableOpacity key={idx} style={styles.resourceItem}>
+            <Ionicons name={resource.icon as any} size={20} color={COLORS.primary} />
+            <Text style={styles.resourceText}>{resource.label}</Text>
+          </TouchableOpacity>
+        ))}
       </View>
 
       {/* Back to Chat */}
@@ -111,153 +86,88 @@ export function CrisisSupport() {
         style={styles.backButton}
         onPress={() => router.push('/(tabs)/chat')}
       >
-        <Text style={styles.backButtonText}>Volver a Ágora</Text>
+        <Text style={styles.backButtonText}>← Volver a Ágora</Text>
       </TouchableOpacity>
 
       <View style={styles.spacer} />
     </ScrollView>
   );
-}
+};
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#80704f',
-    padding: 20,
+    backgroundColor: COLORS.background,
+    padding: SPACING.lg,
   },
-  immediateCard: {
-    backgroundColor: colors.secondary,
-    borderRadius: 12,
-    padding: 20,
-    marginBottom: 20,
-    borderLeftWidth: 4,
-    borderLeftColor: colors.primary,
+  card: {
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.lg,
+    marginBottom: SPACING.lg,
   },
-  immediateTitle: {
-    fontSize: 18,
-    fontFamily: 'Cormorant_600SemiBold',
-    color: colors.text,
-    marginBottom: 10,
+  cardTitle: {
+    ...TYPO.h3,
+    color: COLORS.textPrimary,
+    marginBottom: SPACING.md,
   },
-  immediateMessage: {
-    fontSize: 16,
-    fontFamily: 'Nunito_400Regular',
-    color: colors.text,
+  cardMessage: {
+    ...TYPO.body,
+    color: COLORS.textSecondary,
+    marginBottom: SPACING.lg,
     lineHeight: 24,
   },
-  techniqueCard: {
-    backgroundColor: colors.secondary,
-    borderRadius: 12,
-    padding: 20,
-    marginBottom: 20,
-  },
-  techniqueTitle: {
-    fontSize: 18,
-    fontFamily: 'Cormorant_600SemiBold',
-    color: colors.primary,
-    marginBottom: 10,
-  },
-  techniqueMessage: {
-    fontSize: 15,
-    fontFamily: 'Nunito_400Regular',
-    color: colors.text,
-    marginBottom: 15,
-    lineHeight: 22,
-  },
   stepsContainer: {
-    marginTop: 15,
+    marginTop: SPACING.lg,
   },
   step: {
     flexDirection: 'row',
-    marginBottom: 12,
+    marginBottom: SPACING.lg,
     alignItems: 'flex-start',
   },
   stepNumber: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: colors.primary,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: COLORS.primary,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
+    marginRight: SPACING.md,
   },
   stepNumberText: {
-    color: colors.background,
-    fontFamily: 'Nunito_700Bold',
-    fontSize: 14,
+    color: COLORS.white,
+    ...TYPO.h3,
   },
   stepText: {
     flex: 1,
-    fontSize: 15,
-    fontFamily: 'Nunito_400Regular',
-    color: colors.text,
+    ...TYPO.body,
+    color: COLORS.textPrimary,
     lineHeight: 22,
   },
-  techniquesSection: {
-    marginBottom: 20,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontFamily: 'Cormorant_600SemiBold',
-    color: colors.text,
-    marginBottom: 12,
-  },
-  techniqueButton: {
-    backgroundColor: colors.secondary,
-    padding: 15,
-    borderRadius: 10,
-    marginBottom: 10,
-    borderWidth: 2,
-    borderColor: 'transparent',
-  },
-  techniqueButtonActive: {
-    borderColor: colors.primary,
-    backgroundColor: colors.secondary,
-  },
-  techniqueButtonText: {
-    fontSize: 15,
-    fontFamily: 'Nunito_500Medium',
-    color: colors.text,
-  },
-  emergencySection: {
-    backgroundColor: '#fee8e8',
-    borderRadius: 12,
-    padding: 20,
-    marginBottom: 20,
-  },
-  emergencyTitle: {
-    fontSize: 16,
-    fontFamily: 'Cormorant_600SemiBold',
-    color: '#cc0000',
-    marginBottom: 12,
-  },
-  emergencyCard: {
+  resourceItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'white',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 10,
+    paddingVertical: SPACING.md,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
   },
-  emergencyText: {
-    fontSize: 14,
-    fontFamily: 'Nunito_500Medium',
-    color: colors.text,
-    marginLeft: 12,
+  resourceText: {
+    ...TYPO.body,
+    color: COLORS.textPrimary,
+    marginLeft: SPACING.md,
   },
   backButton: {
-    backgroundColor: colors.primary,
-    padding: 15,
-    borderRadius: 10,
+    backgroundColor: COLORS.primary,
+    paddingVertical: SPACING.lg,
+    borderRadius: RADIUS.lg,
     alignItems: 'center',
-    marginBottom: 20,
+    marginVertical: SPACING.xl,
   },
   backButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontFamily: 'Nunito_700Bold',
+    ...TYPO.h3,
+    color: COLORS.white,
   },
   spacer: {
-    height: 40,
+    height: SPACING.xl,
   },
 });

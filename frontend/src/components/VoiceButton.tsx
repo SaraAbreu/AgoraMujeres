@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { TouchableOpacity, StyleSheet, Animated } from 'react-native';
-import { Feather } from '@expo/vector-icons';
-import { colors } from '../theme/colors';
+import { Ionicons } from '@expo/vector-icons';
+import { COLORS, RADIUS } from '../theme';
 
 interface VoiceButtonProps {
   isListening: boolean;
@@ -85,10 +85,10 @@ export const VoiceButton: React.FC<VoiceButtonProps> = ({
       )}
 
       {/* Icono del micrófono */}
-      <Feather
+      <Ionicons
         name={isListening ? 'mic' : 'mic-off'}
         size={24}
-        color={isListening || isSpeaking ? colors.textLight : colors.text}
+        color={isListening || isSpeaking ? COLORS.white : COLORS.textPrimary}
         style={styles.icon}
       />
     </TouchableOpacity>
@@ -97,29 +97,26 @@ export const VoiceButton: React.FC<VoiceButtonProps> = ({
 
 const styles = StyleSheet.create({
   container: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: colors.cream,
+    width: 56,
+    height: 56,
+    borderRadius: RADIUS.pill,
+    backgroundColor: COLORS.surface,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.mossGreen,
     marginLeft: 8,
   },
   containerActive: {
-    backgroundColor: colors.mossGreen,
-    borderColor: colors.mossGreen,
+    backgroundColor: COLORS.primary,
   },
   containerDisabled: {
     opacity: 0.5,
   },
   pulse: {
     position: 'absolute',
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: colors.mossGreen,
+    width: 56,
+    height: 56,
+    borderRadius: RADIUS.pill,
+    backgroundColor: COLORS.primary,
   },
   icon: {
     zIndex: 1,

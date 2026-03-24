@@ -176,15 +176,12 @@ export default function RootLayout() {
     </SafeAreaProvider>
   );
 
-  // ── Web: envuelve en marco de móvil ────────────────────────────────────────
+  // ── Web: Sin mockup de iPhone, full-width ─────────────────────────────────
   if (IS_WEB) {
     return (
       <View style={webStyles.page}>
-        <View style={webStyles.frame}>
-          <View style={webStyles.notch} />
-          <View style={webStyles.screen}>
-            {AppContent}
-          </View>
+        <View style={webStyles.screen}>
+          {AppContent}
         </View>
       </View>
     );
@@ -261,23 +258,24 @@ const styles = StyleSheet.create({
   },
 });
 
-// Solo se aplican en web — sin marco, ancho móvil centrado (como WhatsApp Web)
+// Solo se aplican en web — full-width sin mockup de iPhone
 const webStyles = StyleSheet.create({
   page: {
     flex:            1,
-    alignItems:      'center',
-    backgroundColor: '#80704f',
+    alignItems:      'stretch',
+    backgroundColor: '#F5F0E8',
     minHeight:       '100vh' as any,
+    width:           '100%' as any,
   },
   frame: {
-    width:     '100%' as any,
-    maxWidth:  480,
-    flex:      1,
-    alignSelf: 'center',
+    display: 'none' as any,
   },
-  notch:  {},
+  notch:  {
+    display: 'none' as any,
+  },
   screen: {
     flex:            1,
-    backgroundColor: '#80704f',
+    width:           '100%' as any,
+    backgroundColor: colors.background,
   },
 });

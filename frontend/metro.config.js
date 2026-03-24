@@ -49,15 +49,16 @@ config.transformer = {
 config.resetCache = process.env.RESET_CACHE === 'true';
 
 // ============================================
-// 🚀 WEB CONFIG: Deshabilitar phone frame
+// 🚀 WEB CONFIG: Full-width layout sin phone frame
 // ============================================
-if (process.env.EXPO_OS === 'web' || process.argv.includes('--web')) {
-  config.server = {
-    enhanceMiddleware: (middleware) => {
-      return (req, res, next) => {
-        // Inyectar headers para deshabilitar phone frame
-        res.setHeader('X-UA-Compatible', 'IE=edge');
-        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+config.server = {
+  enhanceMiddleware: (middleware) => {
+    return (req, res, next) => {
+      // Inyectar headers para deshabilitar phone frame y usar full-width
+      res.setHeader('X-UA-Compatible', 'IE=edge');
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      // Deshabilitar phone frame
+      process.env.EXPO_WEB_USE_PHONE_FRAME = 'false';
         next();
       };
     },

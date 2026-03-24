@@ -217,7 +217,11 @@ function formatTrialTime(seconds: number): string {
 
 function getResponsiveStyles(responsive: ReturnType<typeof useResponsive>) {
   const { isDesktop, isTablet } = responsive;
-  const paddingX = isDesktop ? 60 : isTablet ? 40 : 20;
+  // Más espacio en desktop para aprovechar pantalla completa
+  const paddingX = isDesktop ? 80 : isTablet ? 40 : 20;
+  // Más columnas en desktop
+  const gridColumns = isDesktop ? 3 : isTablet ? 2 : 2;
+  const cardWidth = isDesktop ? '32%' : '48%';
 
   return StyleSheet.create({
     scroll: { flex: 1 },
@@ -226,50 +230,50 @@ function getResponsiveStyles(responsive: ReturnType<typeof useResponsive>) {
     // HEADER
     headerSection: { marginBottom: spacing.xl, paddingBottom: spacing.lg, borderBottomWidth: 1, borderBottomColor: 'rgba(0,0,0,0.05)' },
     greetingContainer: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.lg },
-    emoji: { fontSize: isDesktop ? 48 : isTablet ? 40 : 36 },
+    emoji: { fontSize: isDesktop ? 56 : isTablet ? 44 : 36 },
     greetingText: { flex: 1 },
-    greetingMain: { fontSize: isDesktop ? 28 : isTablet ? 24 : 22, fontWeight: '700', fontFamily: 'Cormorant_700Bold', color: '#3D2B1A', marginBottom: 2 },
-    greetingLabel: { fontSize: isDesktop ? 13 : 12, color: '#B5A997', fontFamily: 'Nunito_400Regular' },
+    greetingMain: { fontSize: isDesktop ? 32 : isTablet ? 26 : 22, fontWeight: '700', fontFamily: 'Cormorant_700Bold', color: '#3D2B1A', marginBottom: 2 },
+    greetingLabel: { fontSize: isDesktop ? 14 : isTablet ? 13 : 12, color: '#B5A997', fontFamily: 'Nunito_400Regular' },
 
     // Status Badge
     statusBadge: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: borderRadius.full, alignSelf: 'flex-start' },
     trialBadge: { backgroundColor: '#F5EFE5' },
-    badgeText: { fontSize: 12, fontWeight: '600', color: '#80704F', fontFamily: 'Nunito_600SemiBold' },
+    badgeText: { fontSize: isDesktop ? 13 : 12, fontWeight: '600', color: '#80704F', fontFamily: 'Nunito_600SemiBold' },
     expiredBadge: { backgroundColor: 'rgba(160,123,123,0.1)' },
-    expiredBadgeText: { fontSize: 12, fontWeight: '600', color: '#A07B7B', fontFamily: 'Nunito_600SemiBold' },
+    expiredBadgeText: { fontSize: isDesktop ? 13 : 12, fontWeight: '600', color: '#A07B7B', fontFamily: 'Nunito_600SemiBold' },
     activeBadge: { backgroundColor: 'rgba(122,155,142,0.1)' },
-    activeBadgeText: { fontSize: 12, fontWeight: '600', color: '#7A9B8E', fontFamily: 'Nunito_600SemiBold' },
+    activeBadgeText: { fontSize: isDesktop ? 13 : 12, fontWeight: '600', color: '#7A9B8E', fontFamily: 'Nunito_600SemiBold' },
 
     // CRISIS BUTTON
     crisisButton: { backgroundColor: '#7A3D36', borderRadius: borderRadius.lg, marginBottom: spacing.xl, overflow: 'hidden' },
-    crisisGradient: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.lg, paddingVertical: spacing.lg },
+    crisisGradient: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.lg, paddingVertical: isDesktop ? spacing.xl : spacing.lg },
     crisisLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, flex: 1 },
-    crisisEmoji: { fontSize: 32 },
+    crisisEmoji: { fontSize: isDesktop ? 48 : 32 },
     crisisTextBlock: { flex: 1 },
-    crisisTitle: { fontSize: 16, fontWeight: '700', color: '#fff', fontFamily: 'Nunito_700Bold', marginBottom: 2 },
-    crisisSubtitle: { fontSize: 12, color: 'rgba(255,255,255,0.85)', fontFamily: 'Nunito_400Regular' },
+    crisisTitle: { fontSize: isDesktop ? 18 : 16, fontWeight: '700', color: '#fff', fontFamily: 'Nunito_700Bold', marginBottom: 2 },
+    crisisSubtitle: { fontSize: isDesktop ? 13 : 12, color: 'rgba(255,255,255,0.85)', fontFamily: 'Nunito_400Regular' },
 
     // WELLNESS TIP
     wellnessTipCard: { backgroundColor: '#fff', borderRadius: borderRadius.md, paddingHorizontal: spacing.lg, paddingVertical: spacing.lg, marginBottom: spacing.xl, flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-    tipIconWrapper: { width: 48, height: 48, backgroundColor: 'rgba(128,112,79,0.1)', borderRadius: borderRadius.md, justifyContent: 'center', alignItems: 'center' },
+    tipIconWrapper: { width: isDesktop ? 56 : 48, height: isDesktop ? 56 : 48, backgroundColor: 'rgba(128,112,79,0.1)', borderRadius: borderRadius.md, justifyContent: 'center', alignItems: 'center' },
     tipContent: { flex: 1 },
-    tipTitle: { fontSize: 14, fontWeight: '700', color: '#3D2B1A', fontFamily: 'Nunito_700Bold', marginBottom: 2 },
-    tipSubtitle: { fontSize: 12, color: '#8FA89F', fontFamily: 'Nunito_400Regular', lineHeight: 16 },
+    tipTitle: { fontSize: isDesktop ? 15 : 14, fontWeight: '700', color: '#3D2B1A', fontFamily: 'Nunito_700Bold', marginBottom: 2 },
+    tipSubtitle: { fontSize: isDesktop ? 13 : 12, color: '#8FA89F', fontFamily: 'Nunito_400Regular', lineHeight: 18 },
 
     // ACTIONS
     actionsContainer: { marginBottom: spacing.xl },
-    sectionTitle: { fontSize: isDesktop ? 18 : 16, fontWeight: '700', color: '#3D2B1A', fontFamily: 'Cormorant_700Bold', marginBottom: spacing.lg },
-    actionsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, justifyContent: 'space-between' },
-    actionCard: { width: isDesktop ? '31%' : '48%', backgroundColor: '#fff', borderRadius: borderRadius.lg, padding: spacing.md, alignItems: 'center', gap: spacing.sm },
+    sectionTitle: { fontSize: isDesktop ? 20 : isTablet ? 18 : 16, fontWeight: '700', color: '#3D2B1A', fontFamily: 'Cormorant_700Bold', marginBottom: spacing.lg },
+    actionsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.lg, justifyContent: 'space-between' },
+    actionCard: { width: cardWidth, backgroundColor: '#fff', borderRadius: borderRadius.lg, padding: spacing.lg, alignItems: 'center', gap: spacing.sm },
     actionColorBg: { width: '100%', aspectRatio: 1, borderRadius: borderRadius.md, justifyContent: 'center', alignItems: 'center', marginBottom: spacing.xs },
-    actionEmojiLarge: { fontSize: 36 },
-    actionCardLabel: { fontSize: 12, fontWeight: '600', color: '#3D2B1A', fontFamily: 'Nunito_600SemiBold', textAlign: 'center', lineHeight: 16 },
+    actionEmojiLarge: { fontSize: isDesktop ? 44 : 36 },
+    actionCardLabel: { fontSize: isDesktop ? 13 : 12, fontWeight: '600', color: '#3D2B1A', fontFamily: 'Nunito_600SemiBold', textAlign: 'center', lineHeight: 18 },
 
     // WEATHER
     weatherCard: { backgroundColor: '#fff', borderRadius: borderRadius.md, paddingHorizontal: spacing.lg, paddingVertical: spacing.md, marginBottom: spacing.xl, flexDirection: 'row', alignItems: 'center', gap: spacing.md },
     weatherInfo: { flex: 1 },
-    weatherTemp: { fontSize: 16, fontWeight: '700', color: '#3D2B1A', fontFamily: 'Nunito_700Bold' },
-    weatherHumidity: { fontSize: 12, color: '#B5A997', fontFamily: 'Nunito_400Regular' },
+    weatherTemp: { fontSize: isDesktop ? 18 : 16, fontWeight: '700', color: '#3D2B1A', fontFamily: 'Nunito_700Bold' },
+    weatherHumidity: { fontSize: isDesktop ? 13 : 12, color: '#B5A997', fontFamily: 'Nunito_400Regular' },
 
     // STATS
     statsSection: { marginTop: spacing.lg },

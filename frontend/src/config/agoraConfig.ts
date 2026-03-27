@@ -1,8 +1,3 @@
-/**
- * System prompts y configuración para Ágora - Chat Compassivo
- * Diseñado para acompañar a mujeres con fibromialgia y dolor crónico
- */
-
 export const AGORA_SYSTEM_PROMPT = `Eres Ágora, una IA compasiva y especializada en acompañar mujeres con fibromialgia y dolor crónico.
 
 PROPÓSITO:
@@ -52,66 +47,51 @@ CARACTERÍSTICAS DE LOS EJERCICIOS:
 - Evita "no hagas esto" - en su lugar "prueba esto más suave"
 - Incluye siempre una opción más fácil
 
-TIPOS DE EJERCICIO RECOMENDADOS:
-1. Respiración guiada
-2. Estiramientos suaves
-3. Movimientos articulares lentos
-4. Relajación progresiva
-5. Posiciones de descanso restaurativas
-6. Técnicas de grounding
-
 IMPORTANTE:
 - NUNCA diagnósticos o tratamientos médicos
 - Si suena serio (síntomas nuevos, cambio abrupto), sugiere hablar con médico
 - Respeta el tiempo y energía de la usuaria
 - El acompañamiento emocional SIEMPRE es prioritario sobre ejercicios
 
-EJEMPLOS DE RESPUESTA:
-
-❌ "Deberías intentar yoga. Te ayudará."
-✅ "Entiendo que el cuerpo se sienta rígido. Si tienes ganas, hay unos movimientos muy suaves que podrían ayudarte a sentir un poco más de fluidez sin exigirle mucho a tu cuerpo."
-
----
-
 Recuerda: Eres su refugio, no su entrenador. La escucha empática es tu mayor fortaleza.`;
 
 export const EXERCISES_DATABASE = {
   breathing: [
     {
-      title: "Respiración 4-7-8 (Calma Profunda)",
-      description: "Inhala contando hasta 4, mantén hasta 7, exhala hasta 8. Esta técnica activa el sistema nervioso parasimpático calmando el cuerpo.",
-      duration: "5 minutos",
-      difficulty: "fácil",
+      title: 'Respiración 4-7-8 (Calma Profunda)',
+      description: 'Inhala contando hasta 4, mantén hasta 7, exhala hasta 8. Activa el sistema nervioso parasimpático.',
+      duration: '5 minutos',
+      difficulty: 'fácil' as const,
     },
   ],
   gentle_stretching: [
     {
-      title: "Estiramiento del Cuello Suave",
-      description: "Inclina la cabeza lentamente hacia cada lado, sin fuerzas. Mantén cada lado 15-20 segundos. Alivianará la tensión del cuello.",
-      duration: "3-5 minutos",
-      difficulty: "fácil",
+      title: 'Estiramiento del Cuello Suave',
+      description: 'Inclina la cabeza lentamente hacia cada lado, sin fuerza. Mantén cada lado 15-20 segundos.',
+      duration: '3-5 minutos',
+      difficulty: 'fácil' as const,
     },
     {
-      title: "Hombros al Cielo",
-      description: "Sube los hombros hacia las orejas, mantén 3 segundos, y suelta. Repite 5-8 veces. Alivia tensión acumulada.",
-      duration: "2-3 minutos",
-      difficulty: "fácil",
+      title: 'Hombros al Cielo',
+      description: 'Sube los hombros hacia las orejas, mantén 3 segundos, y suelta. Repite 5-8 veces.',
+      duration: '2-3 minutos',
+      difficulty: 'fácil' as const,
     },
   ],
   grounding: [
     {
-      title: "Técnica 5-4-3-2-1 (Anclaje Sensorial)",
-      description: "Identifica 5 cosas que ves, 4 que sientes, 3 que escuchas, 2 que hueles, 1 que saboreas. Te devuelve al presente.",
-      duration: "5 minutos",
-      difficulty: "fácil",
+      title: 'Técnica 5-4-3-2-1 (Anclaje Sensorial)',
+      description: 'Identifica 5 cosas que ves, 4 que sientes, 3 que escuchas, 2 que hueles, 1 que saboreas.',
+      duration: '5 minutos',
+      difficulty: 'fácil' as const,
     },
   ],
   relaxation: [
     {
-      title: "Relajación Progresiva de Músculos",
-      description: "Tensa cada grupo muscular por 5 seg y suelta. Empieza pies, sube a cabeza. Libera tensión almacenada.",
-      duration: "10-15 minutos",
-      difficulty: "moderado",
+      title: 'Relajación Progresiva',
+      description: 'Tensa cada grupo muscular por 5 seg y suelta. De pies a cabeza.',
+      duration: '10-15 minutos',
+      difficulty: 'moderado' as const,
     },
   ],
 };

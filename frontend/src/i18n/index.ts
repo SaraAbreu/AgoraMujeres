@@ -5,21 +5,16 @@ import * as Localization from 'expo-localization';
 const resources = {
   es: {
     translation: {
-      // App
       appName: 'Ágora Mujeres',
       tagline: 'Tu refugio emocional',
-      
-      // Navigation
       home: 'Refugio',
       diary: 'Diario',
       chat: 'Ágora',
       patterns: 'Patrones',
       settings: 'Ajustes',
-      
-      // Home
-      welcomeBack: 'Bienvenida, tu refugio está aquí',
-      howAreYou: 'Hoy puede ser un día difícil, regular o bueno. Sea como sea, aquí tienes un espacio para ti.',
-      quickEntry: 'Entrada rápida (30 segundos)',
+      welcomeBack: 'Bienvenida a tu refugio',
+      howAreYou: 'Sea un día difícil, regular o bueno, aquí tienes un espacio solo para ti.',
+      quickEntry: 'Entrada rápida',
       needHelp: 'Necesito ayuda ahora',
       crisisSupport: 'Centro de Crisis',
       emergencyText: 'Si estás en crisis, aquí hay apoyo inmediato',
@@ -28,66 +23,40 @@ const resources = {
       talkToAgora: 'Hablar con Ágora',
       viewPatterns: 'Ver patrones',
       wantToTalk: '¿Quieres hablar?',
-      
-      // Emotional States
       calma: 'Calma',
       fatiga: 'Fatiga',
       niebla_mental: 'Niebla mental',
       dolor_difuso: 'Dolor difuso',
       gratitud: 'Gratitud',
       tension: 'Tensión',
-      saturada: 'Me siento saturada',
-      desconectada: 'Me siento desconectada',
-      sensible: 'Me siento sensible',
-      abrumada: 'Me siento abrumada',
-      vulnerable: 'Me siento vulnerable',
-      tranquila: 'Me siento tranquila',
-      
-      // Physical States
       nivel_dolor: 'Nivel de dolor',
       energia: 'Energía',
       sensibilidad: 'Sensibilidad',
-      
-      // Diary
       newEntry: 'Nueva entrada',
       howDoYouFeel: '¿Cómo te sientes?',
-      writeThoughts: 'Desahógate sin filtro. Aquí no tienes que explicar, justificar ni ser fuerte.',
-      writeQuick: 'Si quieres, cuéntame cómo te sientes hoy.',
+      writeThoughts: 'Desahógate sin filtro. Aquí no tienes que explicar ni justificar nada.',
       physicalState: 'Estado físico (opcional)',
       saveEntry: 'Guardar',
       entrySaved: 'Guardado con cariño',
       noEntries: 'Tu diario te espera',
       startWriting: 'Empieza a escribir cuando estés lista',
-      
-      // Chat
       chatWithAgora: 'Conversa con Ágora',
-      agoraIntro: 'Hola. Soy Ágora, tu compañera en este camino. Sé que hay días difíciles y otros un poco mejores. ¿Cómo estás hoy?',
-      justListen: 'Solo escúchame, sin soluciones',
-      giveAdvice: 'Ayúdame a pensar diferente',
+      agoraIntro: 'Hola. Soy Ágora, tu compañera en este camino. ¿Cómo estás hoy?',
       typeMessage: 'Escribe lo que sientes...',
       send: 'Enviar',
       agoraTyping: 'Ágora está escribiendo...',
-      
-      // Patterns
       weeklyPatterns: 'Tus patrones',
       emotionalTrends: 'Tendencias emocionales',
       physicalTrends: 'Tendencias físicas',
-      commonWords: 'Palabras que más usas',
+      commonWords: 'Palabras frecuentes',
       noPatterns: 'Aún estamos conociéndonos',
       keepWriting: 'Sigue escribiendo para descubrir tus patrones',
-      notablePattern: 'Patrón destacado',
-      
-      // Cycle
       cycleTracking: 'Seguimiento del ciclo',
       startDate: 'Fecha de inicio',
       endDate: 'Fecha de fin',
       addCycle: 'Añadir ciclo',
       noCycles: 'Sin registros de ciclo',
-      
-      // Resources
       resources: 'Recursos',
-      
-      // Settings
       language: 'Idioma',
       spanish: 'Español',
       english: 'English',
@@ -98,47 +67,24 @@ const resources = {
       activateSubscription: 'Activar suscripción',
       subscriptionActive: 'Suscripción activa',
       priceMonthly: '10€/mes',
-      
-      // Subscription
       trialExpired: 'Tu prueba ha terminado',
       continueUsing: 'Para seguir usando Ágora, activa tu suscripción',
       subscribe: 'Suscribirse por 10€/mes',
       enterEmail: 'Tu correo electrónico',
-      
-      // Weather
       weather: 'Clima actual',
       temperature: 'Temperatura',
       humidity: 'Humedad',
       pressure: 'Presión',
-      
-      // Monthly Record
       monthlyRecord: 'Registro mensual',
       monthlyRecordTitle: 'Registro de dolor',
       monthlyRecordDesc: 'Para tu médico',
-      
-      // Motivational
-      dailyReminder: 'Hoy puede ser un día difícil, regular o bueno. Sea como sea, aquí tienes un espacio para ti.',
-      
-      // Crisis & Support
+      dailyReminder: 'Sea como sea tu día, aquí tienes un lugar seguro.',
       inCrisis: '¿Estás en crisis?',
-      crisisMessage: 'Tu vida importa. Hay gente que puede ayudarte ahora mismo.',
-      needProfessional: 'Necesito hablar con un profesional',
+      crisisMessage: 'Tu vida importa. Hay personas que pueden ayudarte ahora.',
       hurtsEverywhere: 'Me duele todo',
       hurtsEverywhereSub: 'Cuando el dolor es insoportable',
-      crisisQuick: 'El dolor que sientes es REAL y completamente válido. Estoy aquí contigo ahora.',
-      
-      // Community & Social
+      crisisQuick: 'El dolor que sientes es REAL y completamente válido. Estoy aquí contigo.',
       communitySize: 'Eres parte de una comunidad de {{count}} mujeres que entienden fibromialgia',
-      communityHint: 'Muchas en la red tuvieron tu mismo nivel de dolor hoy',
-      
-      // Data Summary
-      weeklyStats: 'Esta semana:',
-      goodDays: 'Días buenos',
-      difficultDays: 'Días difíciles',
-      averagePain: 'Dolor promedio',
-      topEmotion: 'Emoción más frecuente',
-      
-      // General
       loading: 'Cargando...',
       error: 'Ha ocurrido un error',
       retry: 'Reintentar',
@@ -149,93 +95,77 @@ const resources = {
       back: 'Volver',
       lastDays: 'últimos {{days}} días',
       entries: 'entradas',
-    }
+      conversations: 'Conversaciones',
+      noConversations: 'Aún no hay conversaciones',
+      startConversation: 'Inicia una conversación con Ágora',
+      deleteConversation: '¿Eliminar conversación?',
+      onboardingWelcomeTitle: 'Bienvenida a Ágora Mujeres',
+      onboardingWelcomeDesc: 'Creamos esta app para que tengas un refugio emocional, un espacio seguro y sin juicios donde puedas expresarte libremente y sentirte acompañada en tu camino con la fibromialgia. Desarrollado con empatía por el equipo SyntexIA.',
+      onboardingTitle1: 'Tu refugio emocional',
+      onboardingDesc1: 'Un espacio seguro diseñado para acompañarte en tu camino con la fibromialgia.',
+      onboardingTitle2: 'Sin juicios, sin presión',
+      onboardingDesc2: 'Escribe cómo te sientes. Ágora te escucha sin juzgar, sin soluciones automáticas.',
+      onboardingTitle3: 'Comienza tu camino',
+      onboardingDesc3: 'Dos horas de prueba gratuita para que descubras todo lo que Ágora puede ofrecerte.',
+      getStarted: 'Comenzar',
+      next: 'Siguiente',
+      skip: 'Omitir',
+    },
   },
   en: {
     translation: {
-      // App
       appName: 'Ágora Mujeres',
       tagline: 'Your emotional refuge',
-      
-      // Navigation
       home: 'Refuge',
       diary: 'Diary',
       chat: 'Ágora',
       patterns: 'Patterns',
       settings: 'Settings',
-      
-      // Home
-      welcomeBack: 'Welcome back, your refuge is here',
-      howAreYou: 'Today might be a hard day, an okay day, or a good day. Whatever it is, here you have a space for yourself.',
-      quickEntry: 'Quick entry (30 seconds)',
+      welcomeBack: 'Welcome to your refuge',
+      howAreYou: 'Whether it\'s a hard day, an okay day, or a good one — here you have a space just for you.',
+      quickEntry: 'Quick entry',
       needHelp: 'I need help now',
       crisisSupport: 'Crisis Support',
       emergencyText: 'If you\'re in crisis, immediate support is here',
       quickActions: 'Quick actions',
-      writeEntry: 'Write in your diary',
+      writeEntry: 'Write in diary',
       talkToAgora: 'Talk to Ágora',
       viewPatterns: 'View patterns',
       wantToTalk: 'Want to talk?',
-      
-      // Emotional States
       calma: 'Calm',
       fatiga: 'Fatigue',
       niebla_mental: 'Brain fog',
       dolor_difuso: 'Diffuse pain',
       gratitud: 'Gratitude',
       tension: 'Tension',
-      saturada: 'I feel overwhelmed',
-      desconectada: 'I feel disconnected',
-      sensible: 'I feel sensitive',
-      abrumada: 'I feel overwhelmed',
-      vulnerable: 'I feel vulnerable',
-      tranquila: 'I feel calm',
-      
-      // Physical States
       nivel_dolor: 'Pain level',
       energia: 'Energy',
       sensibilidad: 'Sensitivity',
-      
-      // Diary
       newEntry: 'New entry',
       howDoYouFeel: 'How do you feel?',
-      writeThoughts: 'Share without filter. You don\'t have to explain, justify, or be strong here.',
-      writeQuick: 'If you want, tell me how you\'re feeling today.',
+      writeThoughts: 'Share without filter. You don\'t have to explain or justify anything here.',
       physicalState: 'Physical state (optional)',
       saveEntry: 'Save',
       entrySaved: 'Saved with care',
       noEntries: 'Your diary awaits',
       startWriting: 'Start writing when you\'re ready',
-      
-      // Chat
       chatWithAgora: 'Chat with Ágora',
-      agoraIntro: "Hi, I'm Ágora. I'm here for you, without judgment. How are you feeling today?",
-      justListen: 'Just listen to me, no solutions',
-      giveAdvice: 'Help me think differently',
+      agoraIntro: 'Hi. I\'m Ágora, your companion on this journey. How are you today?',
       typeMessage: 'Share what you\'re feeling...',
       send: 'Send',
       agoraTyping: 'Ágora is typing...',
-      
-      // Patterns
       weeklyPatterns: 'Your patterns',
       emotionalTrends: 'Emotional trends',
       physicalTrends: 'Physical trends',
-      commonWords: 'Words you use most',
+      commonWords: 'Frequent words',
       noPatterns: 'We\'re still getting to know each other',
       keepWriting: 'Keep writing to discover your patterns',
-      notablePattern: 'Notable pattern',
-      
-      // Cycle
       cycleTracking: 'Cycle tracking',
       startDate: 'Start date',
       endDate: 'End date',
       addCycle: 'Add cycle',
       noCycles: 'No cycle records',
-      
-      // Resources
       resources: 'Resources',
-      
-      // Settings
       language: 'Language',
       spanish: 'Español',
       english: 'English',
@@ -246,47 +176,24 @@ const resources = {
       activateSubscription: 'Activate subscription',
       subscriptionActive: 'Subscription active',
       priceMonthly: '€10/month',
-      
-      // Subscription
       trialExpired: 'Your trial has ended',
       continueUsing: 'To continue using Ágora, activate your subscription',
       subscribe: 'Subscribe for €10/month',
       enterEmail: 'Your email address',
-      
-      // Weather
       weather: 'Current weather',
       temperature: 'Temperature',
       humidity: 'Humidity',
       pressure: 'Pressure',
-      
-      // Monthly Record
       monthlyRecord: 'Monthly record',
       monthlyRecordTitle: 'Pain record',
       monthlyRecordDesc: 'For your doctor',
-      
-      // Motivational
-      dailyReminder: 'A high-pain day, a brain fog day, or simply a hard day. Whatever it is, you\'re here. That\'s all the victory you need today.',
-      
-      // Crisis & Support
+      dailyReminder: 'Whatever your day looks like, you have a safe place here.',
       inCrisis: 'Are you in crisis?',
       crisisMessage: 'Your life matters. There are people who can help you right now.',
-      needProfessional: 'I need to talk to a professional',
       hurtsEverywhere: 'Everything hurts',
       hurtsEverywhereSub: 'When pain is unbearable',
-      crisisQuick: 'The pain you feel is REAL and completely valid. I\'m here with you now.',
-      
-      // Community & Social
+      crisisQuick: 'The pain you feel is REAL and completely valid. I\'m here with you.',
       communitySize: 'You\'re part of a community of {{count}} women who understand fibromyalgia',
-      communityHint: 'Many in the network felt the same pain level as you today',
-      
-      // Data Summary
-      weeklyStats: 'This week:',
-      goodDays: 'Good days',
-      difficultDays: 'Difficult days',
-      averagePain: 'Average pain',
-      topEmotion: 'Most frequent emotion',
-      
-      // General
       loading: 'Loading...',
       error: 'Something went wrong',
       retry: 'Try again',
@@ -297,23 +204,34 @@ const resources = {
       back: 'Back',
       lastDays: 'last {{days}} days',
       entries: 'entries',
-    }
-  }
+      conversations: 'Conversations',
+      noConversations: 'No conversations yet',
+      startConversation: 'Start a conversation with Ágora',
+      deleteConversation: 'Delete conversation?',
+      onboardingWelcomeTitle: 'Welcome to Ágora Mujeres',
+      onboardingWelcomeDesc: 'We created this app so you have an emotional refuge, a safe and judgment-free space where you can express yourself freely and feel supported on your fibromyalgia journey. Developed with empathy by the SyntexIA team.',
+      onboardingTitle1: 'Your emotional refuge',
+      onboardingDesc1: 'A safe space designed to accompany you on your fibromyalgia journey.',
+      onboardingTitle2: 'No judgments, no pressure',
+      onboardingDesc2: 'Write how you feel. Ágora listens without judging, without automatic solutions.',
+      onboardingTitle3: 'Begin your journey',
+      onboardingDesc3: 'Two free trial hours to discover everything Ágora can offer you.',
+      getStarted: 'Get Started',
+      next: 'Next',
+      skip: 'Skip',
+    },
+  },
 };
 
 const deviceLanguage = Localization.getLocales()[0]?.languageCode || 'es';
 const defaultLanguage = ['es', 'en'].includes(deviceLanguage) ? deviceLanguage : 'es';
 
-i18n
-  .use(initReactI18next)
-  .init({
-    resources,
-    lng: defaultLanguage,
-    fallbackLng: 'es',
-    interpolation: {
-      escapeValue: false
-    },
-    compatibilityJSON: 'v4'
-  });
+i18n.use(initReactI18next).init({
+  resources,
+  lng: defaultLanguage,
+  fallbackLng: 'es',
+  interpolation: { escapeValue: false },
+  compatibilityJSON: 'v4',
+});
 
 export default i18n;

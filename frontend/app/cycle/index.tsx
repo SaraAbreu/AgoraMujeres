@@ -1,495 +1,235 @@
-import React, { useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Alert,
+  View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert,
   ActivityIndicator,
 } from 'react-native';
-import { useTranslation } from 'react-i18next';
-import { useRouter, useFocusEffect } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { Calendar, LocaleConfig } from 'react-native-calendars';
-import { colors, spacing, borderRadius, typography } from '../../src/theme/colors';
+import { useRouter, useFocusEffect } from 'expo-router';
+import { useTranslation } from 'react-i18next';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
+import * as Haptics from 'expo-haptics';
+import { GlassCard, PremiumButton } from '../../src/components/ui';
 import { useStore } from '../../src/store/useStore';
-import { getCycleEntries, createCycleEntry, CycleEntry } from '../../src/services/api';
-import { format, differenceInDays, addDays } from 'date-fns';
-import { es, enUS } from 'date-fns/locale';
+import { getCycleEntries, createCycleEntry, type CycleEntry } from '../../src/services/api';
+import { colors, textStyles, sp, radius, fonts } from '../../src/theme';
 
-// Configure calendar locale
-LocaleConfig.locales['es'] = {
-  monthNames: ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'],
-  monthNamesShort: ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'],
-  dayNames: ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'],
-  dayNamesShort: ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'],
-  today: 'Hoy'
-};
-LocaleConfig.locales['en'] = LocaleConfig.locales[''];
+const WEEKDAYS = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
+
+function getMonthMatrix(year: number, month: number): (number | null)[][] {
+  const first = new Date(year, month, 1);
+  const last  = new Date(year, month + 1, 0);
+  const startDay = (first.getDay() + 6) % 7; // Monday = 0
+  const totalDays = last.getDate();
+
+  const weeks: (number | null)[][] = [];
+  let week: (number | null)[] = Array(startDay).fill(null);
+  for (let d = 1; d <= totalDays; d++) {
+    week.push(d);
+    if (week.length === 7) { weeks.push(week); week = []; }
+  }
+  if (week.length) { while (week.length < 7) week.push(null); weeks.push(week); }
+  return weeks;
+}
 
 export default function CycleScreen() {
   const { t } = useTranslation();
   const router = useRouter();
-  const { deviceId, language } = useStore();
-  
-  const [loading, setLoading] = useState(true);
-  const [cycles, setCycles] = useState<CycleEntry[]>([]);
-  const [selectedStartDate, setSelectedStartDate] = useState<string | null>(null);
-  const [selectedEndDate, setSelectedEndDate] = useState<string | null>(null);
-  const [isAddingCycle, setIsAddingCycle] = useState(false);
+  const insets = useSafeAreaInsets();
+  const { deviceId } = useStore();
 
-  LocaleConfig.defaultLocale = language === 'es' ? 'es' : 'en';
+  const now = new Date();
+  const [year, setYear]     = useState(now.getFullYear());
+  const [month, setMonth]   = useState(now.getMonth());
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [loading, setLoading]   = useState(true);
+  const [saving, setSaving]     = useState(false);
 
-  useFocusEffect(
-    useCallback(() => {
-      loadCycles();
-    }, [deviceId])
-  );
+  const monthName = new Date(year, month).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  const weeks = getMonthMatrix(year, month);
 
-  const loadCycles = async () => {
+  useFocusEffect(useCallback(() => {
     if (!deviceId) return;
     setLoading(true);
-    try {
-      const data = await getCycleEntries(deviceId, 12);
-      setCycles(data);
-    } catch (error) {
-      console.error('Error loading cycles:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+    getCycleEntries(deviceId)
+      .then((entries: CycleEntry[]) => {
+        // Build a set of all dates between start_date and end_date for each entry
+        const dates = new Set<string>();
+        entries.forEach((e) => {
+          dates.add(e.start_date);
+          if (e.end_date) dates.add(e.end_date);
+        });
+        setSelected(dates);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [deviceId]));
 
-  const handleDayPress = (day: any) => {
-    if (!isAddingCycle) {
-      setIsAddingCycle(true);
-      setSelectedStartDate(day.dateString);
-      setSelectedEndDate(null);
-    } else if (selectedStartDate && !selectedEndDate) {
-      if (day.dateString >= selectedStartDate) {
-        setSelectedEndDate(day.dateString);
-      } else {
-        // Reset if selecting earlier date
-        setSelectedStartDate(day.dateString);
-        setSelectedEndDate(null);
-      }
-    } else {
-      // Reset selection
-      setIsAddingCycle(true);
-      setSelectedStartDate(day.dateString);
-      setSelectedEndDate(null);
-    }
-  };
-
-  const handleSaveCycle = async () => {
-    if (!deviceId || !selectedStartDate) return;
-    
-    try {
-      await createCycleEntry({
-        device_id: deviceId,
-        start_date: new Date(selectedStartDate).toISOString(),
-        end_date: selectedEndDate ? new Date(selectedEndDate).toISOString() : undefined,
-      });
-      
-      Alert.alert(
-        '',
-        language === 'es' ? 'Ciclo guardado' : 'Cycle saved',
-        [{ text: 'OK' }]
-      );
-      
-      setSelectedStartDate(null);
-      setSelectedEndDate(null);
-      setIsAddingCycle(false);
-      loadCycles();
-    } catch (error) {
-      console.error('Error saving cycle:', error);
-      Alert.alert(
-        '',
-        language === 'es' ? 'Error al guardar' : 'Error saving'
-      );
-    }
-  };
-
-  const cancelAddCycle = () => {
-    setSelectedStartDate(null);
-    setSelectedEndDate(null);
-    setIsAddingCycle(false);
-  };
-
-  const getMarkedDates = () => {
-    const marked: any = {};
-    
-    // Mark saved cycles
-    cycles.forEach((cycle, index) => {
-      const startDate = cycle.start_date.split('T')[0];
-      const endDate = cycle.end_date ? cycle.end_date.split('T')[0] : startDate;
-      const cycleColor = index === 0 ? colors.warmBrown : '#C9A587';
-      
-      // Mark the range
-      let currentDate = new Date(startDate);
-      const end = new Date(endDate);
-      
-      while (currentDate <= end) {
-        const dateStr = format(currentDate, 'yyyy-MM-dd');
-        const isStart = dateStr === startDate;
-        const isEnd = dateStr === endDate;
-        
-        marked[dateStr] = {
-          color: cycleColor,
-          textColor: colors.softWhite,
-          startingDay: isStart,
-          endingDay: isEnd,
-        };
-        
-        currentDate = addDays(currentDate, 1);
-      }
+  const toggleDate = (day: number) => {
+    Haptics.selectionAsync();
+    const key = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
     });
-    
-    // Mark current selection
-    if (selectedStartDate) {
-      marked[selectedStartDate] = {
-        ...marked[selectedStartDate],
-        color: colors.mossGreen,
-        textColor: colors.softWhite,
-        startingDay: true,
-        endingDay: !selectedEndDate,
-      };
-      
-      if (selectedEndDate) {
-        let currentDate = addDays(new Date(selectedStartDate), 1);
-        const end = new Date(selectedEndDate);
-        
-        while (currentDate <= end) {
-          const dateStr = format(currentDate, 'yyyy-MM-dd');
-          const isEnd = dateStr === selectedEndDate;
-          
-          marked[dateStr] = {
-            color: colors.mossGreen,
-            textColor: colors.softWhite,
-            startingDay: false,
-            endingDay: isEnd,
-          };
-          
-          currentDate = addDays(currentDate, 1);
-        }
+  };
+
+  const isSelected = (day: number) => {
+    const key = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    return selected.has(key);
+  };
+
+  const prevMonth = () => { if (month === 0) { setMonth(11); setYear(year - 1); } else setMonth(month - 1); };
+  const nextMonth = () => { if (month === 11) { setMonth(0); setYear(year + 1); } else setMonth(month + 1); };
+
+  const handleSave = async () => {
+    if (!deviceId) return;
+    setSaving(true);
+    try {
+      // Save each selected date as a cycle entry with start_date
+      const dates = Array.from(selected).sort();
+      if (dates.length > 0) {
+        await createCycleEntry({
+          device_id: deviceId,
+          start_date: dates[0],
+          end_date: dates[dates.length - 1],
+        });
       }
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert('✨', t('cycleSaved'));
+    } catch {
+      Alert.alert('Error', t('error'));
+    } finally {
+      setSaving(false);
     }
-    
-    return marked;
   };
-
-  const getLastCycleInfo = () => {
-    if (cycles.length === 0) return null;
-    const lastCycle = cycles[0];
-    const startDate = new Date(lastCycle.start_date);
-    const daysSince = differenceInDays(new Date(), startDate);
-    return { startDate, daysSince };
-  };
-
-  const lastCycleInfo = getLastCycleInfo();
-
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.softWhite} />
-      </View>
-    );
-  }
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color={colors.textOnDark} />
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+          <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>
-          {language === 'es' ? 'Ciclo hormonal' : 'Hormonal cycle'}
-        </Text>
-        <View style={styles.placeholder} />
+        <Text style={styles.headerTitle}>{t('cycleTracking')}</Text>
+        <View style={{ width: 40 }} />
       </View>
 
-      <ScrollView 
-        style={styles.scrollView}
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Last Cycle Info */}
-        {lastCycleInfo && (
-          <View style={styles.lastCycleCard}>
-            <Ionicons name="calendar" size={24} color={colors.warmBrown} />
-            <View style={styles.lastCycleContent}>
-              <Text style={styles.lastCycleLabel}>
-                {language === 'es' ? 'Desde tu último ciclo' : 'Since your last cycle'}
-              </Text>
-              <Text style={styles.lastCycleDays}>
-                {lastCycleInfo.daysSince} {language === 'es' ? 'días' : 'days'}
-              </Text>
-              <Text style={styles.cycleImpactText}>
-                {language === 'es'
-                  ? 'El ciclo hormonal puede influir en tus síntomas de dolor. Observa si hay patrones entre tu ciclo y los días de mayor dolor.'
-                  : 'The hormonal cycle can influence your pain symptoms. Notice if there are patterns between your cycle and high pain days.'}
-              </Text>
-            </View>
-          </View>
-        )}
-
-        {/* Instructions */}
-        <View style={styles.instructionsCard}>
-          <Ionicons name="information-circle-outline" size={20} color={colors.textSecondary} />
-          <Text style={styles.instructionsText}>
-            {language === 'es' 
-              ? 'Toca una fecha para marcar el inicio de tu período. Opcionalmente, toca otra fecha para marcar el final. Puedes usar esta información para entender cómo el ciclo afecta tu dolor.'
-              : 'Tap a date to mark the start of your period. Optionally, tap another date to mark the end. Use this info to understand how your cycle affects your pain.'}
-          </Text>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+        {/* Month nav */}
+        <View style={styles.monthNav}>
+          <TouchableOpacity onPress={prevMonth} hitSlop={12}>
+            <Ionicons name="chevron-back" size={22} color={colors.primary} />
+          </TouchableOpacity>
+          <Text style={styles.monthName}>{monthName}</Text>
+          <TouchableOpacity onPress={nextMonth} hitSlop={12}>
+            <Ionicons name="chevron-forward" size={22} color={colors.primary} />
+          </TouchableOpacity>
         </View>
 
-        {/* Calendar */}
-        <View style={styles.calendarContainer}>
-          <Calendar
-            onDayPress={handleDayPress}
-            markedDates={getMarkedDates()}
-            markingType="period"
-            theme={{
-              backgroundColor: colors.surface,
-              calendarBackground: colors.surface,
-              textSectionTitleColor: colors.textSecondary,
-              selectedDayBackgroundColor: colors.mossGreen,
-              selectedDayTextColor: colors.softWhite,
-              todayTextColor: colors.warmBrown,
-              dayTextColor: colors.text,
-              textDisabledColor: colors.textLight,
-              arrowColor: colors.warmBrown,
-              monthTextColor: colors.text,
-              textDayFontFamily: 'Nunito_400Regular',
-              textMonthFontFamily: 'Cormorant_600SemiBold',
-              textDayHeaderFontFamily: 'Nunito_500Medium',
-              textDayFontSize: 16,
-              textMonthFontSize: 20,
-              textDayHeaderFontSize: 12,
-            }}
-            style={styles.calendar}
-          />
-        </View>
-
-        {/* Selection Actions */}
-        {isAddingCycle && selectedStartDate && (
-          <View style={styles.selectionCard}>
-            <Text style={styles.selectionTitle}>
-              {language === 'es' ? 'Nuevo ciclo' : 'New cycle'}
-            </Text>
-            <Text style={styles.selectionDates}>
-              {format(new Date(selectedStartDate), "d 'de' MMMM", { locale: language === 'es' ? es : enUS })}
-              {selectedEndDate && ` - ${format(new Date(selectedEndDate), "d 'de' MMMM", { locale: language === 'es' ? es : enUS })}`}
-            </Text>
-            <View style={styles.selectionActions}>
-              <TouchableOpacity style={styles.cancelButton} onPress={cancelAddCycle}>
-                <Text style={styles.cancelButtonText}>
-                  {language === 'es' ? 'Cancelar' : 'Cancel'}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.saveButton} onPress={handleSaveCycle}>
-                <Text style={styles.saveButtonText}>
-                  {language === 'es' ? 'Guardar' : 'Save'}
-                </Text>
-              </TouchableOpacity>
+        {loading ? (
+          <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: sp.xl }} />
+        ) : (
+          <GlassCard style={styles.calendar}>
+            {/* Weekday header */}
+            <View style={styles.weekRow}>
+              {WEEKDAYS.map((d) => (
+                <Text key={d} style={styles.weekLabel}>{d}</Text>
+              ))}
             </View>
-          </View>
-        )}
 
-        {/* Cycle History */}
-        {cycles.length > 0 && (
-          <View style={styles.historySection}>
-            <Text style={styles.historyTitle}>
-              {language === 'es' ? 'Historial' : 'History'}
-            </Text>
-            {cycles.slice(0, 6).map((cycle, index) => (
-              <View key={cycle.id} style={styles.historyItem}>
-                <View style={[styles.historyDot, { backgroundColor: index === 0 ? colors.warmBrown : '#C9A587' }]} />
-                <Text style={styles.historyText}>
-                  {format(new Date(cycle.start_date), "d MMM yyyy", { locale: language === 'es' ? es : enUS })}
-                  {cycle.end_date && (
-                    <Text style={styles.historyEndDate}>
-                      {' → '}{format(new Date(cycle.end_date), "d MMM", { locale: language === 'es' ? es : enUS })}
-                    </Text>
-                  )}
-                </Text>
+            {/* Days */}
+            {weeks.map((week, wi) => (
+              <View key={wi} style={styles.weekRow}>
+                {week.map((day, di) => (
+                  <TouchableOpacity
+                    key={di}
+                    style={[styles.dayCell, day != null && isSelected(day) && styles.dayCellSelected]}
+                    onPress={() => day && toggleDate(day)}
+                    disabled={!day}
+                    activeOpacity={0.6}
+                  >
+                    {day ? (
+                      <Text style={[
+                        styles.dayText,
+                        isSelected(day) && styles.dayTextSelected,
+                      ]}>
+                        {day}
+                      </Text>
+                    ) : null}
+                  </TouchableOpacity>
+                ))}
               </View>
             ))}
-          </View>
+          </GlassCard>
         )}
+
+        {/* Legend */}
+        <View style={styles.legend}>
+          <View style={styles.legendItem}>
+            <View style={[styles.legendDot, { backgroundColor: colors.secondary }]} />
+            <Text style={styles.legendText}>{t('periodDay')}</Text>
+          </View>
+        </View>
+
+        {/* Info */}
+        <GlassCard style={styles.infoCard}>
+          <Ionicons name="information-circle-outline" size={20} color={colors.primary} />
+          <Text style={styles.infoText}>{t('cycleInfo')}</Text>
+        </GlassCard>
+
+        <PremiumButton
+          title={t('saveCycle')}
+          onPress={handleSave}
+          loading={saving}
+          disabled={saving}
+          size="lg"
+          style={{ marginTop: sp.lg }}
+        />
+
+        <View style={{ height: 60 }} />
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
+const CELL = 40;
+
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#80704f',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: colors.mossGreen,
-  },
+  container: { flex: 1, backgroundColor: colors.bg },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: sp.screenX, paddingVertical: sp.sm,
   },
-  backButton: {
-    padding: spacing.xs,
+  backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { ...textStyles.h3, color: colors.textPrimary, flex: 1, textAlign: 'center' },
+  scroll: { paddingHorizontal: sp.screenX, paddingBottom: 40 },
+
+  monthNav: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginBottom: sp.md,
   },
-  headerTitle: {
-    fontSize: typography.sizes.lg,
-    fontFamily: 'Cormorant_600SemiBold',
-    color: colors.textOnDark,
+  monthName: { ...textStyles.subtitle, color: colors.textPrimary, textTransform: 'capitalize' },
+
+  calendar: { paddingHorizontal: sp.xs, paddingVertical: sp.sm },
+  weekRow:  { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 4 },
+  weekLabel: { ...textStyles.labelCaps, color: colors.textMuted, width: CELL, textAlign: 'center' },
+
+  dayCell: {
+    width: CELL, height: CELL,
+    borderRadius: CELL / 2,
+    alignItems: 'center', justifyContent: 'center',
   },
-  placeholder: {
-    width: 32,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  content: {
-    padding: spacing.lg,
-    paddingBottom: spacing.xxl,
-  },
-  lastCycleCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    padding: spacing.lg,
-    borderRadius: borderRadius.lg,
-    marginBottom: spacing.md,
-    gap: spacing.md,
-  },
-  lastCycleContent: {
-    flex: 1,
-  },
-  lastCycleLabel: {
-    fontSize: typography.sizes.sm,
-    fontFamily: 'Nunito_400Regular',
-    color: colors.textSecondary,
-  },
-  lastCycleDays: {
-    fontSize: typography.sizes.xxl,
-    fontFamily: 'Cormorant_700Bold',
-    color: colors.warmBrown,
-  },
-  cycleImpactText: {
-    fontSize: typography.sizes.sm,
-    fontFamily: 'Nunito_400Regular',
-    color: colors.textSecondary,
-    lineHeight: 20,
-    marginTop: spacing.sm,
-  },
-  instructionsCard: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: colors.creamLight,
-    padding: spacing.md,
-    borderRadius: borderRadius.md,
-    marginBottom: spacing.lg,
-    gap: spacing.sm,
-  },
-  instructionsText: {
-    flex: 1,
-    fontSize: typography.sizes.sm,
-    fontFamily: 'Nunito_400Regular',
-    color: colors.textSecondary,
-    lineHeight: 20,
-  },
-  calendarContainer: {
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.lg,
-    overflow: 'hidden',
-    marginBottom: spacing.lg,
-  },
-  calendar: {
-    borderRadius: borderRadius.lg,
-  },
-  selectionCard: {
-    backgroundColor: colors.surface,
-    padding: spacing.lg,
-    borderRadius: borderRadius.lg,
-    marginBottom: spacing.lg,
-  },
-  selectionTitle: {
-    fontSize: typography.sizes.md,
-    fontFamily: 'Nunito_600SemiBold',
-    color: colors.text,
-    marginBottom: spacing.xs,
-  },
-  selectionDates: {
-    fontSize: typography.sizes.lg,
-    fontFamily: 'Cormorant_600SemiBold',
-    color: colors.warmBrown,
-    marginBottom: spacing.md,
-    textTransform: 'capitalize',
-  },
-  selectionActions: {
-    flexDirection: 'row',
-    gap: spacing.md,
-  },
-  cancelButton: {
-    flex: 1,
-    padding: spacing.md,
-    borderRadius: borderRadius.md,
-    backgroundColor: colors.creamLight,
-    alignItems: 'center',
-  },
-  cancelButtonText: {
-    fontSize: typography.sizes.md,
-    fontFamily: 'Nunito_500Medium',
-    color: colors.textSecondary,
-  },
-  saveButton: {
-    flex: 1,
-    padding: spacing.md,
-    borderRadius: borderRadius.md,
-    backgroundColor: colors.mossGreen,
-    alignItems: 'center',
-  },
-  saveButtonText: {
-    fontSize: typography.sizes.md,
-    fontFamily: 'Nunito_600SemiBold',
-    color: colors.softWhite,
-  },
-  historySection: {
-    backgroundColor: colors.surface,
-    padding: spacing.lg,
-    borderRadius: borderRadius.lg,
-  },
-  historyTitle: {
-    fontSize: typography.sizes.md,
-    fontFamily: 'Cormorant_600SemiBold',
-    color: colors.text,
-    marginBottom: spacing.md,
-  },
-  historyItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: spacing.sm,
-    gap: spacing.sm,
-  },
-  historyDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  historyText: {
-    fontSize: typography.sizes.sm,
-    fontFamily: 'Nunito_400Regular',
-    color: colors.text,
-    textTransform: 'capitalize',
-  },
-  historyEndDate: {
-    color: colors.textSecondary,
-  },
+  dayCellSelected: { backgroundColor: colors.secondary },
+  dayText:         { ...textStyles.body, color: colors.textPrimary },
+  dayTextSelected: { color: '#fff', fontFamily: fonts.sansBold },
+
+  legend: { flexDirection: 'row', gap: sp.md, marginTop: sp.md },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  legendDot:  { width: 10, height: 10, borderRadius: 5 },
+  legendText: { ...textStyles.bodySm, color: colors.textMuted },
+
+  infoCard: { flexDirection: 'row', alignItems: 'flex-start', gap: sp.sm, marginTop: sp.md },
+  infoText: { ...textStyles.bodySm, color: colors.textSecondary, flex: 1 },
 });

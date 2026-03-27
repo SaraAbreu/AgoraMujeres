@@ -1,281 +1,209 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  RefreshControl,
-  Platform,
-  Dimensions,
+  View, Text, ScrollView, TouchableOpacity, StyleSheet, RefreshControl, Image,
 } from 'react-native';
-import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { BRAND_COLORS, spacing, borderRadius, typography, shadows } from '../../src/theme/colors';
-import { useStore } from '../../src/store/useStore';
-import { getSubscriptionStatus, getWeather } from '../../src/services/api';
-import { WeeklyStatsCard } from '../../src/components/WeeklyStatsCard';
-import { ResponsiveLayout } from '../../src/components/ResponsiveLayout';
-import { useResponsive } from '../../src/hooks/useResponsive';
-import * as Location from 'expo-location';
+import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { GlassCard } from '../../src/components/ui/GlassCard';
+import { PremiumButton } from '../../src/components/ui/PremiumButton';
+import { colors, textStyles, sp, radius, shadows, typography } from '../../src/theme';
+import logo from '../../assets/images/logo.png';
 
-const screenWidth = Dimensions.get('window').width;
+// Hook del contador de 2h
+function useTrialCountdown(initialSeconds = 7200) {
+  const [seconds, setSeconds] = useState(initialSeconds);
+  const router = useRouter();
 
-// Premium Action Cards
-const PREMIUM_ACTIONS = [
-  { id: 'talk', label: 'Hablar con Ágora', color: '#C98D5E', route: '/(tabs)/chat', emoji: '💬' },
-  { id: 'write', label: 'Escribir Diario', color: '#9FA89F', route: '/diary/new', emoji: '✍️' },
-  { id: 'patterns', label: 'Mis Patrones', color: '#B8956A', route: '/(tabs)/patterns', emoji: '📊' },
-  { id: 'track', label: 'Registro Mensual', color: '#A07B7B', route: '/(tabs)/monthly-record', emoji: '📅' },
-  { id: 'resources', label: 'Recursos', color: '#7A9B8E', route: '/resources', emoji: '📚' },
-  { id: 'wellbeing', label: 'Bienestar', color: '#8FA89F', route: '/cycle', emoji: '🌿' },
-];
+  useEffect(() => {
+    if (seconds <= 0) {
+      router.push('/paywall' as any);
+      return;
+    }
 
-// Wellness Tips  
-const WELLNESS_TIPS = [
-  { icon: 'water-outline', title: 'Hidratación', subtitle: 'Bebe agua regularmente para mantener tu cuerpo en equilibrio' },
-  { icon: 'moon-outline', title: 'Descanso', subtitle: 'El sueño es fundamental para tu salud emocional y física' },
-  { icon: 'flower-outline', title: 'Respira', subtitle: 'Tómate un momento para respirar profundamente' },
-  { icon: 'heart-outline', title: 'Cuidados', subtitle: 'Hoy es un buen día para quererte a ti misma' },
-];
+    const interval = setInterval(() => {
+      setSeconds((s) => s - 1);
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [seconds]);
+
+  const format = () => {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = seconds % 60;
+    return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
+
+  return format();
+}
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { deviceId, subscriptionStatus, setSubscriptionStatus } = useStore();
-  const responsive = useResponsive();
+  const insets = useSafeAreaInsets();
+  const timeLeft = useTrialCountdown();
 
-  const [weather, setWeather] = useState<any>(null);
-  const [refreshing, setRefreshing] = useState(false);
-  const [tipIndex, setTipIndex] = useState(0);
-
-  const loadData = useCallback(async () => {
-    if (!deviceId) return;
-    try {
-      const status = await getSubscriptionStatus(deviceId);
-      setSubscriptionStatus(status);
-      try {
-        const { status: locStatus } = await Location.requestForegroundPermissionsAsync();
-        if (locStatus === 'granted') {
-          const loc = await Location.getCurrentPositionAsync({});
-          const w = await getWeather(loc.coords.latitude, loc.coords.longitude);
-          setWeather(w);
-        }
-      } catch {
-        // Weather optional
-      }
-    } catch (e) {
-      console.error('[Home] loadData:', e);
-    }
-  }, [deviceId, setSubscriptionStatus]);
-
-  useEffect(() => {
-    loadData();
-    const tipTimer = setInterval(() => {
-      setTipIndex(prev => (prev + 1) % WELLNESS_TIPS.length);
-    }, 8000);
-    return () => clearInterval(tipTimer);
-  }, [loadData]);
-
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await loadData();
-    setRefreshing(false);
-  };
-
-  const getGreeting = () => {
-    const hour = new Date().getHours();
-    if (hour < 12) return { text: 'Buenos días', emoji: '🌅' };
-    if (hour < 18) return { text: 'Buenas tardes', emoji: '☀️' };
-    return { text: 'Buenas noches', emoji: '🌙' };
-  };
-
-  const greeting = getGreeting();
-  const styles = getResponsiveStyles(responsive);
+  const quickActions = [
+    { key: 'diary', icon: 'create-outline', label: 'Escribir diario', route: '/diary/new' as const },
+    { key: 'chat', icon: 'chatbubble-outline', label: 'Hablar con Agora', route: '/(tabs)/chat' as const },
+    { key: 'patterns', icon: 'analytics-outline', label: 'Ver patrones', route: '/(tabs)/patterns' as const },
+    { key: 'record', icon: 'calendar-outline', label: 'Registro mensual', route: '/monthly-record' as const },
+  ];
 
   return (
-    <ResponsiveLayout backgroundColor="#FDFBF9">
+    <View style={[styles.root, { paddingTop: insets.top }]}>
       <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.contentContainer}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={BRAND_COLORS.crisisBtn} />
-        }
+        contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
       >
-        {/* HEADER - Welcome Section */}
-        <View style={styles.headerSection}>
-          <View style={styles.greetingContainer}>
-            <Text style={styles.emoji}>{greeting.emoji}</Text>
-            <View style={styles.greetingText}>
-              <Text style={styles.greetingMain}>{greeting.text}</Text>
-              <Text style={styles.greetingLabel}>Bienvenida a tu espacio</Text>
-            </View>
-          </View>
 
-          {/* Status Badge */}
-          {subscriptionStatus?.status === 'trial' && (
-            <View style={[styles.statusBadge, styles.trialBadge]}>
-              <Ionicons name="time-outline" size={14} color="#80704F" />
-              <Text style={styles.badgeText}>
-                {formatTrialTime(subscriptionStatus.trial_remaining_seconds || 0)}
-              </Text>
-            </View>
-          )}
-          {subscriptionStatus?.status === 'expired' && (
-            <View style={[styles.statusBadge, styles.expiredBadge]}>
-              <Ionicons name="alert-circle-outline" size={14} color="#A07B7B" />
-              <Text style={styles.expiredBadgeText}>Prueba finalizada</Text>
-            </View>
-          )}
-          {subscriptionStatus?.status === 'active' && (
-            <View style={[styles.statusBadge, styles.activeBadge]}>
-              <Ionicons name="checkmark-circle" size={14} color="#7A9B8E" />
-              <Text style={styles.activeBadgeText}>Activo</Text>
-            </View>
-          )}
+        {/* LOGO */}
+        <Image
+          source={logo}
+          style={styles.logo}
+          resizeMode="contain"
+        />
+
+        {/* CONTADOR DE PRUEBA */}
+        <Text style={styles.trialTimer}>
+          {timeLeft} de prueba gratuita
+        </Text>
+
+        {/* FRASE MOTIVACIONAL */}
+        <Text style={styles.motivational}>
+          “Estás haciendo lo mejor que puedes. Respira.”
+        </Text>
+
+        {/* BOTÓN DE CRISIS */}
+        <View style={{ marginHorizontal: sp.screenX, marginTop: sp.md }}>
+          <PremiumButton
+            title="Necesito ayuda"
+            size="lg"
+            variant="primary"
+            onPress={() => router.push('/crisis' as const)}
+          />
         </View>
 
-        {/* CRISIS BUTTON */}
-        <TouchableOpacity
-          style={[styles.crisisButton, shadows.lg]}
-          onPress={() => router.push('/crisis')}
-          activeOpacity={0.85}
-        >
-          <View style={styles.crisisGradient}>
-            <View style={styles.crisisLeft}>
-              <Text style={styles.crisisEmoji}>🆘</Text>
-              <View style={styles.crisisTextBlock}>
-                <Text style={styles.crisisTitle}>Necesito ayuda</Text>
-                <Text style={styles.crisisSubtitle}>Crisis 24/7</Text>
-              </View>
-            </View>
-            <Ionicons name="chevron-forward" size={24} color="#fff" />
-          </View>
-        </TouchableOpacity>
+        {/* ACCIONES RÁPIDAS */}
+        <Text style={styles.sectionTitle}>Acciones rápidas</Text>
 
-        {/* WELLNESS TIP */}
-        <View style={[styles.wellnessTipCard, shadows.md]}>
-          <View style={styles.tipIconWrapper}>
-            <Ionicons name={WELLNESS_TIPS[tipIndex].icon as any} size={20} color="#80704F" />
-          </View>
-          <View style={styles.tipContent}>
-            <Text style={styles.tipTitle}>{WELLNESS_TIPS[tipIndex].title}</Text>
-            <Text style={styles.tipSubtitle}>{WELLNESS_TIPS[tipIndex].subtitle}</Text>
-          </View>
-        </View>
-
-        {/* QUICK ACTIONS */}
-        <View style={styles.actionsContainer}>
-          <Text style={styles.sectionTitle}>Qué necesitas hoy</Text>
-          <View style={styles.actionsGrid}>
-            {PREMIUM_ACTIONS.map((action) => (
-              <TouchableOpacity
-                key={action.id}
-                style={[styles.actionCard, shadows.md]}
-                onPress={() => router.push(action.route as any)}
-                activeOpacity={0.75}
-              >
-                <View style={[styles.actionColorBg, { backgroundColor: action.color }]}>
-                  <Text style={styles.actionEmojiLarge}>{action.emoji}</Text>
+        <View style={styles.actionsGrid}>
+          {quickActions.map((a) => (
+            <TouchableOpacity
+              key={a.key}
+              activeOpacity={0.75}
+              onPress={() => router.push(a.route)}
+              style={styles.actionCardWrap}
+            >
+              <GlassCard style={styles.actionCard}>
+                <View style={styles.actionIcon}>
+                  <Ionicons name={a.icon as any} size={22} color={colors.primary} />
                 </View>
-                <Text style={styles.actionCardLabel}>{action.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+                <Text style={styles.actionLabel} numberOfLines={2}>
+                  {a.label}
+                </Text>
+              </GlassCard>
+            </TouchableOpacity>
+          ))}
         </View>
 
-        {/* WEATHER */}
-        {weather && (
-          <View style={[styles.weatherCard, shadows.sm]}>
-            <Ionicons name="partly-sunny-outline" size={20} color="#80704F" />
-            <View style={styles.weatherInfo}>
-              <Text style={styles.weatherTemp}>{Math.round(weather.temperature)}°C</Text>
-              <Text style={styles.weatherHumidity}>{weather.humidity}% humedad</Text>
-            </View>
-          </View>
-        )}
+        {/* CITA DEL DÍA */}
+        <GlassCard style={styles.quoteCard}>
+          <Text style={styles.quoteIcon}>🌿</Text>
+          <Text style={styles.quoteText}>
+            Recuerda: no tienes que poder con todo hoy.
+          </Text>
+        </GlassCard>
 
-        {/* WEEKLY STATS */}
-        {deviceId && (
-          <View style={styles.statsSection}>
-            <Text style={styles.sectionTitle}>Tu semana</Text>
-            <WeeklyStatsCard deviceId={deviceId} />
-          </View>
-        )}
-
-        <View style={{ height: 20 }} />
+        <View style={{ height: 100 }} />
       </ScrollView>
-    </ResponsiveLayout>
+    </View>
   );
 }
 
-function formatTrialTime(seconds: number): string {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  return h > 0 ? `${h}h ${m}m` : `${m}m`;
-}
+const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: colors.background },
+  scroll: { paddingBottom: 40 },
 
-function getResponsiveStyles(responsive: ReturnType<typeof useResponsive>) {
-  const { isDesktop, isTablet } = responsive;
-  // Más espacio en desktop para aprovechar pantalla completa
-  const paddingX = isDesktop ? 80 : isTablet ? 40 : 20;
-  // Más columnas en desktop
-  const gridColumns = isDesktop ? 3 : isTablet ? 2 : 2;
-  const cardWidth = isDesktop ? '32%' : '48%';
+  logo: {
+    width: 120,
+    height: 120,
+    alignSelf: 'center',
+    marginTop: sp.lg,
+    marginBottom: sp.md,
+  },
 
-  return StyleSheet.create({
-    scroll: { flex: 1 },
-    contentContainer: { paddingHorizontal: paddingX, paddingTop: spacing.lg, paddingBottom: 40 },
-    
-    // HEADER
-    headerSection: { marginBottom: spacing.xl, paddingBottom: spacing.lg, borderBottomWidth: 1, borderBottomColor: 'rgba(0,0,0,0.05)' },
-    greetingContainer: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.lg },
-    emoji: { fontSize: isDesktop ? 56 : isTablet ? 44 : 36 },
-    greetingText: { flex: 1 },
-    greetingMain: { fontSize: isDesktop ? 32 : isTablet ? 26 : 22, fontWeight: '700', fontFamily: 'Cormorant_700Bold', color: '#3D2B1A', marginBottom: 2 },
-    greetingLabel: { fontSize: isDesktop ? 14 : isTablet ? 13 : 12, color: '#B5A997', fontFamily: 'Nunito_400Regular' },
+  trialTimer: {
+    fontSize: 22,
+    fontWeight: '600',
+    color: colors.primaryDark,
+    textAlign: 'center',
+    marginBottom: sp.sm,
+  },
 
-    // Status Badge
-    statusBadge: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: borderRadius.full, alignSelf: 'flex-start' },
-    trialBadge: { backgroundColor: '#F5EFE5' },
-    badgeText: { fontSize: isDesktop ? 13 : 12, fontWeight: '600', color: '#80704F', fontFamily: 'Nunito_600SemiBold' },
-    expiredBadge: { backgroundColor: 'rgba(160,123,123,0.1)' },
-    expiredBadgeText: { fontSize: isDesktop ? 13 : 12, fontWeight: '600', color: '#A07B7B', fontFamily: 'Nunito_600SemiBold' },
-    activeBadge: { backgroundColor: 'rgba(122,155,142,0.1)' },
-    activeBadgeText: { fontSize: isDesktop ? 13 : 12, fontWeight: '600', color: '#7A9B8E', fontFamily: 'Nunito_600SemiBold' },
+  motivational: {
+    fontSize: 18,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: sp.xl,
+    paddingHorizontal: 20,
+    fontStyle: 'italic',
+  },
 
-    // CRISIS BUTTON
-    crisisButton: { backgroundColor: '#7A3D36', borderRadius: borderRadius.lg, marginBottom: spacing.xl, overflow: 'hidden' },
-    crisisGradient: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.lg, paddingVertical: isDesktop ? spacing.xl : spacing.lg },
-    crisisLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, flex: 1 },
-    crisisEmoji: { fontSize: isDesktop ? 48 : 32 },
-    crisisTextBlock: { flex: 1 },
-    crisisTitle: { fontSize: isDesktop ? 18 : 16, fontWeight: '700', color: '#fff', fontFamily: 'Nunito_700Bold', marginBottom: 2 },
-    crisisSubtitle: { fontSize: isDesktop ? 13 : 12, color: 'rgba(255,255,255,0.85)', fontFamily: 'Nunito_400Regular' },
+  sectionTitle: {
+    ...textStyles.labelCaps,
+    color: colors.textMuted,
+    marginHorizontal: sp.screenX,
+    marginTop: sp.sectionGap,
+    marginBottom: sp.md,
+  },
 
-    // WELLNESS TIP
-    wellnessTipCard: { backgroundColor: '#fff', borderRadius: borderRadius.md, paddingHorizontal: spacing.lg, paddingVertical: spacing.lg, marginBottom: spacing.xl, flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-    tipIconWrapper: { width: isDesktop ? 56 : 48, height: isDesktop ? 56 : 48, backgroundColor: 'rgba(128,112,79,0.1)', borderRadius: borderRadius.md, justifyContent: 'center', alignItems: 'center' },
-    tipContent: { flex: 1 },
-    tipTitle: { fontSize: isDesktop ? 15 : 14, fontWeight: '700', color: '#3D2B1A', fontFamily: 'Nunito_700Bold', marginBottom: 2 },
-    tipSubtitle: { fontSize: isDesktop ? 13 : 12, color: '#8FA89F', fontFamily: 'Nunito_400Regular', lineHeight: 18 },
+  actionsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingHorizontal: sp.screenX,
+    gap: sp.sm,
+  },
 
-    // ACTIONS
-    actionsContainer: { marginBottom: spacing.xl },
-    sectionTitle: { fontSize: isDesktop ? 20 : isTablet ? 18 : 16, fontWeight: '700', color: '#3D2B1A', fontFamily: 'Cormorant_700Bold', marginBottom: spacing.lg },
-    actionsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.lg, justifyContent: 'space-between' },
-    actionCard: { width: cardWidth, backgroundColor: '#fff', borderRadius: borderRadius.lg, padding: spacing.lg, alignItems: 'center', gap: spacing.sm },
-    actionColorBg: { width: '100%', aspectRatio: 1, borderRadius: borderRadius.md, justifyContent: 'center', alignItems: 'center', marginBottom: spacing.xs },
-    actionEmojiLarge: { fontSize: isDesktop ? 44 : 36 },
-    actionCardLabel: { fontSize: isDesktop ? 13 : 12, fontWeight: '600', color: '#3D2B1A', fontFamily: 'Nunito_600SemiBold', textAlign: 'center', lineHeight: 18 },
+  actionCardWrap: { width: '48%', flexGrow: 1 },
 
-    // WEATHER
-    weatherCard: { backgroundColor: '#fff', borderRadius: borderRadius.md, paddingHorizontal: spacing.lg, paddingVertical: spacing.md, marginBottom: spacing.xl, flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-    weatherInfo: { flex: 1 },
-    weatherTemp: { fontSize: isDesktop ? 18 : 16, fontWeight: '700', color: '#3D2B1A', fontFamily: 'Nunito_700Bold' },
-    weatherHumidity: { fontSize: isDesktop ? 13 : 12, color: '#B5A997', fontFamily: 'Nunito_400Regular' },
+  actionCard: {
+    alignItems: 'center',
+    paddingVertical: sp.lg,
+    paddingHorizontal: sp.md,
+  },
 
-    // STATS
-    statsSection: { marginTop: spacing.lg },
-  });
-}
+  actionIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surfaceAlt,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: sp.sm,
+  },
+
+  actionLabel: {
+    ...textStyles.bodySm,
+    color: colors.textPrimary,
+    textAlign: 'center',
+    fontFamily: typography.medium,
+  },
+
+  quoteCard: {
+    marginHorizontal: sp.screenX,
+    marginTop: sp.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: sp.md,
+  },
+
+  quoteIcon: { fontSize: 28 },
+
+  quoteText: {
+    ...textStyles.body,
+    color: colors.textSecondary,
+    flex: 1,
+    fontStyle: 'italic',
+  },
+});

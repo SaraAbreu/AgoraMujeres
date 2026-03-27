@@ -2,103 +2,54 @@
   "expo": {
     "name": "Ágora Mujeres",
     "slug": "agora-mujeres",
-    "version": "1.0.0",
+    "version": "2.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "agora-mujeres",
     "userInterfaceStyle": "light",
     "newArchEnabled": false,
     "extra": {
-      "EXPO_PUBLIC_BACKEND_URL": "http://localhost:8000",
-      "EXPO_PUBLIC_STRIPE_KEY": "pk_test_51SRw7PL07UaiQy6MzTESTKEYXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      "EXPO_PUBLIC_BACKEND_URL": "http://localhost:8000"
     },
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "Access location for weather updates",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "Access location for weather updates"
+        "NSLocationWhenInUseUsageDescription": "Accedemos a tu ubicación para mostrarte el clima actual"
       }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#FDFBF9"
+        "backgroundColor": "#FDFAF7"
       },
       "edgeToEdgeEnabled": true,
-      "permissions": [
-        "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION"
-      ]
+      "permissions": ["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"]
     },
     "web": {
       "bundler": "metro",
       "output": "static",
-      "favicon": "./assets/images/favicon.png",
-      "viewport": "width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover",
-      "display": "standalone",
-      "preferRelatedApplications": false,
-      "phoneFrame": false,
-      "headerMode": "screen",
-      "htmlMetaTags": [
-        {
-          "tagName": "meta",
-          "attributes": {
-            "name": "viewport",
-            "content": "width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"
-          }
-        },
-        {
-          "tagName": "meta",
-          "attributes": {
-            "name": "theme-color",
-            "content": "#FDFBF9"
-          }
-        },
-        {
-          "tagName": "meta",
-          "attributes": {
-            "name": "apple-mobile-web-app-capable",
-            "content": "yes"
-          }
-        },
-        {
-          "tagName": "meta",
-          "attributes": {
-            "name": "apple-mobile-web-app-status-bar-style",
-            "content": "black-translucent"
-          }
-        }
-      ],
-      "env": {
-        "development": {
-          "bundler": "metro"
-        }
-      }
+      "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
       "expo-router",
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/agora-logo.png",
-          "imageWidth": 200,
+          "image": "./assets/images/splash-agora.png",
           "resizeMode": "contain",
-          "backgroundColor": "#FDFBF9"
+          "backgroundColor": "#6B6A3D"
         }
       ],
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Access location for weather updates"
+          "locationWhenInUsePermission": "Accedemos a tu ubicación para mostrarte el clima actual"
         }
       ],
-      [
-        "expo-secure-store"
-      ]
+      "expo-secure-store"
     ],
     "experiments": {
-      "typedRoutes": false,
-      "tsconfigPaths": false
+      "typedRoutes": true
     }
   }
 }

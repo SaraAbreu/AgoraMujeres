@@ -1,6 +1,9 @@
 {
-  "name": "agora-mujeres",
-  "version": "1.0.0",
-  "description": "Ágora Mujeres - Companion for Women Health",
-  "private": true
+  "devDependencies": {
+    "expo-module-scripts": "^55.0.2"
+  },
+  "dependencies": {
+    "react-dom": "19.2.0",
+    "react-native-web": "^0.21.0"
+  }
 }

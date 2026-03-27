@@ -1,6 +1,7 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Request, File, UploadFile
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
+import sys
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
@@ -18,9 +19,14 @@ import httpx
 import httpx
 from pathlib import Path
 from dotenv import load_dotenv
-load_dotenv()
-env_path = Path(__file__).parent / ".env"
-load_dotenv(dotenv_path=env_path)
+try:
+    print("[DEBUG] Cargando variables de entorno...")
+    load_dotenv()
+    env_path = Path(__file__).parent / ".env"
+    load_dotenv(dotenv_path=env_path)
+    print("[DEBUG] Variables de entorno cargadas.")
+except Exception as e:
+    print(f"[ERROR] Error cargando .env: {e}", file=sys.stderr)
 try:
     from backend.core.llm_adapter import MyLLMInterface, UserMessage
 except Exception:
@@ -115,25 +121,38 @@ async def lifespan(app: FastAPI):
     
     # Startup: Connect to MongoDB
     try:
+        print("[DEBUG] Intentando conectar a MongoDB...", flush=True)
         client = AsyncIOMotorClient(mongo_url, serverSelectionTimeoutMS=2000)
         # Test connection asynchronously with timeout
         try:
             await asyncio.wait_for(client.server_info(), timeout=2.0)
             db = client[db_name]
             logger.info("✅ Connected to MongoDB")
+            print("[DEBUG] Conectado a MongoDB Atlas.", flush=True)
             using_mongomock = False
         except asyncio.TimeoutError:
             raise Exception("MongoDB connection timeout")
     except Exception as e:
-        # Fallback to mongomock for development/testing
-        import mongomock
-        logger.warning(f"⚠️ MongoDB unavailable ({e}). Using mongomock for development.")
-        client = mongomock.MongoClient()
-        db = client[db_name]
-        using_mongomock = True
-    
+        print(f"[ERROR] Error conectando a MongoDB: {e}", file=sys.stderr, flush=True)
+        try:
+            import mongomock
+            logger.warning(f"⚠️ MongoDB unavailable ({e}). Using mongomock for development.")
+            print("[DEBUG] Usando mongomock como fallback.", flush=True)
+            client = mongomock.MongoClient()
+            db = client[db_name]
+            using_mongomock = True
+        except Exception as mongomock_error:
+            print(f"[CRITICAL] Error importando mongomock: {mongomock_error}", file=sys.stderr, flush=True)
+            import traceback
+            traceback.print_exc()
+            raise
     try:
         yield  # App is running
+    except Exception as e:
+        print(f"[CRITICAL] Excepción durante el ciclo de vida de la app: {e}", file=sys.stderr, flush=True)
+        import traceback
+        traceback.print_exc()
+        raise
     finally:
         # Shutdown: Close connections safely
         try:
@@ -145,13 +164,34 @@ async def lifespan(app: FastAPI):
 
 # Create the main app with lifespan
 app = FastAPI(
-    title="Ágora Mujeres API", 
+
+    title="Ágora Mujeres API",
     description="API for emotional companion app",
     lifespan=lifespan
 )
 
+# Configuración de CORS para permitir peticiones desde cualquier origen
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
+
+# PATCH: Log incoming chat requests
+from fastapi import Request
+@api_router.post("/chat")
+async def log_chat_request(request: Request):
+    data = await request.json()
+    logger.info(f"[API/CHAT] Mensaje recibido: device_id={data.get('device_id')}, payload={data}")
+    # Importar y llamar la función real de chat
+    from backend.routers import chat as chat_router
+    return await chat_router.create_chat_message(**data)
 
 # ============== MODELS ==============
 

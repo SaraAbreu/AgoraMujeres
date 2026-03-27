@@ -1,744 +1,215 @@
-/**
- * app/(tabs)/settings.tsx
- *
- * Pantalla de ajustes — reescrita desde cero.
- *
- * Cambios respecto a la versión anterior:
- *  - ❌ localStorage (rompe en Android/iOS) → ✅ AsyncStorage
- *  - ❌ /admin/verify → ✅ /subscription/admin/verify (ruta correcta del backend)
- *  - ❌ fetch directo para comunidad → ✅ getCommunityCount() de api.ts
- *  - ✅ Secciones conservadas: idioma, notificaciones, suscripción, comunidad, admin, about
- */
-
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Alert,
-  TextInput,
-  Modal,
-  Switch,
-  Platform,
+  View, Text, ScrollView, TouchableOpacity, StyleSheet, Switch, Alert, TextInput,
 } from 'react-native';
-import { useRouter } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useRouter } from 'expo-router';
+import { useTranslation } from 'react-i18next';
 import i18n from '../../src/i18n';
-
-import { colors, spacing, borderRadius, typography } from '../../src/theme/colors';
+import { ScreenContainer, GlassCard, PremiumButton } from '../../src/components/ui';
 import { useStore } from '../../src/store/useStore';
-import { verifyAdminCode, getCommunityCount } from '../../src/services/api';
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Claves AsyncStorage
-// ─────────────────────────────────────────────────────────────────────────────
-
-const KEYS = {
-  notificationsEnabled: 'agora_notif_enabled',
-  notificationHour:     'agora_notif_hour',
-  notificationMinute:   'agora_notif_minute',
-} as const;
-
-const BG = '#80704f';
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Componentes pequeños
-// ─────────────────────────────────────────────────────────────────────────────
-
-function SectionTitle({ label }: { label: string }) {
-  return <Text style={styles.sectionTitle}>{label}</Text>;
-}
-
-function Card({ children }: { children: React.ReactNode }) {
-  return <View style={styles.card}>{children}</View>;
-}
-
-function Divider() {
-  return <View style={styles.divider} />;
-}
-
-function Row({
-  icon,
-  iconColor,
-  label,
-  sublabel,
-  right,
-  onPress,
-  selected,
-}: {
-  icon?:      string;
-  iconColor?: string;
-  label:      string;
-  sublabel?:  string;
-  right?:     React.ReactNode;
-  onPress?:   () => void;
-  selected?:  boolean;
-}) {
-  const Inner = (
-    <View style={[styles.row, selected && styles.rowSelected]}>
-      {icon && (
-        <View style={[styles.rowIconBg, { backgroundColor: (iconColor ?? colors.mossGreen) + '20' }]}>
-          <Ionicons name={icon as any} size={18} color={iconColor ?? colors.mossGreen} />
-        </View>
-      )}
-      <View style={styles.rowContent}>
-        <Text style={styles.rowLabel}>{label}</Text>
-        {sublabel ? <Text style={styles.rowSublabel}>{sublabel}</Text> : null}
-      </View>
-      {right}
-    </View>
-  );
-
-  if (onPress) {
-    return (
-      <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
-        {Inner}
-      </TouchableOpacity>
-    );
-  }
-  return Inner;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Pantalla
-// ─────────────────────────────────────────────────────────────────────────────
+import { useTrialCheck } from '../../src/hooks/useTrialCheck';
+import { verifyAdminCode } from '../../src/services/api';
+import { colors, textStyles, sp, radius, fonts } from '../../src/theme';
 
 export default function SettingsScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
-  const { language, setLanguage, subscriptionStatus, setSubscriptionStatus, deviceId } = useStore();
-  const isEs = language === 'es';
+  const { deviceId, language, setLanguage, enableVoiceOutput, setEnableVoiceOutput } = useStore();
+  const { isTrialActive, isSubscribed, remainingTime } = useTrialCheck();
 
-  // Notificaciones
-  const [notifEnabled, setNotifEnabled] = useState(false);
-  const [notifHour,    setNotifHour]    = useState(8);
-  const [notifMinute,  setNotifMinute]  = useState(0);
+  const [adminCode, setAdminCode]       = useState('');
+  const [showAdmin, setShowAdmin]       = useState(false);
+  const [adminVerified, setAdminVerified] = useState(false);
 
-  // Admin
-  const [showAdminModal, setShowAdminModal] = useState(false);
-  const [adminCode,      setAdminCode]      = useState('');
-  const [isAdmin,        setIsAdmin]        = useState(false);
-
-  // Comunidad
-  const [communityCount, setCommunityCount] = useState<number | null>(null);
-
-  // ── Cargar preferencias de notificación desde AsyncStorage ─────────────────
-  useEffect(() => {
-    const loadPrefs = async () => {
-      try {
-        const [enabled, hour, minute] = await AsyncStorage.multiGet([
-          KEYS.notificationsEnabled,
-          KEYS.notificationHour,
-          KEYS.notificationMinute,
-        ]);
-        setNotifEnabled(enabled[1] === 'true');
-        setNotifHour(parseInt(hour[1]    ?? '8'));
-        setNotifMinute(parseInt(minute[1] ?? '0'));
-      } catch (e) {
-        console.warn('[Settings] Could not load notification prefs:', e);
-      }
-    };
-    loadPrefs();
-  }, []);
-
-  // ── Cargar comunidad ────────────────────────────────────────────────────────
-  useEffect(() => {
-    getCommunityCount()
-      .then(d => setCommunityCount(d.community_size))
-      .catch(() => setCommunityCount(Math.floor(Math.random() * 500) + 100));
-  }, []);
-
-  // ── Guardar preferencias de notificación ────────────────────────────────────
-  const saveNotifPrefs = async (enabled: boolean, hour: number, minute: number) => {
-    try {
-      await AsyncStorage.multiSet([
-        [KEYS.notificationsEnabled, String(enabled)],
-        [KEYS.notificationHour,     String(hour)],
-        [KEYS.notificationMinute,   String(minute)],
-      ]);
-    } catch (e) {
-      console.warn('[Settings] Could not save notification prefs:', e);
-    }
+  const toggleLang = async () => {
+    const next = language === 'es' ? 'en' : 'es';
+    await setLanguage(next);
+    i18n.changeLanguage(next);
   };
 
-  const handleNotifToggle = async (val: boolean) => {
-    setNotifEnabled(val);
-    await saveNotifPrefs(val, notifHour, notifMinute);
-  };
-
-  const handleHourChange = async (raw: string) => {
-    const h = Math.max(0, Math.min(23, parseInt(raw) || 0));
-    setNotifHour(h);
-    await saveNotifPrefs(notifEnabled, h, notifMinute);
-  };
-
-  const handleMinuteChange = async (raw: string) => {
-    const m = Math.max(0, Math.min(59, parseInt(raw) || 0));
-    setNotifMinute(m);
-    await saveNotifPrefs(notifEnabled, notifHour, m);
-  };
-
-  // ── Cambio de idioma ────────────────────────────────────────────────────────
-  const handleLanguageChange = async (lang: string) => {
-    await setLanguage(lang);
-    i18n.changeLanguage(lang);
-  };
-
-  // ── Tiempo de trial ─────────────────────────────────────────────────────────
-  const formatTrialTime = () => {
-    if (isAdmin) return isEs ? 'Ilimitado' : 'Unlimited';
-    const secs = subscriptionStatus?.trial_remaining_seconds ?? 0;
-    const h = Math.floor(secs / 3600);
-    const m = Math.floor((secs % 3600) / 60);
-    return `${h}h ${m}m`;
-  };
-
-  // ── Admin ───────────────────────────────────────────────────────────────────
-  const handleAdminSubmit = async () => {
+  const handleAdminVerify = async () => {
     if (!deviceId || !adminCode.trim()) return;
     try {
-      const result = await verifyAdminCode(deviceId, adminCode.trim());
-      if (result.success) {
-        setIsAdmin(true);
-        setSubscriptionStatus({ ...subscriptionStatus, status: 'active' } as any);
-        setShowAdminModal(false);
-        setAdminCode('');
-        Alert.alert('✓', isEs ? 'Acceso de administrador activado' : 'Admin access activated');
-      } else {
-        Alert.alert('', isEs ? 'Código incorrecto' : 'Invalid code');
-      }
-    } catch (e: any) {
-      Alert.alert(isEs ? 'Error' : 'Error', e?.message ?? '');
-    }
+      const res = await verifyAdminCode(deviceId, adminCode.trim());
+      if (res.is_admin) setAdminVerified(true);
+      else Alert.alert('Error', res.message);
+    } catch { Alert.alert('Error', t('error')); }
   };
 
-  // ─────────────────────────────────────────────────────────────────────────────
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Badge admin */}
-        {isAdmin && (
-          <View style={styles.adminBadge}>
-            <Ionicons name="shield-checkmark" size={14} color={colors.warmBrown} />
-            <Text style={styles.adminBadgeText}>
-              {isEs ? 'Modo administrador' : 'Admin mode'}
-            </Text>
-          </View>
-        )}
+    <ScreenContainer title={t('settings')}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
 
-        {/* ── Idioma ── */}
-        <SectionTitle label={isEs ? 'Idioma' : 'Language'} />
-        <Card>
-          <Row
-            icon="flag-outline"
-            iconColor="#C08080"
-            label="🇪🇸 Español"
-            selected={language === 'es'}
-            onPress={() => handleLanguageChange('es')}
-            right={language === 'es'
-              ? <Ionicons name="checkmark" size={18} color={colors.mossGreen} />
-              : undefined}
-          />
-          <Divider />
-          <Row
-            icon="flag-outline"
-            iconColor="#6080C0"
-            label="🇬🇧 English"
-            selected={language === 'en'}
-            onPress={() => handleLanguageChange('en')}
-            right={language === 'en'
-              ? <Ionicons name="checkmark" size={18} color={colors.mossGreen} />
-              : undefined}
-          />
-        </Card>
-
-        {/* ── Notificaciones ── */}
-        <SectionTitle label={isEs ? 'Notificaciones' : 'Notifications'} />
-        <Card>
-          <Row
-            icon="notifications-outline"
-            iconColor={colors.warmBrown}
-            label={isEs ? '¿Cómo amaneció tu cuerpo?' : 'How did you wake up?'}
-            sublabel={isEs ? 'Recordatorio diario' : 'Daily reminder'}
-            right={
-              <Switch
-                value={notifEnabled}
-                onValueChange={handleNotifToggle}
-                trackColor={{ false: colors.border, true: colors.mossGreen }}
-                thumbColor={notifEnabled ? colors.surface : '#f4f3f4'}
+        {/* ── Suscripción ────────── */}
+        <Text style={styles.sectionTitle}>{t('subscription')}</Text>
+        <GlassCard>
+          <View style={styles.row}>
+            <View style={styles.rowIcon}>
+              <Ionicons
+                name={isSubscribed ? 'shield-checkmark' : 'time-outline'}
+                size={20}
+                color={isSubscribed ? colors.success : colors.secondary}
               />
-            }
-          />
-          {notifEnabled && (
-            <>
-              <Divider />
-              <View style={styles.timePicker}>
-                <Text style={styles.timePickerLabel}>
-                  {isEs ? 'Hora de aviso' : 'Reminder time'}
-                </Text>
-                <View style={styles.timeInputsRow}>
-                  <TextInput
-                    style={styles.timeInput}
-                    value={String(notifHour).padStart(2, '0')}
-                    onChangeText={handleHourChange}
-                    keyboardType="number-pad"
-                    maxLength={2}
-                    selectTextOnFocus
-                  />
-                  <Text style={styles.timeSep}>:</Text>
-                  <TextInput
-                    style={styles.timeInput}
-                    value={String(notifMinute).padStart(2, '0')}
-                    onChangeText={handleMinuteChange}
-                    keyboardType="number-pad"
-                    maxLength={2}
-                    selectTextOnFocus
-                  />
-                </View>
-              </View>
-            </>
-          )}
-        </Card>
-
-        {/* ── Suscripción ── */}
-        <SectionTitle label={isEs ? 'Suscripción' : 'Subscription'} />
-        <Card>
-          {subscriptionStatus?.status === 'active' ? (
-            <Row
-              icon="checkmark-circle"
-              iconColor={colors.success}
-              label={isEs ? 'Suscripción activa' : 'Active subscription'}
-              sublabel="10€ / mes"
-            />
-          ) : subscriptionStatus?.status === 'trial' ? (
-            <>
-              <Row
-                icon="time-outline"
-                iconColor={colors.warmBrown}
-                label={isEs ? 'Tiempo de prueba restante' : 'Trial time remaining'}
-                sublabel={formatTrialTime()}
-              />
-              <Divider />
-              <TouchableOpacity
-                style={styles.subscribeBtn}
-                onPress={() => router.push('/subscription')}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="star" size={16} color={colors.softWhite} />
-                <Text style={styles.subscribeBtnText}>
-                  {isEs ? 'Activar suscripción' : 'Activate subscription'}
-                </Text>
-              </TouchableOpacity>
-            </>
-          ) : (
-            <>
-              <Row
-                icon="alert-circle"
-                iconColor={colors.error}
-                label={isEs ? 'Período de prueba finalizado' : 'Trial expired'}
-              />
-              <Divider />
-              <TouchableOpacity
-                style={[styles.subscribeBtn, { backgroundColor: colors.warmBrownDark }]}
-                onPress={() => router.push('/subscription')}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.subscribeBtnText}>
-                  {isEs ? 'Activar ahora' : 'Activate now'}
-                </Text>
-              </TouchableOpacity>
-            </>
-          )}
-        </Card>
-
-        {/* Código de acceso (oculto, discreta) */}
-        <TouchableOpacity
-          style={styles.adminLink}
-          onPress={() => setShowAdminModal(true)}
-          activeOpacity={0.5}
-        >
-          <Text style={styles.adminLinkText}>
-            {isEs ? '¿Tienes un código de acceso?' : 'Have an access code?'}
-          </Text>
-        </TouchableOpacity>
-
-        {/* ── Emergencia ── */}
-        <SectionTitle label={isEs ? 'Emergencia' : 'Emergency'} />
-        <Card>
-          <Row
-            icon="call-outline"
-            iconColor={colors.error}
-            label={isEs ? 'Líneas de apoyo' : 'Support lines'}
-            sublabel={isEs ? '024 · 112 · 717 003 717' : '988 · 116 123'}
-            onPress={() => router.push('/crisis')}
-            right={<Ionicons name="chevron-forward" size={16} color={colors.textLight} />}
-          />
-        </Card>
-
-        {/* ── Comunidad ── */}
-        <SectionTitle label={isEs ? 'Comunidad' : 'Community'} />
-        <Card>
-          <View style={styles.communityRow}>
-            <View style={styles.communityIcon}>
-              <Ionicons name="people" size={24} color={colors.mossGreen} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.communityTitle}>
-                {isEs ? 'Juntas somos más fuertes' : 'Together we are stronger'}
+              <Text style={styles.rowLabel}>
+                {isSubscribed ? t('subscriptionActive') : t('trialRemaining')}
               </Text>
-              <Text style={styles.communityCount}>
-                {communityCount !== null ? communityCount : '…'}
-              </Text>
-              <Text style={styles.communitySubtitle}>
-                {isEs ? 'mujeres en nuestra comunidad 💜' : 'women in our community 💜'}
-              </Text>
+              {isTrialActive && <Text style={styles.rowValue}>{remainingTime}</Text>}
             </View>
+            {!isSubscribed && (
+              <TouchableOpacity onPress={() => router.push('/subscription')} style={styles.upgradeBtn}>
+                <Text style={styles.upgradeBtnText}>{t('priceMonthly')}</Text>
+              </TouchableOpacity>
+            )}
           </View>
-        </Card>
+        </GlassCard>
 
-        {/* ── About ── */}
-        <View style={styles.about}>
-          <Text style={styles.aboutName}>Ágora Mujeres</Text>
-          <Text style={styles.aboutVersion}>v1.0.0</Text>
-          <Text style={styles.aboutTagline}>
-            {isEs ? 'Tu refugio emocional' : 'Your emotional refuge'}
-          </Text>
-        </View>
+        {/* ── Idioma ─────────────── */}
+        <Text style={styles.sectionTitle}>{t('language')}</Text>
+        <GlassCard>
+          <View style={styles.row}>
+            <View style={styles.rowIcon}>
+              <Ionicons name="globe-outline" size={20} color={colors.primary} />
+            </View>
+            <Text style={[styles.rowLabel, { flex: 1 }]}>{language === 'es' ? t('spanish') : t('english')}</Text>
+            <TouchableOpacity onPress={toggleLang} style={styles.langToggle}>
+              <Text style={styles.langToggleText}>{language === 'es' ? 'EN' : 'ES'}</Text>
+            </TouchableOpacity>
+          </View>
+        </GlassCard>
 
-        <View style={{ height: 40 }} />
+        {/* ── Voz ────────────────── */}
+        <Text style={styles.sectionTitle}>Audio</Text>
+        <GlassCard>
+          <View style={styles.row}>
+            <View style={styles.rowIcon}>
+              <Ionicons name="volume-high-outline" size={20} color={colors.accent} />
+            </View>
+            <Text style={[styles.rowLabel, { flex: 1 }]}>Síntesis de voz</Text>
+            <Switch
+              value={enableVoiceOutput}
+              onValueChange={setEnableVoiceOutput}
+              trackColor={{ false: colors.border, true: colors.primaryLight }}
+              thumbColor={enableVoiceOutput ? colors.primary : colors.textMuted}
+            />
+          </View>
+        </GlassCard>
+
+        {/* ── Accesos rápidos ────── */}
+        <Text style={styles.sectionTitle}>Herramientas</Text>
+        {[
+          { icon: 'calendar-outline' as const, label: t('monthlyRecord'), route: '/monthly-record' },
+          { icon: 'flower-outline'   as const, label: t('cycleTracking'),  route: '/cycle' },
+        ].map((item) => (
+          <TouchableOpacity key={item.route} onPress={() => router.push(item.route as any)} activeOpacity={0.7}>
+            <GlassCard style={styles.linkCard}>
+              <View style={styles.row}>
+                <View style={styles.rowIcon}>
+                  <Ionicons name={item.icon} size={20} color={colors.primary} />
+                </View>
+                <Text style={[styles.rowLabel, { flex: 1 }]}>{item.label}</Text>
+                <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+              </View>
+            </GlassCard>
+          </TouchableOpacity>
+        ))}
+
+        {/* ── Admin ──────────────── */}
+        <TouchableOpacity onPress={() => setShowAdmin(!showAdmin)} style={styles.adminToggle}>
+          <Text style={styles.adminToggleText}>Admin</Text>
+        </TouchableOpacity>
+
+        {showAdmin && (
+          <GlassCard>
+            {adminVerified ? (
+              <View style={styles.adminVerified}>
+                <Ionicons name="checkmark-circle" size={20} color={colors.success} />
+                <Text style={styles.adminVerifiedText}>Acceso admin activado</Text>
+              </View>
+            ) : (
+              <View style={styles.adminForm}>
+                <TextInput
+                  style={styles.adminInput}
+                  value={adminCode}
+                  onChangeText={setAdminCode}
+                  placeholder="Código admin"
+                  placeholderTextColor={colors.textMuted}
+                  secureTextEntry
+                />
+                <PremiumButton title="Verificar" onPress={handleAdminVerify} size="sm" />
+              </View>
+            )}
+          </GlassCard>
+        )}
+
+        <View style={{ height: 120 }} />
       </ScrollView>
-
-      {/* ── Modal admin ── */}
-      <Modal
-        visible={showAdminModal}
-        animationType="fade"
-        transparent
-        onRequestClose={() => setShowAdminModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalBox}>
-            <TouchableOpacity
-              style={styles.modalClose}
-              onPress={() => setShowAdminModal(false)}
-            >
-              <Ionicons name="close" size={22} color={colors.textSecondary} />
-            </TouchableOpacity>
-
-            <Ionicons
-              name="key-outline"
-              size={36}
-              color={colors.mossGreen}
-              style={{ marginBottom: spacing.md }}
-            />
-
-            <Text style={styles.modalTitle}>
-              {isEs ? 'Código de administrador' : 'Admin code'}
-            </Text>
-
-            <TextInput
-              style={styles.adminInput}
-              value={adminCode}
-              onChangeText={setAdminCode}
-              placeholder={isEs ? 'Introduce el código' : 'Enter code'}
-              placeholderTextColor={colors.textLight}
-              autoCapitalize="characters"
-              autoCorrect={false}
-            />
-
-            <TouchableOpacity style={styles.adminSubmitBtn} onPress={handleAdminSubmit}>
-              <Text style={styles.adminSubmitText}>
-                {isEs ? 'Verificar' : 'Verify'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-    </SafeAreaView>
+    </ScreenContainer>
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Estilos
-// ─────────────────────────────────────────────────────────────────────────────
-
 const styles = StyleSheet.create({
-  safe: {
-    flex:            1,
-    backgroundColor: BG,
-  },
-  scroll: {
-    flex: 1,
-  },
-  content: {
-    padding:       spacing.lg,
-    paddingBottom: spacing.xxl,
-  },
+  scroll: { paddingBottom: 40 },
 
-  // Admin badge
-  adminBadge: {
-    flexDirection:    'row',
-    alignItems:       'center',
-    justifyContent:   'center',
-    backgroundColor:  colors.surface,
-    paddingVertical:  spacing.sm,
-    paddingHorizontal: spacing.md,
-    borderRadius:     borderRadius.full,
-    gap:              spacing.xs,
-    alignSelf:        'center',
-    marginBottom:     spacing.md,
-  },
-  adminBadgeText: {
-    fontSize:   typography.sizes.sm,
-    fontFamily: 'Nunito_600SemiBold',
-    color:      colors.warmBrown,
-  },
-
-  // Section title
   sectionTitle: {
-    fontSize:      typography.sizes.xs,
-    fontFamily:    'Nunito_700Bold',
-    color:         'rgba(245,242,239,0.7)',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    marginTop:     spacing.lg,
-    marginBottom:  spacing.sm,
+    ...textStyles.labelCaps,
+    color: colors.textMuted,
+    marginTop: sp.lg,
+    marginBottom: sp.sm,
   },
 
-  // Card
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius:    borderRadius.lg,
-    overflow:        'hidden',
-    shadowColor:     colors.shadow,
-    shadowOffset:    { width: 0, height: 2 },
-    shadowOpacity:   0.08,
-    shadowRadius:    6,
-    elevation:       2,
-  },
-
-  divider: {
-    height:          1,
-    backgroundColor: colors.border,
-    marginHorizontal: spacing.md,
-  },
-
-  // Row
   row: {
-    flexDirection:    'row',
-    alignItems:       'center',
-    padding:          spacing.md,
-    gap:              spacing.md,
-  },
-  rowSelected: {
-    backgroundColor: colors.creamLight,
-  },
-  rowIconBg: {
-    width:          36,
-    height:         36,
-    borderRadius:   10,
-    justifyContent: 'center',
-    alignItems:     'center',
-  },
-  rowContent: {
-    flex: 1,
-  },
-  rowLabel: {
-    fontSize:   typography.sizes.md,
-    fontFamily: 'Nunito_500Medium',
-    color:      colors.text,
-  },
-  rowSublabel: {
-    fontSize:   typography.sizes.sm,
-    fontFamily: 'Nunito_400Regular',
-    color:      colors.textSecondary,
-    marginTop:  2,
-  },
-
-  // Notificaciones — time picker
-  timePicker: {
-    flexDirection:   'row',
-    alignItems:      'center',
-    justifyContent:  'space-between',
-    padding:         spacing.md,
-  },
-  timePickerLabel: {
-    fontSize:   typography.sizes.sm,
-    fontFamily: 'Nunito_500Medium',
-    color:      colors.textSecondary,
-  },
-  timeInputsRow: {
     flexDirection: 'row',
-    alignItems:    'center',
-    gap:           spacing.xs,
+    alignItems: 'center',
+    gap: sp.sm,
   },
-  timeInput: {
-    width:           52,
-    height:          40,
-    backgroundColor: colors.creamLight,
-    borderRadius:    borderRadius.md,
-    borderWidth:     1,
-    borderColor:     colors.border,
-    textAlign:       'center',
-    fontSize:        typography.sizes.lg,
-    fontFamily:      'Nunito_600SemiBold',
-    color:           colors.text,
-  },
-  timeSep: {
-    fontSize:   typography.sizes.lg,
-    fontFamily: 'Nunito_600SemiBold',
-    color:      colors.text,
-  },
-
-  // Suscripción
-  subscribeBtn: {
-    flexDirection:   'row',
-    alignItems:      'center',
-    justifyContent:  'center',
-    gap:             spacing.sm,
-    backgroundColor: colors.mossGreen,
-    margin:          spacing.md,
-    marginTop:       spacing.sm,
-    paddingVertical: spacing.md,
-    borderRadius:    borderRadius.md,
-  },
-  subscribeBtnText: {
-    fontSize:   typography.sizes.md,
-    fontFamily: 'Nunito_700Bold',
-    color:      colors.softWhite,
-  },
-
-  // Admin link
-  adminLink: {
-    alignItems:  'center',
-    marginTop:   spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  adminLinkText: {
-    fontSize:          typography.sizes.sm,
-    fontFamily:        'Nunito_400Regular',
-    color:             colors.mossGreenLight,
-    textDecorationLine: 'underline',
-    opacity:           0.8,
-  },
-
-  // Comunidad
-  communityRow: {
-    flexDirection: 'row',
-    alignItems:    'center',
-    padding:       spacing.md,
-    gap:           spacing.md,
-  },
-  communityIcon: {
-    width:          52,
-    height:         52,
-    borderRadius:   26,
-    backgroundColor: colors.creamLight,
+  rowIcon: {
+    width: 36, height: 36,
+    borderRadius: radius.md,
+    backgroundColor: colors.bgSoft,
+    alignItems: 'center',
     justifyContent: 'center',
-    alignItems:     'center',
   },
-  communityTitle: {
-    fontSize:   typography.sizes.md,
-    fontFamily: 'Nunito_600SemiBold',
-    color:      colors.text,
-  },
-  communityCount: {
-    fontSize:   typography.sizes.xl,
-    fontFamily: 'Cormorant_700Bold',
-    color:      colors.mossGreen,
-    marginTop:  2,
-  },
-  communitySubtitle: {
-    fontSize:   typography.sizes.sm,
-    fontFamily: 'Nunito_400Regular',
-    color:      colors.textSecondary,
-    marginTop:  2,
-  },
+  rowLabel: { ...textStyles.subtitleSm, color: colors.textPrimary },
+  rowValue: { ...textStyles.bodySm, color: colors.textMuted, marginTop: 2 },
 
-  // About
-  about: {
-    alignItems:  'center',
-    marginTop:   spacing.xl,
-    paddingVertical: spacing.xl,
+  upgradeBtn: {
+    backgroundColor: colors.secondarySoft,
+    paddingHorizontal: sp.md,
+    paddingVertical: 6,
+    borderRadius: radius.full,
   },
-  aboutName: {
-    fontSize:   typography.sizes.xl,
-    fontFamily: 'Cormorant_700Bold',
-    color:      colors.softWhite,
-  },
-  aboutVersion: {
-    fontSize:   typography.sizes.sm,
-    fontFamily: 'Nunito_400Regular',
-    color:      'rgba(245,242,239,0.5)',
-    marginTop:  spacing.xs,
-  },
-  aboutTagline: {
-    fontSize:   typography.sizes.sm,
-    fontFamily: 'Nunito_400Regular',
-    color:      'rgba(245,242,239,0.7)',
-    marginTop:  spacing.sm,
-    fontStyle:  'italic',
-  },
+  upgradeBtnText: { ...textStyles.label, color: colors.secondary },
 
-  // Modal admin
-  modalOverlay: {
-    flex:            1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent:  'center',
-    alignItems:      'center',
-    padding:         spacing.xl,
+  langToggle: {
+    backgroundColor: colors.primarySoft,
+    paddingHorizontal: sp.md,
+    paddingVertical: 6,
+    borderRadius: radius.full,
   },
-  modalBox: {
-    backgroundColor: colors.surface,
-    borderRadius:    borderRadius.xl,
-    padding:         spacing.xl,
-    width:           '100%',
-    maxWidth:        340,
-    alignItems:      'center',
+  langToggleText: { ...textStyles.label, color: colors.primary, fontFamily: fonts.sansBold },
+
+  linkCard: { marginBottom: sp.sm },
+
+  adminToggle: {
+    alignItems: 'center',
+    marginTop: sp.xl,
+    paddingVertical: sp.sm,
   },
-  modalClose: {
-    position: 'absolute',
-    top:      spacing.md,
-    right:    spacing.md,
-    padding:  spacing.xs,
-  },
-  modalTitle: {
-    fontSize:     typography.sizes.lg,
-    fontFamily:   'Cormorant_600SemiBold',
-    color:        colors.text,
-    marginBottom: spacing.lg,
-  },
+  adminToggleText: { ...textStyles.bodySm, color: colors.textMuted },
+
+  adminForm: { flexDirection: 'row', gap: sp.sm, alignItems: 'center' },
   adminInput: {
-    backgroundColor:  colors.creamLight,
-    borderRadius:     borderRadius.md,
-    padding:          spacing.md,
-    width:            '100%',
-    fontSize:         typography.sizes.md,
-    fontFamily:       'Nunito_500Medium',
-    color:            colors.text,
-    textAlign:        'center',
-    letterSpacing:    3,
-    marginBottom:     spacing.md,
-    borderWidth:      1,
-    borderColor:      colors.border,
+    flex: 1,
+    ...textStyles.body,
+    color: colors.textPrimary,
+    backgroundColor: colors.bgSoft,
+    borderRadius: radius.md,
+    paddingHorizontal: sp.md,
+    paddingVertical: 10,
   },
-  adminSubmitBtn: {
-    backgroundColor: colors.mossGreen,
-    paddingVertical:   spacing.md,
-    paddingHorizontal: spacing.xxl,
-    borderRadius:      borderRadius.lg,
-    width:             '100%',
-    alignItems:        'center',
-  },
-  adminSubmitText: {
-    fontSize:   typography.sizes.md,
-    fontFamily: 'Nunito_600SemiBold',
-    color:      colors.softWhite,
-  },
+  adminVerified: { flexDirection: 'row', alignItems: 'center', gap: sp.sm },
+  adminVerifiedText: { ...textStyles.subtitleSm, color: colors.success },
 });

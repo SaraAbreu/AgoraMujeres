@@ -1,406 +1,215 @@
 import React, { useEffect, useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  RefreshControl,
-  ActivityIndicator,
+  View, Text, ScrollView, StyleSheet, TouchableOpacity, RefreshControl,
 } from 'react-native';
-import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, spacing, borderRadius, typography } from '../../src/theme/colors';
+import { useTranslation } from 'react-i18next';
+import { LinearGradient } from 'expo-linear-gradient';
+import { ScreenContainer, GlassCard, EmptyState } from '../../src/components/ui';
 import { useStore } from '../../src/store/useStore';
-import { getPatterns, Patterns } from '../../src/services/api';
+import { getPatterns, type Patterns } from '../../src/services/api';
+import { colors, textStyles, sp, radius, fonts } from '../../src/theme';
 
 export default function PatternsScreen() {
   const { t } = useTranslation();
-  const { deviceId, language } = useStore();
+  const { deviceId } = useStore();
   const [patterns, setPatterns] = useState<Patterns | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [days, setDays]         = useState(7);
   const [refreshing, setRefreshing] = useState(false);
 
-  const loadPatterns = async () => {
+  const load = async () => {
     if (!deviceId) return;
-    try {
-      const data = await getPatterns(deviceId, 7);
-      if (data !== null) {
-        setPatterns(data);
-      }
-    } catch (error) {
-      console.error('Error loading patterns:', error);
-    } finally {
-      setLoading(false);
-    }
+    try { setPatterns(await getPatterns(deviceId, days)); } catch { /* noop */ }
   };
 
-  useEffect(() => {
-    loadPatterns();
-  }, [deviceId]);
+  useEffect(() => { load(); }, [deviceId, days]);
 
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await loadPatterns();
-    setRefreshing(false);
-  };
-
-  const getEmotionColor = (key: string) => {
-    const emotionColors: Record<string, string> = {
-      calma: colors.emotion.calma,
-      fatiga: colors.emotion.fatiga,
-      niebla_mental: colors.emotion.niebla,
-      dolor_difuso: colors.emotion.dolor,
-      gratitud: colors.emotion.gratitud,
-      tension: colors.emotion.tension,
-      saturada: colors.emotion.saturada,
-      desconectada: colors.emotion.desconectada,
-      sensible: colors.emotion.sensible,
-      abrumada: colors.emotion.abrumada,
-      vulnerable: colors.emotion.vulnerable,
-      tranquila: colors.emotion.tranquila,
-      energia: colors.emotion.gratitud,
-      sensibilidad: colors.emotion.sensible,
-    };
-    return emotionColors[key] || colors.primary;
-  };
-
-  const getEmotionLabel = (key: string): string => {
-    const labels: Record<string, string> = {
-      calma: t('calma'),
-      fatiga: t('fatiga'),
-      niebla_mental: t('niebla_mental'),
-      dolor_difuso: t('dolor_difuso'),
-      gratitud: t('gratitud'),
-      tension: t('tension'),
-      saturada: t('saturada'),
-      desconectada: t('desconectada'),
-      sensible: t('sensible'),
-      abrumada: t('abrumada'),
-      vulnerable: t('vulnerable'),
-      tranquila: t('tranquila'),
-      energia: t('energia'),
-      sensibilidad: t('sensibilidad'),
-    };
-    return labels[key] || key;
-  };
-
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.softWhite} />
-      </View>
-    );
-  }
+  const onRefresh = async () => { setRefreshing(true); await load(); setRefreshing(false); };
 
   if (!patterns || patterns.total_entries === 0) {
     return (
-      <View style={styles.emptyContainer}>
-        <View style={styles.emptyIconContainer}>
-          <Ionicons name="analytics-outline" size={48} color={colors.mossGreen} />
-        </View>
-        <Text style={styles.emptyTitle}>{t('noPatterns')}</Text>
-        <Text style={styles.emptySubtitle}>{t('keepWriting')}</Text>
-      </View>
+      <ScreenContainer title={t('weeklyPatterns')}>
+        <EmptyState icon="analytics-outline" title={t('noPatterns')} message={t('keepWriting')} />
+      </ScreenContainer>
     );
   }
 
+  const emotionEntries = Object.entries(patterns.emotional_averages || {})
+    .filter(([, v]) => typeof v === 'number' && v > 0)
+    .sort(([, a], [, b]) => (b as number) - (a as number));
+
+  const physicalEntries = patterns.physical_averages
+    ? [
+        { key: 'nivel_dolor',  val: patterns.physical_averages.nivel_dolor },
+        { key: 'energia',      val: patterns.physical_averages.energia },
+        { key: 'sensibilidad', val: patterns.physical_averages.sensibilidad },
+      ]
+    : [];
+
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      refreshControl={
-        <RefreshControl 
-          refreshing={refreshing} 
-          onRefresh={onRefresh} 
-          tintColor={colors.softWhite}
-          colors={[colors.warmBrown]}
-        />
-      }
-      showsVerticalScrollIndicator={false}
-    >
-      {/* Summary Card */}
-      <View style={styles.summaryCard}>
-        <Text style={styles.summaryTitle}>
-          {language === 'es' ? `Últimos ${patterns.period_days} días` : `Last ${patterns.period_days} days`}
-        </Text>
-        <Text style={styles.summaryValue}>
-          {patterns.total_entries} {t('entries')}
-        </Text>
-      </View>
-
-      {/* Emotional Trends */}
-      <Text style={styles.sectionTitle}>{t('emotionalTrends')}</Text>
-      <View style={styles.card}>
-        {Object.entries(patterns.emotional_averages).map(([key, value]) => (
-          <View key={key} style={styles.trendRow}>
-            <View style={styles.trendLabel}>
-              <View style={[styles.trendDot, { backgroundColor: getEmotionColor(key) }]} />
-              <Text style={styles.trendText}>{getEmotionLabel(key)}</Text>
-            </View>
-            <View style={styles.trendBarContainer}>
-              <View 
-                style={[
-                  styles.trendBar, 
-                  { 
-                    width: `${(value / 5) * 100}%`,
-                    backgroundColor: getEmotionColor(key)
-                  }
-                ]} 
-              />
-            </View>
-            <Text style={styles.trendValue}>{value}/5</Text>
-          </View>
-        ))}
-      </View>
-
-      {/* Physical Trends */}
-      {patterns.physical_averages && (
-        <>
-          <Text style={styles.sectionTitle}>{t('physicalTrends')}</Text>
-          <View style={styles.card}>
-            <View style={styles.physicalRow}>
-              <View style={styles.physicalItem}>
-                <Text style={styles.physicalLabel}>{t('nivel_dolor')}</Text>
-                <Text style={styles.physicalValue}>{patterns.physical_averages.nivel_dolor}/10</Text>
-              </View>
-              <View style={styles.physicalItem}>
-                <Text style={styles.physicalLabel}>{t('energia')}</Text>
-                <Text style={styles.physicalValue}>{patterns.physical_averages.energia}/10</Text>
-              </View>
-              <View style={styles.physicalItem}>
-                <Text style={styles.physicalLabel}>{t('sensibilidad')}</Text>
-                <Text style={styles.physicalValue}>{patterns.physical_averages.sensibilidad}/10</Text>
-              </View>
-            </View>
-          </View>
-        </>
-      )}
-
-      {/* Common Words */}
-      {patterns.common_words && patterns.common_words.length > 0 && (
-        <>
-          <Text style={styles.sectionTitle}>{t('commonWords')}</Text>
-          <View style={styles.card}>
-            <View style={styles.wordsContainer}>
-              {patterns.common_words.map(([word, count], index) => (
-                <View key={index} style={styles.wordTag}>
-                  <Text style={styles.wordText}>{word}</Text>
-                  <Text style={styles.wordCount}>({count})</Text>
-                </View>
-              ))}
-            </View>
-          </View>
-        </>
-      )}
-
-      {/* Insight */}
-      <View style={styles.insightCard}>
-        <Ionicons name="heart" size={24} color={colors.warmBrown} />
-        <View style={styles.insightContent}>
-          <Text style={styles.insightTitle}>{t('notablePattern')}</Text>
-          <Text style={styles.insightText}>
-            {language === 'es'
-              ? `Hemos rastreado tus últimos ${patterns.period_days} días. Las estadísticas ayudan, pero lo importante es que estés aquí cada día, incluso los malos. Eso es suficiente.`
-              : `We've tracked your last ${patterns.period_days} days. Statistics help, but what matters is that you're here every day, even the hard ones. That's enough.`
-            }
-          </Text>
+    <ScreenContainer title={t('weeklyPatterns')} subtitle={`${patterns.total_entries} ${t('entries')} · ${t('lastDays', { days })}`}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scroll}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
+      >
+        {/* Period selector */}
+        <View style={styles.periodRow}>
+          {[7, 30].map((d) => (
+            <TouchableOpacity
+              key={d}
+              onPress={() => setDays(d)}
+              style={[styles.periodBtn, days === d && styles.periodBtnActive]}
+            >
+              <Text style={[styles.periodText, days === d && styles.periodTextActive]}>
+                {d} {t('lastDays', { days: d }).split(' ').pop()}
+              </Text>
+            </TouchableOpacity>
+          ))}
         </View>
-      </View>
-    </ScrollView>
+
+        {/* Emotional trends */}
+        <Text style={styles.sectionTitle}>{t('emotionalTrends')}</Text>
+        <GlassCard style={styles.chartCard}>
+          {emotionEntries.map(([key, val]) => {
+            const ratio = (val as number) / 5;
+            const emotionColor = (colors.emotion as any)[key] || colors.primary;
+            return (
+              <View key={key} style={styles.barRow}>
+                <Text style={styles.barLabel}>{t(key)}</Text>
+                <View style={styles.barTrack}>
+                  <LinearGradient
+                    colors={[emotionColor, emotionColor + '80']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={[styles.barFill, { width: `${Math.max(ratio * 100, 5)}%` }]}
+                  />
+                </View>
+                <Text style={[styles.barValue, { color: emotionColor }]}>{(val as number).toFixed(1)}</Text>
+              </View>
+            );
+          })}
+        </GlassCard>
+
+        {/* Physical trends */}
+        {physicalEntries.length > 0 && (
+          <>
+            <Text style={styles.sectionTitle}>{t('physicalTrends')}</Text>
+            <GlassCard style={styles.chartCard}>
+              {physicalEntries.map(({ key, val }) => {
+                const ratio = val / 10;
+                return (
+                  <View key={key} style={styles.barRow}>
+                    <Text style={styles.barLabel}>{t(key)}</Text>
+                    <View style={styles.barTrack}>
+                      <LinearGradient
+                        colors={[colors.secondary, colors.secondaryLight]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 0 }}
+                        style={[styles.barFill, { width: `${Math.max(ratio * 100, 5)}%` }]}
+                      />
+                    </View>
+                    <Text style={[styles.barValue, { color: colors.secondary }]}>{val.toFixed(1)}</Text>
+                  </View>
+                );
+              })}
+            </GlassCard>
+          </>
+        )}
+
+        {/* Common words */}
+        {patterns.common_words.length > 0 && (
+          <>
+            <Text style={styles.sectionTitle}>{t('commonWords')}</Text>
+            <GlassCard>
+              <View style={styles.wordsWrap}>
+                {patterns.common_words.slice(0, 15).map(([word, count], i) => (
+                  <View key={word} style={[styles.wordChip, { opacity: 1 - i * 0.04 }]}>
+                    <Text style={styles.wordText}>{word}</Text>
+                    <Text style={styles.wordCount}>{count}</Text>
+                  </View>
+                ))}
+              </View>
+            </GlassCard>
+          </>
+        )}
+
+        <View style={{ height: 100 }} />
+      </ScrollView>
+    </ScreenContainer>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#80704f',
+  scroll: { paddingBottom: 40 },
+
+  periodRow: {
+    flexDirection: 'row',
+    gap: sp.sm,
+    marginBottom: sp.lg,
   },
-  content: {
-    padding: spacing.lg,
-    paddingBottom: spacing.xxl,
+  periodBtn: {
+    paddingHorizontal: sp.md,
+    paddingVertical: sp.sm,
+    borderRadius: radius.full,
+    backgroundColor: colors.bgSoft,
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#80704f',
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#80704f',
-    paddingHorizontal: spacing.xl,
-  },
-  emptyIconContainer: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: colors.surface,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: spacing.lg,
-  },
-  emptyTitle: {
-    fontSize: typography.sizes.xl,
-    fontFamily: 'Cormorant_600SemiBold',
-    color: colors.textOnDark,
-    marginBottom: spacing.xs,
-  },
-  emptySubtitle: {
-    fontSize: typography.sizes.md,
-    fontFamily: 'Nunito_400Regular',
-    color: colors.textOnDark,
-    textAlign: 'center',
-    opacity: 0.8,
-  },
-  summaryCard: {
-    backgroundColor: colors.surface,
-    padding: spacing.xl,
-    borderRadius: borderRadius.lg,
-    marginBottom: spacing.lg,
-    alignItems: 'center',
-    shadowColor: colors.shadowDark,
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 1,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  summaryTitle: {
-    fontSize: typography.sizes.sm,
-    fontFamily: 'Nunito_500Medium',
-    color: colors.warmBrown,
-    textTransform: 'capitalize',
-  },
-  summaryValue: {
-    fontSize: typography.sizes.xxl,
-    fontFamily: 'Cormorant_700Bold',
-    color: colors.text,
-    marginTop: spacing.xs,
-  },
+  periodBtnActive: { backgroundColor: colors.primarySoft },
+  periodText:       { ...textStyles.label, color: colors.textMuted },
+  periodTextActive: { color: colors.primary },
+
   sectionTitle: {
-    fontSize: typography.sizes.lg,
-    fontFamily: 'Cormorant_600SemiBold',
-    color: colors.textOnDark,
-    marginBottom: spacing.md,
+    ...textStyles.labelCaps,
+    color: colors.textMuted,
+    marginBottom: sp.sm,
+    marginTop: sp.lg,
   },
-  card: {
-    backgroundColor: colors.surface,
-    padding: spacing.lg,
-    borderRadius: borderRadius.lg,
-    marginBottom: spacing.lg,
-    shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 1,
-    shadowRadius: 6,
-    elevation: 2,
-  },
-  trendRow: {
+
+  chartCard: { gap: sp.md },
+
+  barRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: spacing.md,
+    gap: sp.sm,
   },
-  trendLabel: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    width: 110,
+  barLabel: {
+    ...textStyles.bodySm,
+    color: colors.textSecondary,
+    width: 90,
+    fontFamily: fonts.sansMedium,
   },
-  trendDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginRight: spacing.sm,
-  },
-  trendText: {
-    fontSize: typography.sizes.sm,
-    fontFamily: 'Nunito_400Regular',
-    color: colors.text,
-  },
-  trendBarContainer: {
+  barTrack: {
     flex: 1,
     height: 8,
-    backgroundColor: colors.creamLight,
-    borderRadius: 4,
-    marginHorizontal: spacing.sm,
+    borderRadius: radius.full,
+    backgroundColor: colors.bgSoft,
+    overflow: 'hidden',
   },
-  trendBar: {
-    height: 8,
-    borderRadius: 4,
+  barFill: {
+    height: '100%',
+    borderRadius: radius.full,
   },
-  trendValue: {
-    fontSize: typography.sizes.sm,
-    fontFamily: 'Nunito_500Medium',
-    color: colors.textSecondary,
-    width: 35,
+  barValue: {
+    ...textStyles.bodySm,
+    fontFamily: fonts.sansBold,
+    width: 32,
     textAlign: 'right',
   },
-  physicalRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-  },
-  physicalItem: {
-    alignItems: 'center',
-  },
-  physicalLabel: {
-    fontSize: typography.sizes.sm,
-    fontFamily: 'Nunito_400Regular',
-    color: colors.textSecondary,
-    marginBottom: spacing.xs,
-  },
-  physicalValue: {
-    fontSize: typography.sizes.xl,
-    fontFamily: 'Cormorant_600SemiBold',
-    color: colors.text,
-  },
-  wordsContainer: {
+
+  wordsWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: spacing.sm,
+    gap: sp.sm,
   },
-  wordTag: {
+  wordChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.creamLight,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: borderRadius.full,
+    backgroundColor: colors.primarySoft,
+    paddingHorizontal: sp.sm + 4,
+    paddingVertical: 6,
+    borderRadius: radius.full,
+    gap: 6,
   },
-  wordText: {
-    fontSize: typography.sizes.sm,
-    fontFamily: 'Nunito_400Regular',
-    color: colors.text,
-  },
-  wordCount: {
-    fontSize: typography.sizes.xs,
-    fontFamily: 'Nunito_400Regular',
-    color: colors.textSecondary,
-    marginLeft: spacing.xs,
-  },
-  insightCard: {
-    flexDirection: 'row',
-    backgroundColor: colors.surface,
-    padding: spacing.lg,
-    borderRadius: borderRadius.lg,
-    gap: spacing.md,
-    shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 1,
-    shadowRadius: 6,
-    elevation: 2,
-  },
-  insightContent: {
-    flex: 1,
-  },
-  insightTitle: {
-    fontSize: typography.sizes.md,
-    fontFamily: 'Nunito_600SemiBold',
-    color: colors.warmBrown,
-    marginBottom: spacing.xs,
-  },
-  insightText: {
-    fontSize: typography.sizes.sm,
-    fontFamily: 'Nunito_400Regular',
-    color: colors.textSecondary,
-    lineHeight: 20,
-  },
+  wordText:  { ...textStyles.bodySm, color: colors.primary, fontFamily: fonts.sansMedium },
+  wordCount: { ...textStyles.bodySm, color: colors.primaryLight, fontSize: 11 },
 });

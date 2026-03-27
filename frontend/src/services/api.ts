@@ -22,8 +22,8 @@ function resolveApiUrl(): string {
   const fromEnv = process.env.EXPO_PUBLIC_BACKEND_URL;
   if (fromEnv?.trim()) return fromEnv.trim();
 
-  // Desarrollo local: Expo web corre en 8082, backend en 8000
-  return 'http://192.168.1.136:8000';
+  // For desarrollo local en navegador, usar localhost
+  return 'http://localhost:8000';
 }
 
 export const API_BASE = resolveApiUrl();
@@ -34,7 +34,6 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
-// Interceptor: convierte errores HTTP en mensajes legibles
 api.interceptors.response.use(
   (res) => res,
   (error) => {
@@ -51,7 +50,7 @@ api.interceptors.response.use(
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Guard: nunca permitir deviceId nulo o 'default-device'
+// Guard
 // ─────────────────────────────────────────────────────────────────────────────
 
 function requireDeviceId(deviceId: string | null | undefined, caller: string): string {
@@ -65,23 +64,23 @@ function requireDeviceId(deviceId: string | null | undefined, caller: string): s
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tipos — reflejan exactamente los modelos Pydantic del backend
+// Tipos
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface EmotionalState {
-  calma?:        number; // 0-5
-  fatiga?:       number; // 0-5
-  niebla_mental?: number; // 0-5
-  dolor_difuso?: number; // 0-5
-  gratitud?:     number; // 0-5
-  tension?:      number; // 0-5
-  [key: string]: number | undefined;
+  calma?:         number;
+  fatiga?:        number;
+  niebla_mental?: number;
+  dolor_difuso?:  number;
+  gratitud?:      number;
+  tension?:       number;
+  [key: string]:  number | undefined;
 }
 
 export interface PhysicalState {
-  nivel_dolor:  number; // 0-10
-  energia:      number; // 0-10
-  sensibilidad: number; // 0-10
+  nivel_dolor:  number;
+  energia:      number;
+  sensibilidad: number;
 }
 
 export interface DiaryEntry {
@@ -91,7 +90,7 @@ export interface DiaryEntry {
   emotional_state: EmotionalState;
   physical_state?: PhysicalState;
   weather?:        WeatherData;
-  created_at:      string; // ISO
+  created_at:      string;
 }
 
 export interface DiaryEntryCreate {
@@ -113,7 +112,7 @@ export interface ChatMessage {
   role:       'user' | 'assistant';
   content:    string;
   exercises?: Exercise[];
-  created_at: string; // ISO
+  created_at: string;
 }
 
 export interface Conversation {
@@ -167,24 +166,24 @@ export interface MonthlyPainRecord {
 
 export interface PainRecord {
   date:      string;
-  intensity: number; // 0-10
+  intensity: number;
   notes?:    string;
 }
 
 export interface Resource {
-  id:                 string;
-  category:           'breathing' | 'stretching' | 'nutrition' | 'sleep' | 'mindfulness' | 'professional';
-  type:               'article' | 'video';
-  title:              string;
-  description:        string;
-  content?:           string;
-  video_url?:         string;
-  thumbnail_url?:     string;
-  author?:            string;
+  id:                  string;
+  category:            'breathing' | 'stretching' | 'nutrition' | 'sleep' | 'mindfulness' | 'professional';
+  type:                'article' | 'video';
+  title:               string;
+  description:         string;
+  content?:            string;
+  video_url?:          string;
+  thumbnail_url?:      string;
+  author?:             string;
   author_credentials?: string;
-  duration?:          string;
-  read_time?:         string;
-  is_featured:        boolean;
+  duration?:           string;
+  read_time?:          string;
+  is_featured:         boolean;
 }
 
 export interface ResourceCategory {
@@ -195,28 +194,10 @@ export interface ResourceCategory {
 }
 
 export interface CrisisResponse {
-  immediate?: {
-    title:   string;
-    message: string;
-    options: string[];
-  };
-  technique?: {
-    title:   string;
-    steps?:  string[];
-    message: string;
-    mantras?: string[];
-  };
-  all_techniques?: Array<{
-    key:     string;
-    title:   string;
-    steps?:  string[];
-    message: string;
-    mantras?: string[];
-  }>;
-  emergency_contacts?: {
-    es?: { spain?: string; general?: string };
-    en?: { us?: string; uk?: string };
-  };
+  immediate?: { title: string; message: string; options: string[] };
+  technique?: { title: string; steps?: string[]; message: string; mantras?: string[] };
+  all_techniques?: Array<{ key: string; title: string; steps?: string[]; message: string; mantras?: string[] }>;
+  emergency_contacts?: { es?: { spain?: string; general?: string }; en?: { us?: string; uk?: string } };
 }
 
 export interface ChatResponse {
@@ -243,7 +224,6 @@ export interface FavoriteMessage {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Parser de ejercicios embebidos en la respuesta de Ágora
-// Formato: ---EJERCICIOS_RECOMENDADOS---{json}---FIN_EJERCICIOS---
 // ─────────────────────────────────────────────────────────────────────────────
 
 function parseExercises(response: string): { text: string; exercises?: Exercise[] } {
@@ -254,10 +234,7 @@ function parseExercises(response: string): { text: string; exercises?: Exercise[
   try {
     const parsed = JSON.parse(match[1].trim());
     if (!Array.isArray(parsed.exercises)) return { text: response };
-    return {
-      text:      response.replace(regex, '').trim(),
-      exercises: parsed.exercises as Exercise[],
-    };
+    return { text: response.replace(regex, '').trim(), exercises: parsed.exercises as Exercise[] };
   } catch {
     return { text: response.replace(regex, '').trim() };
   }
@@ -273,23 +250,15 @@ export async function createDiaryEntry(entry: DiaryEntryCreate): Promise<DiaryEn
   return data;
 }
 
-export async function getDiaryEntries(
-  deviceId: string,
-  limit = 30,
-  offset = 0
-): Promise<DiaryEntry[]> {
+export async function getDiaryEntries(deviceId: string, limit = 30, offset = 0): Promise<DiaryEntry[]> {
   requireDeviceId(deviceId, 'getDiaryEntries');
-  const { data } = await api.get<DiaryEntry[]>(`/diary/${deviceId}`, {
-    params: { limit, offset },
-  });
+  const { data } = await api.get<DiaryEntry[]>(`/diary/${deviceId}`, { params: { limit, offset } });
   return data;
 }
 
 export async function getPatterns(deviceId: string, days = 7): Promise<Patterns> {
   requireDeviceId(deviceId, 'getPatterns');
-  const { data } = await api.get<Patterns>(`/diary/${deviceId}/patterns`, {
-    params: { days },
-  });
+  const { data } = await api.get<Patterns>(`/diary/${deviceId}/patterns`, { params: { days } });
   return data;
 }
 
@@ -298,74 +267,51 @@ export async function getPatterns(deviceId: string, days = 7): Promise<Patterns>
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function sendChatMessage(
-  message:        string,
-  deviceId:       string | null | undefined,
+  messages: { role: 'user' | 'assistant', content: string }[],
+  deviceId: string | null | undefined,
   conversationId?: string,
   language = 'es'
 ): Promise<ChatResponse> {
   requireDeviceId(deviceId, 'sendChatMessage');
-  if (!message?.trim())    throw new Error('El mensaje no puede estar vacío');
-  if (message.length > 5000) throw new Error('Mensaje demasiado largo (máx. 5000 caracteres)');
+  if (!messages?.length) throw new Error('El historial de mensajes no puede estar vacío');
 
+  const lastMessage = messages[messages.length - 1];
   const { data } = await api.post<ChatResponse>('/chat', {
     device_id:       deviceId,
-    message:         message.trim(),
+    message:         lastMessage.content,
     language,
     conversation_id: conversationId || undefined,
   });
 
-  // Extraer ejercicios del texto de respuesta
   const { text, exercises } = parseExercises(data.response ?? '');
   return { ...data, response: text, exercises };
 }
 
-export async function getConversations(
-  deviceId: string,
-  limit = 20
-): Promise<Conversation[]> {
+export async function getConversations(deviceId: string, limit = 20): Promise<Conversation[]> {
   requireDeviceId(deviceId, 'getConversations');
-  const { data } = await api.get<Conversation[]>(`/chat/${deviceId}/conversations`, {
-    params: { limit },
-  });
+  const { data } = await api.get<Conversation[]>(`/chat/${deviceId}/conversations`, { params: { limit } });
   return data;
 }
 
-export async function getConversationMessages(
-  deviceId:       string,
-  conversationId: string,
-  limit = 50
-): Promise<ChatMessage[]> {
+export async function getConversationMessages(deviceId: string, conversationId: string, limit = 50): Promise<ChatMessage[]> {
   requireDeviceId(deviceId, 'getConversationMessages');
-  const { data } = await api.get<ChatMessage[]>(
-    `/chat/${deviceId}/conversation/${conversationId}`,
-    { params: { limit } }
-  );
+  const { data } = await api.get<ChatMessage[]>(`/chat/${deviceId}/conversation/${conversationId}`, { params: { limit } });
   return data;
 }
 
-export async function deleteConversation(
-  deviceId:       string,
-  conversationId: string
-): Promise<{ message: string; deleted_messages: number }> {
+export async function deleteConversation(deviceId: string, conversationId: string): Promise<{ message: string; deleted_messages: number }> {
   requireDeviceId(deviceId, 'deleteConversation');
   const { data } = await api.delete(`/chat/${deviceId}/conversation/${conversationId}`);
   return data;
 }
 
-export async function getChatHistory(
-  deviceId: string,
-  limit = 50
-): Promise<ChatMessage[]> {
+export async function getChatHistory(deviceId: string, limit = 50): Promise<ChatMessage[]> {
   requireDeviceId(deviceId, 'getChatHistory');
-  const { data } = await api.get<ChatMessage[]>(`/chat/${deviceId}/history`, {
-    params: { limit },
-  });
+  const { data } = await api.get<ChatMessage[]>(`/chat/${deviceId}/history`, { params: { limit } });
   return data;
 }
 
-export async function clearChatHistory(
-  deviceId: string
-): Promise<{ message: string; deleted_count: number }> {
+export async function clearChatHistory(deviceId: string): Promise<{ message: string; deleted_count: number }> {
   requireDeviceId(deviceId, 'clearChatHistory');
   const { data } = await api.delete(`/chat/${deviceId}/history`);
   return data;
@@ -375,51 +321,25 @@ export async function clearChatHistory(
 // REACCIONES Y FAVORITOS
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function saveMessageReaction(
-  deviceId:       string,
-  conversationId: string,
-  messageId:      string,
-  reaction:       string
-): Promise<{ status: string; reaction_id: string }> {
+export async function saveMessageReaction(deviceId: string, conversationId: string, messageId: string, reaction: string) {
   requireDeviceId(deviceId, 'saveMessageReaction');
-  const { data } = await api.post('/chat/reaction', {
-    device_id:       deviceId,
-    conversation_id: conversationId,
-    message_id:      messageId,
-    reaction,
-  });
+  const { data } = await api.post('/chat/reaction', { device_id: deviceId, conversation_id: conversationId, message_id: messageId, reaction });
   return data;
 }
 
-export async function saveFavoriteMessage(
-  deviceId:       string,
-  messageContent: string,
-  category = 'general'
-): Promise<{ id: string; status: string }> {
+export async function saveFavoriteMessage(deviceId: string, messageContent: string, category = 'general') {
   requireDeviceId(deviceId, 'saveFavoriteMessage');
-  const { data } = await api.post('/chat/favorites', {
-    device_id:       deviceId,
-    message_content: messageContent,
-    category,
-  });
+  const { data } = await api.post('/chat/favorites', { device_id: deviceId, message_content: messageContent, category });
   return data;
 }
 
-export async function getFavoriteMessages(
-  deviceId: string,
-  category?: string
-): Promise<FavoriteMessage[]> {
+export async function getFavoriteMessages(deviceId: string, category?: string): Promise<FavoriteMessage[]> {
   requireDeviceId(deviceId, 'getFavoriteMessages');
-  const { data } = await api.get<FavoriteMessage[]>(`/chat/favorites/${deviceId}`, {
-    params: category ? { category } : undefined,
-  });
+  const { data } = await api.get<FavoriteMessage[]>(`/chat/favorites/${deviceId}`, { params: category ? { category } : undefined });
   return data;
 }
 
-export async function deleteFavoriteMessage(
-  deviceId:  string,
-  messageId: string
-): Promise<{ deleted: boolean }> {
+export async function deleteFavoriteMessage(deviceId: string, messageId: string) {
   requireDeviceId(deviceId, 'deleteFavoriteMessage');
   const { data } = await api.delete(`/chat/favorites/${deviceId}/${messageId}`);
   return data;
@@ -429,19 +349,9 @@ export async function deleteFavoriteMessage(
 // CRISIS
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function getCrisisSupport(
-  deviceId:   string,
-  painLevel = 9,
-  language  = 'es',
-  symptoms?: string[]
-): Promise<CrisisResponse> {
+export async function getCrisisSupport(deviceId: string, painLevel = 9, language = 'es', symptoms?: string[]): Promise<CrisisResponse> {
   requireDeviceId(deviceId, 'getCrisisSupport');
-  const { data } = await api.post<CrisisResponse>('/crisis', {
-    device_id:  deviceId,
-    pain_level: painLevel,
-    language,
-    symptoms:   symptoms ?? [],
-  });
+  const { data } = await api.post<CrisisResponse>('/crisis', { device_id: deviceId, pain_level: painLevel, language, symptoms: symptoms ?? [] });
   return data;
 }
 
@@ -455,52 +365,27 @@ export async function getSubscriptionStatus(deviceId: string): Promise<Subscript
   return data;
 }
 
-export async function createCustomer(
-  deviceId: string,
-  email:    string,
-  name?:    string
-): Promise<{ customer_id: string }> {
+export async function createCustomer(deviceId: string, email: string, name?: string) {
   requireDeviceId(deviceId, 'createCustomer');
-  const { data } = await api.post('/subscription/create-customer', {
-    device_id: deviceId,
-    email,
-    name,
-  });
+  const { data } = await api.post('/subscription/create-customer', { device_id: deviceId, email, name });
   return data;
 }
 
-export async function createPaymentIntent(
-  deviceId: string
-): Promise<{ client_secret: string; payment_intent_id: string }> {
+export async function createPaymentIntent(deviceId: string) {
   requireDeviceId(deviceId, 'createPaymentIntent');
-  const { data } = await api.post('/subscription/create-payment-intent', null, {
-    params: { device_id: deviceId },
-  });
+  const { data } = await api.post('/subscription/create-payment-intent', null, { params: { device_id: deviceId } });
   return data;
 }
 
-export async function activateSubscription(
-  deviceId:        string,
-  paymentIntentId: string
-): Promise<{ status: string; message: string }> {
+export async function activateSubscription(deviceId: string, paymentIntentId: string) {
   requireDeviceId(deviceId, 'activateSubscription');
-  const { data } = await api.post('/subscription/activate', null, {
-    params: { device_id: deviceId, payment_intent_id: paymentIntentId },
-  });
+  const { data } = await api.post('/subscription/activate', null, { params: { device_id: deviceId, payment_intent_id: paymentIntentId } });
   return data;
 }
 
-export async function verifyAdminCode(
-  deviceId: string,
-  code:     string
-): Promise<AdminVerifyResponse> {
+export async function verifyAdminCode(deviceId: string, code: string): Promise<AdminVerifyResponse> {
   requireDeviceId(deviceId, 'verifyAdminCode');
-  // NOTA: en el backend parcheado la ruta es /subscription/admin/verify
-  // Si usas el server.py original es /admin/verify
-  const { data } = await api.post<AdminVerifyResponse>('/subscription/admin/verify', {
-    device_id: deviceId,
-    code,
-  });
+  const { data } = await api.post<AdminVerifyResponse>('/subscription/admin/verify', { device_id: deviceId, code });
   return data;
 }
 
@@ -508,25 +393,15 @@ export async function verifyAdminCode(
 // CICLO MENSTRUAL
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function createCycleEntry(entry: {
-  device_id:  string;
-  start_date: string;
-  end_date?:  string;
-  notes?:     string;
-}): Promise<CycleEntry> {
+export async function createCycleEntry(entry: { device_id: string; start_date: string; end_date?: string; notes?: string }): Promise<CycleEntry> {
   requireDeviceId(entry.device_id, 'createCycleEntry');
   const { data } = await api.post<CycleEntry>('/cycle', entry);
   return data;
 }
 
-export async function getCycleEntries(
-  deviceId: string,
-  limit = 12
-): Promise<CycleEntry[]> {
+export async function getCycleEntries(deviceId: string, limit = 12): Promise<CycleEntry[]> {
   requireDeviceId(deviceId, 'getCycleEntries');
-  const { data } = await api.get<CycleEntry[]>(`/cycle/${deviceId}`, {
-    params: { limit },
-  });
+  const { data } = await api.get<CycleEntry[]>(`/cycle/${deviceId}`, { params: { limit } });
   return data;
 }
 
@@ -535,9 +410,7 @@ export async function getCycleEntries(
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function getWeather(lat: number, lon: number): Promise<WeatherData> {
-  const { data } = await api.get<WeatherData>('/weather', {
-    params: { lat, lon },
-  });
+  const { data } = await api.get<WeatherData>('/weather', { params: { lat, lon } });
   return data;
 }
 
@@ -556,10 +429,7 @@ export async function getMonthlyRecord(deviceId: string): Promise<MonthlyPainRec
   }
 }
 
-export async function saveMonthlyRecord(
-  deviceId: string,
-  payload: { records: PainRecord[]; cycle_start_date: string }
-): Promise<MonthlyPainRecord> {
+export async function saveMonthlyRecord(deviceId: string, payload: { records: PainRecord[]; cycle_start_date: string }): Promise<MonthlyPainRecord> {
   requireDeviceId(deviceId, 'saveMonthlyRecord');
   const { data } = await api.post<MonthlyPainRecord>(`/monthly-record/${deviceId}`, payload);
   return data;
@@ -574,23 +444,15 @@ export async function deleteMonthlyRecord(deviceId: string): Promise<void> {
 // RECURSOS
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function getResources(
-  category?: string,
-  language = 'es',
-  limit = 50
-): Promise<Resource[]> {
+export async function getResources(category?: string, language = 'es', limit = 50): Promise<Resource[]> {
   const params: Record<string, any> = { language, limit };
   if (category) params.category = category;
   const { data } = await api.get<Resource[]>('/resources', { params });
   return data;
 }
 
-export async function getResourceCategories(
-  language = 'es'
-): Promise<ResourceCategory[]> {
-  const { data } = await api.get<ResourceCategory[]>('/resources/categories', {
-    params: { language },
-  });
+export async function getResourceCategories(language = 'es'): Promise<ResourceCategory[]> {
+  const { data } = await api.get<ResourceCategory[]>('/resources/categories', { params: { language } });
   return data;
 }
 
@@ -598,17 +460,9 @@ export async function getResourceCategories(
 // COMUNIDAD
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function getCommunityCount(): Promise<{
-  community_size: number;
-  message_es:     string;
-  message_en:     string;
-}> {
+export async function getCommunityCount() {
   const { data } = await api.get('/chat/community/count');
   return data;
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Export por defecto para compatibilidad con código existente
-// ─────────────────────────────────────────────────────────────────────────────
 
 export default api;

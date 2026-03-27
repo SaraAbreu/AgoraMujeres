@@ -115,19 +115,66 @@ async def _generate_response(
     if not use_openai:
         return get_smart_response(request.message, request.language, is_first_message), True
 
+
     try:
         from openai import AsyncOpenAI
         client_openai = AsyncOpenAI(api_key=api_key)
 
         system_prompt = SYSTEM_PROMPTS.get(request.language, SYSTEM_PROMPTS["es"])
 
-        # Enrich with diary patterns if available
+        # Enriquecer con patrones del diario y ejemplos recientes
         try:
             patterns = await get_patterns_for_device(request.device_id, days=7)
             if patterns:
                 system_prompt += build_patterns_context(patterns, request.language)
+                # Resumen de tendencias emocionales y cambios recientes
+                highest = patterns["trends"]["highest_emotional"]
+                lowest = patterns["trends"]["lowest_emotional"]
+                system_prompt += (
+                    f"\nTENDENCIAS EMOCIONALES: La emoción más frecuente últimamente es '{highest}', y la menos presente es '{lowest}'. "
+                    "Si detectas un cambio reciente en el estado emocional, destácalo y valida ese esfuerzo."
+                )
         except Exception as e:
             logger.warning(f"Pattern enrichment failed (non-fatal): {e}")
+
+        # Enriquecer con ejemplos reales del diario y síntomas
+        try:
+            from ..core.database import db_find
+            diary_entries = await db_find(
+                db.diary_entries,
+                {"device_id": request.device_id},
+                sort=("created_at", -1),
+                limit=5,
+            )
+            diary_examples = []
+            symptoms = set()
+            SYMPTOM_KEYWORDS = [
+                "fibromialgia", "artritis", "migraña", "endometriosis", "SFC", "POTS", "dolor", "fatiga", "insomnio", "ansiedad", "depresión", "cansancio", "crisis", "contractura", "espalda", "pierna", "cabeza", "hormigueo", "mareo", "náusea", "sueño", "estrés"
+            ]
+            for entry in diary_entries:
+                texto = (entry.get("texto") or "").strip()
+                if texto:
+                    diary_examples.append(texto)
+                    for word in SYMPTOM_KEYWORDS:
+                        if word in texto.lower():
+                            symptoms.add(word)
+            if diary_examples:
+                system_prompt += f"\n\nEJEMPLOS RECIENTES DEL DIARIO (útiles para personalizar la respuesta):\n"
+                for ex in diary_examples[:3]:
+                    system_prompt += f"- \"{ex}\"\n"
+            if symptoms:
+                system_prompt += f"\nSÍNTOMAS/ENFERMEDADES MENCIONADOS EN EL DIARIO:\n- {', '.join(sorted(symptoms))}\n"
+        except Exception as e:
+            logger.warning(f"Diary enrichment failed (non-fatal): {e}")
+
+        # Instrucción explícita para la IA
+        system_prompt += (
+            "\nINSTRUCCIONES ESPECIALES:\n"
+            "- Relaciona tus respuestas y sugerencias con los síntomas, emociones, tendencias y logros que aparecen en el diario y el chat.\n"
+            "- Si sugieres ejercicios o alimentación, personalízalos según los síntomas, tendencias y cambios recientes, y recuerda siempre que no eres médico.\n"
+            "- Si detectas una mejora o esfuerzo reciente, valídalo y celébralo explícitamente.\n"
+            "- Nunca repitas tu presentación si ya hay historial.\n"
+        )
 
         messages = [{"role": "system", "content": system_prompt}]
         for msg in history:

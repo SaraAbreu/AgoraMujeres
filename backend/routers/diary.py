@@ -19,6 +19,7 @@ router = APIRouter(prefix="/diary", tags=["diary"])
 
 @router.post("", response_model=DiaryEntry)
 async def create_diary_entry(entry: DiaryEntryCreate):
+    logger.info(f"[API/DIARY] Nueva entrada recibida: device_id={entry.device_id}, payload={entry.model_dump()}")
     entry_obj = DiaryEntry(**entry.model_dump())
     await db_insert_one(db.diary_entries, entry_obj.model_dump())
     await track_usage(entry.device_id, 60)

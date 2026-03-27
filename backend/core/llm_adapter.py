@@ -67,14 +67,21 @@ class MyLLMInterface:
         self.model = "gpt-4o-mini"
         self.messages: List[Dict[str, str]] = []
         self._client = None
-        
+
+        # LOG explícito para depuración
+        print(f"[LLM-DEBUG] Inicializando MyLLMInterface")
+        print(f"[LLM-DEBUG] api_key: {'PRESENTE' if self.api_key else 'NO DEFINIDA'} (longitud: {len(self.api_key) if self.api_key else 0})")
+        print(f"[LLM-DEBUG] OpenAI importado: {'sí' if OpenAI else 'no'}")
+
         # Inicializar cliente si es posible
         if self.api_key and OpenAI:
             try:
                 self._client = OpenAI(api_key=self.api_key)
                 logger.info("OpenAI client initialized successfully")
+                print("[LLM-DEBUG] Cliente OpenAI inicializado correctamente")
             except Exception as e:
                 logger.error(f"Failed to initialize OpenAI client: {e}")
+                print(f"[LLM-DEBUG] Error al inicializar cliente OpenAI: {e}")
                 self._client = None
     
     @property

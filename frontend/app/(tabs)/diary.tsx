@@ -1,293 +1,139 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  TouchableOpacity,
-  RefreshControl,
+  View, Text, FlatList, TouchableOpacity, StyleSheet, RefreshControl,
 } from 'react-native';
-import { useTranslation } from 'react-i18next';
-import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, spacing, borderRadius, typography } from '../../src/theme/colors';
+import { useRouter } from 'expo-router';
+import { useTranslation } from 'react-i18next';
+import { ScreenContainer, GlassCard, EmptyState } from '../../src/components/ui';
 import { useStore } from '../../src/store/useStore';
-import { getDiaryEntries, DiaryEntry } from '../../src/services/api';
-import { format } from 'date-fns';
-import { es, enUS } from 'date-fns/locale';
+import { getDiaryEntries, type DiaryEntry } from '../../src/services/api';
+import { colors, textStyles, sp, radius, fonts } from '../../src/theme';
+
+const EMOTION_EMOJI: Record<string, string> = {
+  calma: '😌', fatiga: '😴', niebla_mental: '🌫️',
+  dolor_difuso: '💔', gratitud: '🙏', tension: '😤',
+};
 
 export default function DiaryScreen() {
   const { t } = useTranslation();
   const router = useRouter();
-  const { deviceId, language } = useStore();
+  const { deviceId } = useStore();
   const [entries, setEntries] = useState<DiaryEntry[]>([]);
   const [refreshing, setRefreshing] = useState(false);
-  const [loading, setLoading] = useState(true);
 
-  const loadEntries = async () => {
+  const load = async () => {
     if (!deviceId) return;
-    try {
-      const data = await getDiaryEntries(deviceId);
-      setEntries(data);
-    } catch (error) {
-      console.error('Error loading entries:', error);
-    } finally {
-      setLoading(false);
-    }
+    try { setEntries(await getDiaryEntries(deviceId, 50)); } catch { /* noop */ }
   };
 
-  useFocusEffect(
-    useCallback(() => {
-      loadEntries();
-    }, [deviceId])
-  );
+  useEffect(() => { load(); }, [deviceId]);
 
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await loadEntries();
-    setRefreshing(false);
-  };
-
-  const getEmotionLabel = (key: string): string => {
-    const labels: Record<string, string> = {
-      calma: t('calma'),
-      fatiga: t('fatiga'),
-      niebla_mental: t('niebla_mental'),
-      dolor_difuso: t('dolor_difuso'),
-      gratitud: t('gratitud'),
-      tension: t('tension'),
-      saturada: t('saturada'),
-      desconectada: t('desconectada'),
-      sensible: t('sensible'),
-      abrumada: t('abrumada'),
-      vulnerable: t('vulnerable'),
-      tranquila: t('tranquila'),
-      energia: t('energia'),
-      sensibilidad: t('sensibilidad'),
-    };
-    return labels[key] || key;
-  };
-
-  const getTopEmotions = (emotional_state: any) => {
-    return Object.entries(emotional_state)
-      .filter(([_, value]) => (value as number) > 0)
-      .sort(([, a], [, b]) => (b as number) - (a as number))
-      .slice(0, 3);
-  };
-
-  const getEmotionColor = (key: string) => {
-    const emotionColors: Record<string, string> = {
-      calma: colors.emotion.calma,
-      fatiga: colors.emotion.fatiga,
-      niebla_mental: colors.emotion.niebla,
-      dolor_difuso: colors.emotion.dolor,
-      gratitud: colors.emotion.gratitud,
-      tension: colors.emotion.tension,
-      saturada: colors.emotion.saturada,
-      desconectada: colors.emotion.desconectada,
-      sensible: colors.emotion.sensible,
-      abrumada: colors.emotion.abrumada,
-      vulnerable: colors.emotion.vulnerable,
-      tranquila: colors.emotion.tranquila,
-      energia: colors.emotion.gratitud,
-      sensibilidad: colors.emotion.sensible,
-    };
-    return emotionColors[key] || colors.primary;
-  };
+  const onRefresh = async () => { setRefreshing(true); await load(); setRefreshing(false); };
 
   const renderEntry = ({ item }: { item: DiaryEntry }) => {
-    const topEmotions = getTopEmotions(item.emotional_state);
-    const dateLocale = language === 'es' ? es : enUS;
-    
+    const emotions = Object.entries(item.emotional_state || {})
+      .filter(([, v]) => typeof v === 'number' && v > 0)
+      .sort(([, a], [, b]) => (b as number) - (a as number));
+    const date = new Date(item.created_at);
+
     return (
-      <View style={styles.entryCard}>
-        <Text style={styles.entryDate}>
-          {format(new Date(item.created_at), "EEEE, d 'de' MMMM", { locale: dateLocale })}
-        </Text>
-        
-        {item.texto && (
-          <Text style={styles.entryText} numberOfLines={3}>
-            {item.texto}
-          </Text>
-        )}
-        
-        <View style={styles.emotionsRow}>
-          {topEmotions.map(([key, value]) => (
-            <View 
-              key={key} 
-              style={[styles.emotionTag, { backgroundColor: getEmotionColor(key) }]}
-            >
-              <Text style={styles.emotionTagText}>
-                {getEmotionLabel(key)} ({value as number})
-              </Text>
-            </View>
-          ))}
+      <GlassCard style={styles.card}>
+        <View style={styles.cardHeader}>
+          <View>
+            <Text style={styles.dateDay}>{date.getDate()}</Text>
+            <Text style={styles.dateMonth}>
+              {date.toLocaleDateString('es-ES', { month: 'short' }).toUpperCase()}
+            </Text>
+          </View>
+          <View style={styles.emotionPills}>
+            {emotions.slice(0, 3).map(([key, val]) => (
+              <View key={key} style={[styles.pill, { backgroundColor: (colors.emotion as any)[key] + '20' }]}>
+                <Text style={styles.pillEmoji}>{EMOTION_EMOJI[key] || '•'}</Text>
+                <Text style={[styles.pillText, { color: (colors.emotion as any)[key] || colors.primary }]}>
+                  {t(key)} {val}
+                </Text>
+              </View>
+            ))}
+          </View>
         </View>
-        
+        {item.texto && (
+          <Text style={styles.entryText} numberOfLines={3}>{item.texto}</Text>
+        )}
         {item.physical_state && (
           <View style={styles.physicalRow}>
+            <Ionicons name="fitness-outline" size={14} color={colors.textMuted} />
             <Text style={styles.physicalText}>
-              {t('nivel_dolor')}: {item.physical_state.nivel_dolor}/10
-            </Text>
-            <Text style={styles.physicalText}>
-              {t('energia')}: {item.physical_state.energia}/10
+              {t('nivel_dolor')}: {item.physical_state.nivel_dolor}/10  ·  {t('energia')}: {item.physical_state.energia}/10
             </Text>
           </View>
         )}
-      </View>
+      </GlassCard>
     );
   };
 
-  const EmptyState = () => (
-    <View style={styles.emptyState}>
-      <View style={styles.emptyIconContainer}>
-        <Ionicons name="book-outline" size={48} color={colors.mossGreen} />
-      </View>
-      <Text style={styles.emptyTitle}>{t('noEntries')}</Text>
-      <Text style={styles.emptySubtitle}>{t('startWriting')}</Text>
-    </View>
-  );
-
   return (
-    <View style={styles.container}>
+    <ScreenContainer
+      title={t('diary')}
+      headerRight={
+        <TouchableOpacity onPress={() => router.push('/diary/new')} style={styles.addBtn}>
+          <Ionicons name="add" size={22} color={colors.textOnPrimary} />
+        </TouchableOpacity>
+      }
+    >
       <FlatList
         data={entries}
+        keyExtractor={(e) => e.id}
         renderItem={renderEntry}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={[
-          styles.listContent,
-          entries.length === 0 && styles.emptyListContent
-        ]}
-        refreshControl={
-          <RefreshControl 
-            refreshing={refreshing} 
-            onRefresh={onRefresh} 
-            tintColor={colors.softWhite}
-            colors={[colors.warmBrown]}
-          />
-        }
-        ListEmptyComponent={!loading ? EmptyState : null}
+        contentContainerStyle={entries.length === 0 ? styles.emptyList : styles.list}
         showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
+        ListEmptyComponent={
+          <EmptyState icon="book-outline" title={t('noEntries')} message={t('startWriting')} />
+        }
       />
-      
-      {/* Floating Action Button */}
-      <TouchableOpacity
-        style={styles.fab}
-        onPress={() => router.push('/diary/new')}
-        activeOpacity={0.8}
-      >
-        <Ionicons name="add" size={28} color={colors.softWhite} />
-      </TouchableOpacity>
-    </View>
+    </ScreenContainer>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#80704f',
-  },
-  listContent: {
-    padding: spacing.lg,
-    paddingBottom: 100,
-  },
-  emptyListContent: {
-    flex: 1,
+  list:      { paddingBottom: 100, gap: sp.sm },
+  emptyList: { flex: 1 },
+  addBtn: {
+    width: 40, height: 40,
+    borderRadius: radius.full,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
     justifyContent: 'center',
   },
-  entryCard: {
-    backgroundColor: colors.surface,
-    padding: spacing.lg,
-    borderRadius: borderRadius.lg,
-    marginBottom: spacing.md,
-    shadowColor: colors.shadowDark,
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 1,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  entryDate: {
-    fontSize: typography.sizes.sm,
-    fontFamily: 'Nunito_500Medium',
-    color: colors.warmBrown,
-    marginBottom: spacing.sm,
-    textTransform: 'capitalize',
-  },
-  entryText: {
-    fontSize: typography.sizes.md,
-    fontFamily: 'Nunito_400Regular',
-    color: colors.text,
-    lineHeight: 24,
-    marginBottom: spacing.md,
-  },
-  emotionsRow: {
+  card:       { marginBottom: 0 },
+  cardHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: sp.md, marginBottom: sp.sm },
+  dateDay:    { ...textStyles.h2, color: colors.primary, lineHeight: 34 },
+  dateMonth:  { ...textStyles.labelCaps, color: colors.textMuted, fontSize: 10 },
+  emotionPills: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  pill: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.xs,
-    marginBottom: spacing.sm,
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: radius.full,
+    gap: 4,
   },
-  emotionTag: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    borderRadius: borderRadius.full,
-  },
-  emotionTagText: {
-    fontSize: typography.sizes.xs,
-    fontFamily: 'Nunito_500Medium',
-    color: colors.softWhite,
+  pillEmoji: { fontSize: 12 },
+  pillText:  { ...textStyles.bodySm, fontFamily: fonts.sansMedium },
+  entryText: {
+    ...textStyles.body,
+    color: colors.textPrimary,
+    marginBottom: sp.xs,
   },
   physicalRow: {
     flexDirection: 'row',
-    gap: spacing.lg,
-    paddingTop: spacing.sm,
+    alignItems: 'center',
+    gap: 6,
+    marginTop: sp.xs,
+    paddingTop: sp.xs,
     borderTopWidth: 1,
-    borderTopColor: colors.border,
+    borderTopColor: colors.divider,
   },
-  physicalText: {
-    fontSize: typography.sizes.xs,
-    fontFamily: 'Nunito_400Regular',
-    color: colors.textSecondary,
-  },
-  emptyState: {
-    alignItems: 'center',
-    paddingHorizontal: spacing.xl,
-  },
-  emptyIconContainer: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: colors.surface,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: spacing.lg,
-  },
-  emptyTitle: {
-    fontSize: typography.sizes.xl,
-    fontFamily: 'Cormorant_600SemiBold',
-    color: colors.textOnDark,
-    marginBottom: spacing.xs,
-  },
-  emptySubtitle: {
-    fontSize: typography.sizes.md,
-    fontFamily: 'Nunito_400Regular',
-    color: colors.textOnDark,
-    textAlign: 'center',
-    opacity: 0.8,
-  },
-  fab: {
-    position: 'absolute',
-    right: spacing.lg,
-    bottom: spacing.lg,
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: colors.warmBrown,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: colors.shadowDark,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    elevation: 6,
-  },
+  physicalText: { ...textStyles.bodySm, color: colors.textMuted },
 });

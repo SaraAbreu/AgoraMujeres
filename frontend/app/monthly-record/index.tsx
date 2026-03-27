@@ -1,752 +1,264 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Alert,
+  View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert,
   ActivityIndicator,
-  Platform,
 } from 'react-native';
-import { useTranslation } from 'react-i18next';
-import { useRouter, useFocusEffect } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { Calendar, LocaleConfig } from 'react-native-calendars';
-import * as Print from 'expo-print';
-import * as Sharing from 'expo-sharing';
-import { colors, spacing, borderRadius, typography } from '../../src/theme/colors';
+import { useRouter, useFocusEffect } from 'expo-router';
+import { useTranslation } from 'react-i18next';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
+import * as Haptics from 'expo-haptics';
+import { GlassCard, PremiumButton } from '../../src/components/ui';
 import { useStore } from '../../src/store/useStore';
-import { format, differenceInDays, startOfMonth, endOfMonth, addDays } from 'date-fns';
-import { es, enUS } from 'date-fns/locale';
-import { getMonthlyRecord, saveMonthlyRecord, MonthlyPainRecord } from '../../src/services/api';
+import { getMonthlyRecord, saveMonthlyRecord } from '../../src/services/api';
+import { colors, textStyles, sp, radius, fonts } from '../../src/theme';
 
-// Configure calendar locale
-LocaleConfig.locales['es'] = {
-  monthNames: ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'],
-  monthNamesShort: ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'],
-  dayNames: ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'],
-  dayNamesShort: ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'],
-  today: 'Hoy'
-};
-LocaleConfig.locales['en'] = LocaleConfig.locales[''];
+const WEEKDAYS = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
 
-interface DayRecord {
-  date: string;
-  intensity: number; // 1-5
-  notes?: string;
+function getMonthMatrix(year: number, month: number): (number | null)[][] {
+  const first = new Date(year, month, 1);
+  const last  = new Date(year, month + 1, 0);
+  const startDay = (first.getDay() + 6) % 7;
+  const totalDays = last.getDate();
+  const weeks: (number | null)[][] = [];
+  let week: (number | null)[] = Array(startDay).fill(null);
+  for (let d = 1; d <= totalDays; d++) {
+    week.push(d);
+    if (week.length === 7) { weeks.push(week); week = []; }
+  }
+  if (week.length) { while (week.length < 7) week.push(null); weeks.push(week); }
+  return weeks;
+}
+
+/** Pain levels: 0 = none, 1-3 = mild, 4-6 = moderate, 7-10 = severe */
+function painColor(level: number): string {
+  if (level === 0) return 'transparent';
+  if (level <= 3) return colors.accent;        // sage green
+  if (level <= 6) return colors.secondary;     // rose gold
+  return colors.error;                          // red
 }
 
 export default function MonthlyRecordScreen() {
-  const { t } = useTranslation();
+  const { t }  = useTranslation();
   const router = useRouter();
-  const { deviceId, language } = useStore();
-  
+  const insets = useSafeAreaInsets();
+  const { deviceId } = useStore();
+
+  const now = new Date();
+  const [year, setYear]   = useState(now.getFullYear());
+  const [month, setMonth] = useState(now.getMonth());
+  const [painMap, setPainMap] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
-  const [records, setRecords] = useState<DayRecord[]>([]);
-  const [cycleStartDate, setCycleStartDate] = useState<Date>(new Date());
-  const [daysRemaining, setDaysRemaining] = useState(30);
-  const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const [showIntensityPicker, setShowIntensityPicker] = useState(false);
-  const [generatingPdf, setGeneratingPdf] = useState(false);
+  const [saving, setSaving]   = useState(false);
 
-  LocaleConfig.defaultLocale = language === 'es' ? 'es' : 'en';
+  const monthName = new Date(year, month).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  const weeks = getMonthMatrix(year, month);
 
-  useFocusEffect(
-    useCallback(() => {
-      loadData();
-    }, [deviceId])
-  );
-
-  const loadData = async () => {
+  useFocusEffect(useCallback(() => {
     if (!deviceId) return;
     setLoading(true);
-    try {
-      const data = await getMonthlyRecord(deviceId);
-      if (data) {
-        setRecords(data.records || []);
-        const startDate = new Date(data.cycle_start_date);
-        setCycleStartDate(startDate);
-        
-        // Calculate days remaining
-        const daysPassed = differenceInDays(new Date(), startDate);
-        const remaining = Math.max(0, 30 - daysPassed);
-        setDaysRemaining(remaining);
-        
-        // If cycle has ended, show message
-        if (remaining === 0 && data.records.length > 0) {
-          // Cycle ended - user needs to download or start new
+    getMonthlyRecord(deviceId)
+      .then((data) => {
+        if (data?.records) {
+          const map: Record<string, number> = {};
+          data.records.forEach((r) => { map[r.date] = r.intensity; });
+          setPainMap(map);
         }
-      }
-    } catch (error) {
-      console.error('Error loading monthly record:', error);
-    } finally {
-      setLoading(false);
-    }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [deviceId]));
+
+  const dayKey = (day: number) =>
+    `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+
+  const cyclePain = (day: number) => {
+    Haptics.selectionAsync();
+    const key = dayKey(day);
+    const current = painMap[key] || 0;
+    const next = current >= 10 ? 0 : current + 1;
+    setPainMap((prev) => ({ ...prev, [key]: next }));
   };
 
-  const handleDayPress = (day: any) => {
-    setSelectedDate(day.dateString);
-    setShowIntensityPicker(true);
-  };
+  const prevMonth = () => { if (month === 0) { setMonth(11); setYear(year - 1); } else setMonth(month - 1); };
+  const nextMonth = () => { if (month === 11) { setMonth(0); setYear(year + 1); } else setMonth(month + 1); };
 
-  const handleIntensitySelect = async (intensity: number) => {
-    if (!selectedDate || !deviceId) return;
-    
-    try {
-      const existingIndex = records.findIndex(r => r.date === selectedDate);
-      let newRecords: DayRecord[];
-      
-      if (intensity === 0) {
-        // Remove record
-        newRecords = records.filter(r => r.date !== selectedDate);
-      } else if (existingIndex >= 0) {
-        // Update existing
-        newRecords = [...records];
-        newRecords[existingIndex] = { ...newRecords[existingIndex], intensity };
-      } else {
-        // Add new
-        newRecords = [...records, { date: selectedDate, intensity }];
-      }
-      
-      await saveMonthlyRecord(deviceId, {
-        records: newRecords,
-        cycle_start_date: cycleStartDate.toISOString(),
-      });
-      
-      setRecords(newRecords);
-    } catch (error) {
-      console.error('Error saving record:', error);
-    }
-    
-    setShowIntensityPicker(false);
-    setSelectedDate(null);
-  };
-
-  const startNewCycle = async () => {
+  const handleSave = async () => {
     if (!deviceId) return;
-    
-    Alert.alert(
-      language === 'es' ? 'Nuevo ciclo' : 'New cycle',
-      language === 'es' 
-        ? '¿Quieres empezar un nuevo ciclo de 30 días? Los datos actuales se borrarán.'
-        : 'Do you want to start a new 30-day cycle? Current data will be deleted.',
-      [
-        { text: language === 'es' ? 'Cancelar' : 'Cancel', style: 'cancel' },
-        {
-          text: language === 'es' ? 'Empezar' : 'Start',
-          onPress: async () => {
-            try {
-              await saveMonthlyRecord(deviceId, {
-                records: [],
-                cycle_start_date: new Date().toISOString(),
-              });
-              setRecords([]);
-              setCycleStartDate(new Date());
-              setDaysRemaining(30);
-            } catch (error) {
-              console.error('Error starting new cycle:', error);
-            }
-          }
-        }
-      ]
-    );
-  };
-
-  const generatePDF = async () => {
-    if (records.length === 0) {
-      Alert.alert(
-        '',
-        language === 'es' ? 'No hay registros para exportar' : 'No records to export'
-      );
-      return;
-    }
-
-    setGeneratingPdf(true);
+    setSaving(true);
     try {
-      const dateLocale = language === 'es' ? es : enUS;
-      const sortedRecords = [...records].sort((a, b) => a.date.localeCompare(b.date));
-      
-      const intensityLabels = {
-        1: language === 'es' ? 'Muy leve' : 'Very mild',
-        2: language === 'es' ? 'Leve' : 'Mild',
-        3: language === 'es' ? 'Moderado' : 'Moderate',
-        4: language === 'es' ? 'Intenso' : 'Intense',
-        5: language === 'es' ? 'Muy intenso' : 'Very intense',
-      };
-
-      const rowsHtml = sortedRecords.map(record => `
-        <tr>
-          <td style="padding: 12px; border-bottom: 1px solid #E8E0D8;">
-            ${format(new Date(record.date), "EEEE, d 'de' MMMM", { locale: dateLocale })}
-          </td>
-          <td style="padding: 12px; border-bottom: 1px solid #E8E0D8; text-align: center;">
-            <span style="background-color: ${getIntensityColor(record.intensity)}; color: white; padding: 4px 12px; border-radius: 12px;">
-              ${intensityLabels[record.intensity as keyof typeof intensityLabels]}
-            </span>
-          </td>
-        </tr>
-      `).join('');
-
-      // Calculate statistics
-      const avgIntensity = records.reduce((sum, r) => sum + r.intensity, 0) / records.length;
-      const highPainDays = records.filter(r => r.intensity >= 4).length;
-
-      const html = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="utf-8">
-          <title>${language === 'es' ? 'Registro Mensual de Dolor' : 'Monthly Pain Record'}</title>
-          <style>
-            body { font-family: 'Helvetica', sans-serif; padding: 40px; color: #3D3628; }
-            h1 { color: #B87333; font-size: 28px; margin-bottom: 8px; }
-            h2 { color: #5D4E43; font-size: 18px; font-weight: normal; margin-bottom: 30px; }
-            .header-info { background: #EDE8E3; padding: 20px; border-radius: 12px; margin-bottom: 30px; }
-            .stats { display: flex; gap: 20px; margin-bottom: 30px; }
-            .stat-box { background: #8A8C6C; color: white; padding: 20px; border-radius: 12px; flex: 1; text-align: center; }
-            .stat-number { font-size: 32px; font-weight: bold; }
-            .stat-label { font-size: 14px; opacity: 0.9; }
-            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-            th { background: #8A8C6C; color: white; padding: 12px; text-align: left; }
-            .footer { margin-top: 40px; text-align: center; color: #8B7B6B; font-style: italic; font-size: 14px; }
-          </style>
-        </head>
-        <body>
-          <h1>Ágora Mujeres</h1>
-          <h2>${language === 'es' ? 'Registro Mensual de Dolor' : 'Monthly Pain Record'}</h2>
-          
-          <div class="header-info">
-            <strong>${language === 'es' ? 'Período:' : 'Period:'}</strong> 
-            ${format(cycleStartDate, "d 'de' MMMM, yyyy", { locale: dateLocale })} - 
-            ${format(addDays(cycleStartDate, 30), "d 'de' MMMM, yyyy", { locale: dateLocale })}
-          </div>
-
-          <div class="stats">
-            <div class="stat-box">
-              <div class="stat-number">${records.length}</div>
-              <div class="stat-label">${language === 'es' ? 'Días registrados' : 'Days recorded'}</div>
-            </div>
-            <div class="stat-box">
-              <div class="stat-number">${avgIntensity.toFixed(1)}</div>
-              <div class="stat-label">${language === 'es' ? 'Intensidad promedio' : 'Average intensity'}</div>
-            </div>
-            <div class="stat-box">
-              <div class="stat-number">${highPainDays}</div>
-              <div class="stat-label">${language === 'es' ? 'Días de dolor alto' : 'High pain days'}</div>
-            </div>
-          </div>
-
-          <table>
-            <thead>
-              <tr>
-                <th>${language === 'es' ? 'Fecha' : 'Date'}</th>
-                <th style="text-align: center;">${language === 'es' ? 'Intensidad' : 'Intensity'}</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${rowsHtml}
-            </tbody>
-          </table>
-
-          <div class="footer">
-            ${language === 'es' 
-              ? 'Este registro puede ser útil para compartir con tu equipo médico.'
-              : 'This record may be useful to share with your medical team.'}
-          </div>
-        </body>
-        </html>
-      `;
-
-      const { uri } = await Print.printToFileAsync({ html });
-      
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(uri, {
-          mimeType: 'application/pdf',
-          dialogTitle: language === 'es' ? 'Compartir registro' : 'Share record',
-        });
-      } else {
-        Alert.alert(
-          '',
-          language === 'es' ? 'PDF generado correctamente' : 'PDF generated successfully'
-        );
-      }
-    } catch (error) {
-      console.error('Error generating PDF:', error);
-      Alert.alert(
-        '',
-        language === 'es' ? 'Error al generar el PDF' : 'Error generating PDF'
-      );
+      const records = Object.entries(painMap)
+        .filter(([_, v]) => v > 0)
+        .map(([date, intensity]) => ({ date, intensity }));
+      await saveMonthlyRecord(deviceId, {
+        records,
+        cycle_start_date: records.length > 0 ? records.sort((a, b) => a.date.localeCompare(b.date))[0].date : new Date().toISOString().slice(0, 10),
+      });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert('✨', t('recordSaved'));
+    } catch {
+      Alert.alert('Error', t('error'));
     } finally {
-      setGeneratingPdf(false);
+      setSaving(false);
     }
   };
-
-  const getIntensityColor = (intensity: number): string => {
-    const intensityColors: Record<number, string> = {
-      1: '#A8D5BA', // Very mild - green
-      2: '#D4B896', // Mild - tan
-      3: '#D4956A', // Moderate - orange
-      4: '#C9A587', // Intense - terracotta
-      5: '#C08080', // Very intense - rose
-    };
-    return intensityColors[intensity] || colors.primary;
-  };
-
-  const getMarkedDates = () => {
-    const marked: any = {};
-    records.forEach(record => {
-      marked[record.date] = {
-        selected: true,
-        selectedColor: getIntensityColor(record.intensity),
-      };
-    });
-    if (selectedDate && !marked[selectedDate]) {
-      marked[selectedDate] = {
-        selected: true,
-        selectedColor: colors.mossGreen,
-      };
-    }
-    return marked;
-  };
-
-  const getCurrentIntensity = () => {
-    if (!selectedDate) return 0;
-    const record = records.find(r => r.date === selectedDate);
-    return record?.intensity || 0;
-  };
-
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.softWhite} />
-      </View>
-    );
-  }
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color={colors.textOnDark} />
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+          <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>
-          {language === 'es' ? 'Registro mensual' : 'Monthly record'}
-        </Text>
-        <TouchableOpacity 
-          onPress={generatePDF} 
-          style={styles.pdfButton}
-          disabled={generatingPdf}
-        >
-          {generatingPdf ? (
-            <ActivityIndicator size="small" color={colors.softWhite} />
-          ) : (
-            <Ionicons name="download-outline" size={24} color={colors.softWhite} />
-          )}
-        </TouchableOpacity>
+        <Text style={styles.headerTitle}>{t('monthlyRecord')}</Text>
+        <View style={{ width: 40 }} />
       </View>
 
-      <ScrollView 
-        style={styles.scrollView}
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Instructions Card */}
-        <View style={styles.instructionsCard}>
-          <Ionicons name="medical-outline" size={24} color={colors.warmBrown} />
-          <View style={styles.instructionsContent}>
-            <Text style={styles.instructionsTitle}>
-              {language === 'es' ? 'Tu registro para el médico' : 'Your record for the doctor'}
-            </Text>
-            <Text style={styles.instructionsText}>
-              {language === 'es' 
-                ? 'Registra los días de dolor durante este mes. Al final podrás descargarlo en PDF para compartir con tu equipo médico.'
-                : 'Record your pain days during this month. At the end you can download it as PDF to share with your medical team.'}
-            </Text>
-          </View>
-        </View>
-
-        {/* Cycle Status */}
-        <View style={styles.cycleCard}>
-          <View style={styles.cycleInfo}>
-            <Text style={styles.cycleLabel}>
-              {language === 'es' ? 'Días restantes del ciclo' : 'Days remaining in cycle'}
-            </Text>
-            <Text style={styles.cycleDays}>{daysRemaining}</Text>
-          </View>
-          <TouchableOpacity 
-            style={styles.newCycleButton}
-            onPress={startNewCycle}
-          >
-            <Ionicons name="refresh" size={18} color={colors.mossGreen} />
-            <Text style={styles.newCycleText}>
-              {language === 'es' ? 'Nuevo ciclo' : 'New cycle'}
-            </Text>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+        {/* Month nav */}
+        <View style={styles.monthNav}>
+          <TouchableOpacity onPress={prevMonth} hitSlop={12}>
+            <Ionicons name="chevron-back" size={22} color={colors.primary} />
+          </TouchableOpacity>
+          <Text style={styles.monthNameText}>{monthName}</Text>
+          <TouchableOpacity onPress={nextMonth} hitSlop={12}>
+            <Ionicons name="chevron-forward" size={22} color={colors.primary} />
           </TouchableOpacity>
         </View>
 
-        {/* Calendar */}
-        <View style={styles.calendarContainer}>
-          <Calendar
-            onDayPress={handleDayPress}
-            markedDates={getMarkedDates()}
-            theme={{
-              backgroundColor: colors.surface,
-              calendarBackground: colors.surface,
-              textSectionTitleColor: colors.textSecondary,
-              selectedDayBackgroundColor: colors.mossGreen,
-              selectedDayTextColor: colors.softWhite,
-              todayTextColor: colors.warmBrown,
-              dayTextColor: colors.text,
-              textDisabledColor: colors.textLight,
-              arrowColor: colors.warmBrown,
-              monthTextColor: colors.text,
-              textDayFontFamily: 'Nunito_400Regular',
-              textMonthFontFamily: 'Cormorant_600SemiBold',
-              textDayHeaderFontFamily: 'Nunito_500Medium',
-              textDayFontSize: 16,
-              textMonthFontSize: 20,
-              textDayHeaderFontSize: 12,
-            }}
-            style={styles.calendar}
-          />
-        </View>
+        {/* Instructions */}
+        <GlassCard style={styles.instrCard}>
+          <Ionicons name="finger-print-outline" size={18} color={colors.primary} />
+          <Text style={styles.instrText}>{t('monthlyRecordInstr')}</Text>
+        </GlassCard>
 
-        {/* Legend */}
-        <View style={styles.legendCard}>
-          <Text style={styles.legendTitle}>
-            {language === 'es' ? 'Niveles de intensidad' : 'Intensity levels'}
-          </Text>
-          <View style={styles.legendItems}>
-            {[1, 2, 3, 4, 5].map(level => (
-              <View key={level} style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: getIntensityColor(level) }]} />
-                <Text style={styles.legendText}>
-                  {level === 1 && (language === 'es' ? 'Muy leve' : 'Very mild')}
-                  {level === 2 && (language === 'es' ? 'Leve' : 'Mild')}
-                  {level === 3 && (language === 'es' ? 'Moderado' : 'Moderate')}
-                  {level === 4 && (language === 'es' ? 'Intenso' : 'Intense')}
-                  {level === 5 && (language === 'es' ? 'Muy intenso' : 'Very intense')}
-                </Text>
-              </View>
-            ))}
-          </View>
-        </View>
-
-        {/* Summary */}
-        {records.length > 0 && (
-          <View style={styles.summaryCard}>
-            <Text style={styles.summaryTitle}>
-              {language === 'es' ? 'Resumen del ciclo' : 'Cycle summary'}
-            </Text>
-            <View style={styles.summaryStats}>
-              <View style={styles.summaryStat}>
-                <Text style={styles.summaryNumber}>{records.length}</Text>
-                <Text style={styles.summaryLabel}>
-                  {language === 'es' ? 'Días registrados' : 'Days recorded'}
-                </Text>
-              </View>
-              <View style={styles.summaryStat}>
-                <Text style={styles.summaryNumber}>
-                  {(records.reduce((sum, r) => sum + r.intensity, 0) / records.length).toFixed(1)}
-                </Text>
-                <Text style={styles.summaryLabel}>
-                  {language === 'es' ? 'Promedio' : 'Average'}
-                </Text>
-              </View>
-              <View style={styles.summaryStat}>
-                <Text style={styles.summaryNumber}>
-                  {records.filter(r => r.intensity >= 4).length}
-                </Text>
-                <Text style={styles.summaryLabel}>
-                  {language === 'es' ? 'Días altos' : 'High days'}
-                </Text>
-              </View>
-            </View>
-          </View>
-        )}
-      </ScrollView>
-
-      {/* Intensity Picker Modal */}
-      {showIntensityPicker && (
-        <View style={styles.pickerOverlay}>
-          <TouchableOpacity 
-            style={styles.pickerBackdrop} 
-            onPress={() => setShowIntensityPicker(false)}
-            activeOpacity={1}
-          />
-          <View style={styles.pickerContainer}>
-            <Text style={styles.pickerTitle}>
-              {language === 'es' ? '¿Cómo fue el dolor ese día?' : 'How was the pain that day?'}
-            </Text>
-            <Text style={styles.pickerDate}>
-              {selectedDate && format(new Date(selectedDate), "d 'de' MMMM", { locale: language === 'es' ? es : enUS })}
-            </Text>
-            <View style={styles.intensityOptions}>
-              {[1, 2, 3, 4, 5].map(level => (
-                <TouchableOpacity
-                  key={level}
-                  style={[
-                    styles.intensityOption,
-                    { backgroundColor: getIntensityColor(level) },
-                    getCurrentIntensity() === level && styles.intensityOptionSelected
-                  ]}
-                  onPress={() => handleIntensitySelect(level)}
-                >
-                  <Text style={styles.intensityOptionText}>
-                    {level === 1 && (language === 'es' ? 'Muy leve' : 'Very mild')}
-                    {level === 2 && (language === 'es' ? 'Leve' : 'Mild')}
-                    {level === 3 && (language === 'es' ? 'Moderado' : 'Moderate')}
-                    {level === 4 && (language === 'es' ? 'Intenso' : 'Intense')}
-                    {level === 5 && (language === 'es' ? 'Muy intenso' : 'Very intense')}
-                  </Text>
-                </TouchableOpacity>
+        {loading ? (
+          <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: sp.xl }} />
+        ) : (
+          <GlassCard style={styles.calendar}>
+            {/* Weekday header */}
+            <View style={styles.weekRow}>
+              {WEEKDAYS.map((d) => (
+                <Text key={d} style={styles.weekLabel}>{d}</Text>
               ))}
             </View>
-            {getCurrentIntensity() > 0 && (
-              <TouchableOpacity
-                style={styles.removeButton}
-                onPress={() => handleIntensitySelect(0)}
-              >
-                <Text style={styles.removeButtonText}>
-                  {language === 'es' ? 'Quitar registro' : 'Remove record'}
-                </Text>
-              </TouchableOpacity>
-            )}
-          </View>
+
+            {/* Days */}
+            {weeks.map((week, wi) => (
+              <View key={wi} style={styles.weekRow}>
+                {week.map((day, di) => {
+                  const level = day ? (painMap[dayKey(day)] || 0) : 0;
+                  return (
+                    <TouchableOpacity
+                      key={di}
+                      style={[
+                        styles.dayCell,
+                        day != null && level > 0 && { backgroundColor: painColor(level) },
+                      ]}
+                      onPress={() => day && cyclePain(day)}
+                      disabled={!day}
+                      activeOpacity={0.6}
+                    >
+                      {day ? (
+                        <View style={styles.dayCellInner}>
+                          <Text style={[
+                            styles.dayText,
+                            level > 6 && { color: '#fff' },
+                          ]}>
+                            {day}
+                          </Text>
+                          {level > 0 && (
+                            <Text style={[
+                              styles.painLevel,
+                              level > 6 && { color: 'rgba(255,255,255,0.8)' },
+                            ]}>
+                              {level}
+                            </Text>
+                          )}
+                        </View>
+                      ) : null}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            ))}
+          </GlassCard>
+        )}
+
+        {/* Legend */}
+        <View style={styles.legend}>
+          {[
+            { label: t('noPain'),   color: 'transparent', border: true },
+            { label: '1-3',         color: colors.accent },
+            { label: '4-6',         color: colors.secondary },
+            { label: '7-10',        color: colors.error },
+          ].map((item, i) => (
+            <View key={i} style={styles.legendItem}>
+              <View style={[
+                styles.legendDot,
+                { backgroundColor: item.color },
+                item.border && { borderWidth: 1, borderColor: colors.borderLight },
+              ]} />
+              <Text style={styles.legendLabel}>{item.label}</Text>
+            </View>
+          ))}
         </View>
-      )}
-    </SafeAreaView>
+
+        <PremiumButton
+          title={t('saveRecord')}
+          onPress={handleSave}
+          loading={saving}
+          disabled={saving}
+          size="lg"
+          style={{ marginTop: sp.lg }}
+        />
+
+        <View style={{ height: 60 }} />
+      </ScrollView>
+    </View>
   );
 }
 
+const CELL = 44;
+
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#80704f',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#80704f',
-  },
+  container: { flex: 1, backgroundColor: colors.bg },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: sp.screenX, paddingVertical: sp.sm,
   },
-  backButton: {
-    padding: spacing.xs,
+  backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { ...textStyles.h3, color: colors.textPrimary, flex: 1, textAlign: 'center' },
+  scroll: { paddingHorizontal: sp.screenX, paddingBottom: 40 },
+
+  monthNav: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginBottom: sp.md,
   },
-  headerTitle: {
-    fontSize: typography.sizes.lg,
-    fontFamily: 'Cormorant_600SemiBold',
-    color: colors.textOnDark,
+  monthNameText: { ...textStyles.subtitle, color: colors.textPrimary, textTransform: 'capitalize' },
+
+  instrCard: { flexDirection: 'row', alignItems: 'center', gap: sp.sm, marginBottom: sp.md },
+  instrText: { ...textStyles.bodySm, color: colors.textSecondary, flex: 1 },
+
+  calendar: { paddingHorizontal: sp.xxs, paddingVertical: sp.sm },
+  weekRow:  { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 4 },
+  weekLabel: { ...textStyles.labelCaps, color: colors.textMuted, width: CELL, textAlign: 'center' },
+
+  dayCell: {
+    width: CELL, height: CELL,
+    borderRadius: radius.sm,
+    alignItems: 'center', justifyContent: 'center',
   },
-  pdfButton: {
-    padding: spacing.xs,
+  dayCellInner: { alignItems: 'center' },
+  dayText:   { ...textStyles.bodySm, color: colors.textPrimary, lineHeight: 16 },
+  painLevel: { fontSize: 8, color: colors.textMuted, fontFamily: fonts.sansBold },
+
+  legend: {
+    flexDirection: 'row', flexWrap: 'wrap', gap: sp.md,
+    marginTop: sp.md,
   },
-  scrollView: {
-    flex: 1,
-  },
-  content: {
-    padding: spacing.lg,
-    paddingBottom: spacing.xxl,
-  },
-  instructionsCard: {
-    flexDirection: 'row',
-    backgroundColor: colors.surface,
-    padding: spacing.lg,
-    borderRadius: borderRadius.lg,
-    marginBottom: spacing.md,
-    gap: spacing.md,
-  },
-  instructionsContent: {
-    flex: 1,
-  },
-  instructionsTitle: {
-    fontSize: typography.sizes.md,
-    fontFamily: 'Nunito_600SemiBold',
-    color: colors.warmBrown,
-    marginBottom: spacing.xs,
-  },
-  instructionsText: {
-    fontSize: typography.sizes.sm,
-    fontFamily: 'Nunito_400Regular',
-    color: colors.textSecondary,
-    lineHeight: 20,
-  },
-  cycleCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: colors.surface,
-    padding: spacing.md,
-    borderRadius: borderRadius.lg,
-    marginBottom: spacing.lg,
-  },
-  cycleInfo: {
-    flex: 1,
-  },
-  cycleLabel: {
-    fontSize: typography.sizes.sm,
-    fontFamily: 'Nunito_400Regular',
-    color: colors.textSecondary,
-  },
-  cycleDays: {
-    fontSize: typography.sizes.xxl,
-    fontFamily: 'Cormorant_700Bold',
-    color: colors.warmBrown,
-  },
-  newCycleButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    backgroundColor: colors.creamLight,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    borderRadius: borderRadius.md,
-  },
-  newCycleText: {
-    fontSize: typography.sizes.sm,
-    fontFamily: 'Nunito_500Medium',
-    color: colors.mossGreen,
-  },
-  calendarContainer: {
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.lg,
-    overflow: 'hidden',
-    marginBottom: spacing.lg,
-  },
-  calendar: {
-    borderRadius: borderRadius.lg,
-  },
-  legendCard: {
-    backgroundColor: colors.surface,
-    padding: spacing.lg,
-    borderRadius: borderRadius.lg,
-    marginBottom: spacing.lg,
-  },
-  legendTitle: {
-    fontSize: typography.sizes.sm,
-    fontFamily: 'Nunito_600SemiBold',
-    color: colors.text,
-    marginBottom: spacing.md,
-  },
-  legendItems: {
-    gap: spacing.sm,
-  },
-  legendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  legendDot: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-  },
-  legendText: {
-    fontSize: typography.sizes.sm,
-    fontFamily: 'Nunito_400Regular',
-    color: colors.textSecondary,
-  },
-  summaryCard: {
-    backgroundColor: colors.surface,
-    padding: spacing.lg,
-    borderRadius: borderRadius.lg,
-  },
-  summaryTitle: {
-    fontSize: typography.sizes.md,
-    fontFamily: 'Cormorant_600SemiBold',
-    color: colors.text,
-    marginBottom: spacing.md,
-  },
-  summaryStats: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-  },
-  summaryStat: {
-    alignItems: 'center',
-  },
-  summaryNumber: {
-    fontSize: typography.sizes.xl,
-    fontFamily: 'Cormorant_700Bold',
-    color: colors.warmBrown,
-  },
-  summaryLabel: {
-    fontSize: typography.sizes.xs,
-    fontFamily: 'Nunito_400Regular',
-    color: colors.textSecondary,
-  },
-  pickerOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    justifyContent: 'flex-end',
-  },
-  pickerBackdrop: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: colors.overlay,
-  },
-  pickerContainer: {
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: borderRadius.xl,
-    borderTopRightRadius: borderRadius.xl,
-    padding: spacing.xl,
-    paddingBottom: spacing.xxl,
-  },
-  pickerTitle: {
-    fontSize: typography.sizes.lg,
-    fontFamily: 'Cormorant_600SemiBold',
-    color: colors.text,
-    textAlign: 'center',
-    marginBottom: spacing.xs,
-  },
-  pickerDate: {
-    fontSize: typography.sizes.md,
-    fontFamily: 'Nunito_400Regular',
-    color: colors.textSecondary,
-    textAlign: 'center',
-    marginBottom: spacing.lg,
-    textTransform: 'capitalize',
-  },
-  intensityOptions: {
-    gap: spacing.sm,
-  },
-  intensityOption: {
-    padding: spacing.md,
-    borderRadius: borderRadius.lg,
-    alignItems: 'center',
-  },
-  intensityOptionSelected: {
-    borderWidth: 3,
-    borderColor: colors.text,
-  },
-  intensityOptionText: {
-    fontSize: typography.sizes.md,
-    fontFamily: 'Nunito_600SemiBold',
-    color: colors.softWhite,
-  },
-  removeButton: {
-    marginTop: spacing.lg,
-    padding: spacing.md,
-    alignItems: 'center',
-  },
-  removeButtonText: {
-    fontSize: typography.sizes.sm,
-    fontFamily: 'Nunito_500Medium',
-    color: colors.error,
-  },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  legendDot:  { width: 12, height: 12, borderRadius: 3 },
+  legendLabel: { ...textStyles.bodySm, color: colors.textMuted },
 });

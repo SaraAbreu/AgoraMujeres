@@ -10,15 +10,15 @@ from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException
 
-from ..core.agora_content import (
+from core.agora_content import  (
     SYSTEM_PROMPTS,
     get_fallback_response,
     get_smart_response,
 )
-from ..core.database import db, db_count_documents, db_find, db_find_one, db_insert_one, db_update_one
-from ..core.models import ChatConversation, ChatMessage, ChatRequest, FavoriteMessage, MessageReaction
-from ..core.patterns import build_patterns_context, get_patterns_for_device
-from .subscriptions import get_subscription_status_internal, track_usage
+from core.database import db, db_count_documents, db_find, db_find_one, db_insert_one, db_update_one
+from core.models import ChatConversation, ChatMessage, ChatRequest, FavoriteMessage, MessageReaction
+from core.patterns import build_patterns_context, get_patterns_for_device
+from routers.subscriptions import get_subscription_status_internal, track_usage
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -121,6 +121,11 @@ async def _generate_response(
         client_openai = AsyncOpenAI(api_key=api_key)
 
         system_prompt = SYSTEM_PROMPTS.get(request.language, SYSTEM_PROMPTS["es"])
+        # Recuperar nombre preferido de la usuaria
+        user_profile = await db_find_one(db.user_profiles, {"device_id": request.device_id})
+        if user_profile and user_profile.get("preferred_name"):
+            system_prompt += f"\nLa usuaria prefiere que la llames: {user_profile['preferred_name']}."
+
 
         # Enriquecer con patrones del diario y ejemplos recientes
         try:

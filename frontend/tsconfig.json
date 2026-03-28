@@ -6,18 +6,31 @@
     "module": "preserve",
     "moduleResolution": "bundler",
     "moduleDetection": "force",
-    "customConditions": ["react-native"],
+    "customConditions": [
+      "react-native"
+    ],
     "esModuleInterop": true,
     "allowJs": true,
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "noEmit": true,
     "target": "ESNext",
-    "lib": ["DOM", "ESNext"],
+    "lib": [
+      "ESNext"
+    ],
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": [
+        "./src/*"
+      ]
     }
   },
-  "include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.ts", "expo-env.d.ts"],
-  "exclude": ["node_modules", "babel.config.js", "metro.config.js"]
+  "include": [
+    "**/*.ts",
+    "**/*.tsx"
+  ],
+  "exclude": [
+    "node_modules",
+    "babel.config.js",
+    "metro.config.js"
+  ]
 }

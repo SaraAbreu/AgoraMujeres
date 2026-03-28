@@ -1,138 +1,86 @@
-"""
-LLM Adapter - Capa de abstracción propia que encapsula las dependencias de LLM
-
-Este módulo proporciona una interfaz consistente para interactuar con proveedores de LLM.
-Inicialmente utiliza OpenAI, pero puede reemplazarse fácilmente con otro
-proveedor (Anthropic, etc.) sin cambiar el código que lo utiliza.
-
-Esto es código PROPIO que abstrae la complejidad de las dependencias externas.
-"""
-
 import os
 import logging
 from typing import List, Dict, Any, Optional
-
-try:
-    from openai import OpenAI
-except ImportError:
-    OpenAI = None
+from openai import OpenAI  # La línea amarilla debería desaparecer ahora
 
 logger = logging.getLogger(__name__)
 
-
-class UserMessage:
-    """Representación de un mensaje de usuario."""
-    def __init__(self, content: str):
-        self.content = content
-
-
+# En llm_adapter.py
 class MyLLMInterface:
-    """
-    Interfaz unificada para interactuar con LLM providers (OpenAI, etc).
-    
-    Esta clase encapsula la lógica de OpenAI permitiendo:
-    - Abstraer la dependencia de OpenAI
-    - Facilitar cambios futuros a otros proveedores de LLM
-    - Mantener una interfaz consistente
-    
-    Uso:
-        llm = MyLLMInterface(api_key="sk-xxx", system_message="Eres un asistente...")
-        llm.set_model("openai", "gpt-4o-mini")
-        response = await llm.client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": "Hola"}]
-        )
-    """
-    
-    def __init__(
-        self,
-        api_key: Optional[str] = None,
-        session_id: Optional[str] = None,
-        system_message: Optional[str] = None,
-        engine: Optional[str] = None
-    ):
-        """
-        Inicializa la interfaz de LLM.
-        
-        Args:
-            api_key: Clave API (por defecto desde OPENAI_API_KEY)
-            session_id: ID de sesión para tracking
-            system_message: Mensaje del sistema/prompt
-            engine: Motor a usar ('openai' o similar)
-        """
+    def __init__(self, api_key: Optional[str] = None, system_message: Optional[str] = None, **kwargs):
+        # El **kwargs hace que acepte 'session_id' sin romperse
         self.api_key = api_key or os.environ.get('OPENAI_API_KEY')
-        self.session_id = session_id
-        self.system_message = system_message or ""
-        self.engine = engine or "openai"
+        self.base_prompt = system_message or ""
+        # ... resto del código igual ...
+        # 1. Buscamos la clave API (prioridad parámetro > entorno)
+        self.api_key = api_key or os.environ.get('OPENAI_API_KEY')
+        
+        # 2. Guardamos el prompt de agora_content.py como plantilla base
+        self.base_system_prompt = system_message or ""
+        
         self.model = "gpt-4o-mini"
         self.messages: List[Dict[str, str]] = []
         self._client = None
 
-        # LOG explícito para depuración
-        print(f"[LLM-DEBUG] Inicializando MyLLMInterface")
-        print(f"[LLM-DEBUG] api_key: {'PRESENTE' if self.api_key else 'NO DEFINIDA'} (longitud: {len(self.api_key) if self.api_key else 0})")
-        print(f"[LLM-DEBUG] OpenAI importado: {'sí' if OpenAI else 'no'}")
-
-        # Inicializar cliente si es posible
-        if self.api_key and OpenAI:
+        if self.api_key:
             try:
+                # Inicialización correcta para OpenAI v1.0+
                 self._client = OpenAI(api_key=self.api_key)
-                logger.info("OpenAI client initialized successfully")
-                print("[LLM-DEBUG] Cliente OpenAI inicializado correctamente")
             except Exception as e:
-                logger.error(f"Failed to initialize OpenAI client: {e}")
-                print(f"[LLM-DEBUG] Error al inicializar cliente OpenAI: {e}")
-                self._client = None
-    
-    @property
-    def client(self):
-        """Acceso directo al cliente de OpenAI."""
+                logger.error(f"Error al inicializar OpenAI: {e}")
+
+    def _prepare_dynamic_prompt(self, context: Dict[str, Any]) -> str:
+        """Sustituye los placeholders de agora_content.py por datos reales."""
+        prompt = self.base_system_prompt
+        # Valores por defecto cariñosos por si el contexto viene vacío
+        replacements = {
+            "{preferred_name}": context.get("name", "amiga"),
+            "{recent_emotions}": context.get("emotions", "calma"),
+            "{recent_symptoms}": context.get("symptoms", "estables"),
+            "{recent_patterns}": context.get("patterns", "sin cambios detectados")
+        }
+        for key, value in replacements.items():
+            prompt = prompt.replace(key, str(value))
+        return prompt
+
+    async def generate_response(self, user_input: str, context_data: Optional[Dict[str, Any]] = None) -> Optional[str]:
+        """Genera la respuesta. Si falla, devuelve None para activar el fallback básico."""
         if not self._client:
-            if not self.api_key:
-                raise RuntimeError("OpenAI API key not configured")
-            if not OpenAI:
-                raise RuntimeError("OpenAI library not installed")
-            self._client = OpenAI(api_key=self.api_key)
-        return self._client
-    
-    def set_model(self, provider: str, model: str) -> 'MyLLMInterface':
-        """
-        Configura el modelo y proveedor a usar.
-        
-        Args:
-            provider: Proveedor ('openai' o similar)
-            model: Nombre del modelo (ej: 'gpt-4o-mini')
+            logger.error("Cliente OpenAI no disponible.")
+            return None
+
+        try:
+            # 1. Personalizamos el prompt del sistema con la calidez de Ágora
+            system_content = self._prepare_dynamic_prompt(context_data or {})
             
-        Returns:
-            self para encadenamiento de métodos
-        """
-        self.engine = provider
-        self.model = model
-        logger.info(f"Model set to {provider}/{model}")
-        return self
-    
+            # 2. Construimos la lista de mensajes (System + Historial + Nuevo Mensaje)
+            api_messages = [{"role": "system", "content": system_content}]
+            api_messages.extend(self.messages[-10:]) # Últimos 10 mensajes para tener memoria
+            api_messages.append({"role": "user", "content": user_input})
+
+            # 3. LLAMADA CORRECTA (v1.0+ SIN await interno)
+            # Aunque la función es async, el cliente de OpenAI es directo
+            response = self._client.chat.completions.create(
+                model=self.model,
+                messages=api_messages,
+                temperature=0.7,
+                max_tokens=500
+            )
+
+            answer = response.choices[0].message.content
+
+            # 4. Guardamos en el historial interno para que Ágora recuerde la charla
+            self.add_message("user", user_input)
+            self.add_message("assistant", answer)
+
+            return answer
+
+        except Exception as e:
+            logger.error(f"Error en comunicación con OpenAI: {e}")
+            return None # Esto dispara el fallback básico en tu server.py
+
     def add_message(self, role: str, content: str) -> None:
-        """
-        Añade un mensaje al historial de la conversación.
-        
-        Args:
-            role: 'user', 'assistant', o 'system'
-            content: Contenido del mensaje
-        """
-        self.messages.append({
-            "role": role,
-            "content": content
-        })
-    
-    def get_messages(self) -> List[Dict[str, str]]:
-        """
-        Obtiene el historial de mensajes.
-        
-        Returns:
-            Lista de mensajes de la conversación
-        """
-        return self.messages.copy()
-    
-    def clear_messages(self) -> None:
-        """Limpia el historial de mensajes."""
+        self.messages.append({"role": role, "content": content})
+
+    def clear_history(self):
         self.messages = []

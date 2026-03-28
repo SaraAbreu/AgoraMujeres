@@ -7,49 +7,30 @@
     "icon": "./assets/images/icon.png",
     "scheme": "agora-mujeres",
     "userInterfaceStyle": "light",
+    "sdkVersion": "51.0.0",
     "newArchEnabled": false,
     "extra": {
-      "EXPO_PUBLIC_BACKEND_URL": "http://localhost:8000"
+      "EXPO_PUBLIC_BACKEND_URL": "http://192.168.1.136:8000"
     },
     "ios": {
       "supportsTablet": true,
-      "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "Accedemos a tu ubicación para mostrarte el clima actual"
-      }
+      "jsEngine": "jsc" 
     },
     "android": {
+      "jsEngine": "jsc", 
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#FDFAF7"
       },
-      "edgeToEdgeEnabled": true,
       "permissions": ["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"]
     },
     "web": {
-      "bundler": "metro",
-      "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "bundler": "metro"
     },
     "plugins": [
       "expo-router",
-      [
-        "expo-splash-screen",
-        {
-          "image": "./assets/images/splash-agora.png",
-          "resizeMode": "contain",
-          "backgroundColor": "#6B6A3D"
-        }
-      ],
-      [
-        "expo-location",
-        {
-          "locationWhenInUsePermission": "Accedemos a tu ubicación para mostrarte el clima actual"
-        }
-      ],
-      "expo-secure-store"
-    ],
-    "experiments": {
-      "typedRoutes": true
-    }
+      "expo-secure-store",
+      "expo-location"
+    ]
   }
 }

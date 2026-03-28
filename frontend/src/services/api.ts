@@ -26,10 +26,10 @@ function resolveApiUrl(): string {
   return 'http://localhost:8000';
 }
 
-export const API_BASE = resolveApiUrl();
+export const API_BASE = "http://192.168.1.136:8000/api";
 
 const api = axios.create({
-  baseURL: `${API_BASE}/api`,
+  baseURL: API_BASE,
   timeout: 30_000,
   headers: { 'Content-Type': 'application/json' },
 });
@@ -265,22 +265,21 @@ export async function getPatterns(deviceId: string, days = 7): Promise<Patterns>
 // ─────────────────────────────────────────────────────────────────────────────
 // CHAT
 // ─────────────────────────────────────────────────────────────────────────────
-
 export async function sendChatMessage(
   messages: { role: 'user' | 'assistant', content: string }[],
   deviceId: string | null | undefined,
-  conversationId?: string,
+  conversationId?: string, // <-- Este es el secreto
   language = 'es'
 ): Promise<ChatResponse> {
   requireDeviceId(deviceId, 'sendChatMessage');
-  if (!messages?.length) throw new Error('El historial de mensajes no puede estar vacío');
-
+  
   const lastMessage = messages[messages.length - 1];
+  // Enviamos el conversation_id al backend para que sepa que la charla continúa
   const { data } = await api.post<ChatResponse>('/chat', {
-    device_id:       deviceId,
-    message:         lastMessage.content,
+    device_id: deviceId,
+    message: lastMessage.content,
     language,
-    conversation_id: conversationId || undefined,
+    conversation_id: conversationId || undefined, // Si existe, mándalo
   });
 
   const { text, exercises } = parseExercises(data.response ?? '');

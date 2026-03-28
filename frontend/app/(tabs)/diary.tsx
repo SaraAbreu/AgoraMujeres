@@ -108,7 +108,7 @@ const styles = StyleSheet.create({
   },
   card:       { marginBottom: 0 },
   cardHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: sp.md, marginBottom: sp.sm },
-  dateDay:    { ...textStyles.h2, color: colors.primary, lineHeight: 34 },
+  dateDay:    { ...textStyles.h1, color: colors.primary, lineHeight: 34 },
   dateMonth:  { ...textStyles.labelCaps, color: colors.textMuted, fontSize: 10 },
   emotionPills: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   pill: {
@@ -133,7 +133,7 @@ const styles = StyleSheet.create({
     marginTop: sp.xs,
     paddingTop: sp.xs,
     borderTopWidth: 1,
-    borderTopColor: colors.divider,
+    borderTopColor: colors.textMuted,
   },
   physicalText: { ...textStyles.bodySm, color: colors.textMuted },
 });

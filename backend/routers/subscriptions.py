@@ -14,8 +14,8 @@ from typing import Optional
 import stripe
 from fastapi import APIRouter, Header, HTTPException, Request
 
-from ..core.database import db, db_find_one, db_insert_one, db_update_one
-from ..core.models import AdminCodeRequest, CustomerCreate, SubscriptionStatus
+from core.database import db, db_find_one, db_insert_one, db_update_one
+from core.models import AdminCodeRequest, CustomerCreate, SubscriptionStatus
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/subscription", tags=["subscriptions"])

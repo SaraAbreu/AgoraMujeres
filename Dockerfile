@@ -1,28 +1,20 @@
-# Backend - Dockerfile para Render
+# Usa una imagen de Python oficial
 FROM python:3.11-slim
 
+# Establece el directorio de trabajo (esto sustituye al "cd")
 WORKDIR /app
 
-# Instalar dependencias del sistema
-RUN apt-get update && apt-get install -y \
-    gcc \
-    && rm -rf /var/lib/apt/lists/*
+# Copia los archivos de requerimientos primero para aprovechar la caché
+COPY requirements.txt .
 
-# Copiar requirements
-COPY backend/requirements.txt .
-
-# Instalar Python dependencies
+# Instala las dependencias
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copiar código del backend
-COPY backend/ .
+# Copia todo el contenido de tu carpeta backend al contenedor
+COPY . .
 
-# Exponer puerto
+# Expone el puerto que usa FastAPI
 EXPOSE 8000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import requests; requests.get('http://localhost:8000/api/')" || exit 1
-
-# Comando para iniciar la app
+# Comando para arrancar la aplicación
 CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000"]

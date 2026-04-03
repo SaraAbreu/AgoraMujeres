@@ -10,6 +10,7 @@
 
 import axios from 'axios';
 import Constants from 'expo-constants';
+import { ReactNode } from 'react';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // URL base
@@ -26,7 +27,7 @@ function resolveApiUrl(): string {
   return 'http://localhost:8000';
 }
 
-export const API_BASE = "http://192.168.1.136:8000/api";
+export const API_BASE = "https://agoramujeres.syntexia-solutions.es/api";
 
 const api = axios.create({
   baseURL: API_BASE,
@@ -84,21 +85,22 @@ export interface PhysicalState {
 }
 
 export interface DiaryEntry {
-  id:              string;
-  device_id:       string;
-  texto?:          string;
-  emotional_state: EmotionalState;
-  physical_state?: PhysicalState;
-  weather?:        WeatherData;
-  created_at:      string;
+  id:         string;
+  device_id:  string;
+  texto:      string;
+  dolor:      number;
+  tags:       string[];
+  created_at: string;
 }
 
 export interface DiaryEntryCreate {
-  device_id:       string;
-  texto?:          string;
-  emotional_state: EmotionalState;
-  physical_state?: PhysicalState;
-  weather?:        WeatherData;
+  device_id: string;
+  texto: string;
+  dolor: number;
+  cuerpo: string[]; // <--- Término exacto
+  mente: string[];  // <--- Término exacto
+  alma: string[];   // <--- Término exacto
+  suelto: string[]; // <--- Término exacto
 }
 
 export interface Exercise {
@@ -244,9 +246,9 @@ function parseExercises(response: string): { text: string; exercises?: Exercise[
 // DIARIO
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function createDiaryEntry(entry: DiaryEntryCreate): Promise<DiaryEntry> {
-  requireDeviceId(entry.device_id, 'createDiaryEntry');
-  const { data } = await api.post<DiaryEntry>('/diary', entry);
+export async function createDiaryEntry(payload: DiaryEntryCreate) {
+  // Ahora axios enviará cuerpo, mente, alma y suelto
+  const { data } = await api.post('/diary', payload);
   return data;
 }
 

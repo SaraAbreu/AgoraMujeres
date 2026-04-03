@@ -1,76 +1,38 @@
-import React, { useEffect, useState } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Stack, useRouter, useSegments } from 'expo-router';
 import SplashAgoraAnimated from '../src/components/SplashAgoraAnimated';
-import { Stack } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import { useFonts, Cormorant_600SemiBold, Cormorant_600SemiBold_Italic, Cormorant_700Bold } from '@expo-google-fonts/cormorant';
-import { Nunito_400Regular, Nunito_600SemiBold, Nunito_700Bold } from '@expo-google-fonts/nunito';
-import * as SplashScreen from 'expo-splash-screen';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { useStore } from '../src/store/useStore';
-import { useOnboarding } from '../src/hooks/useOnboarding';
-import { colors } from '../src/theme';
-import '../src/i18n';
-
-SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
-  const { initializeDevice, loadSettings } = useStore();
-  const { hasSeenOnboarding, loading: onboardingLoading } = useOnboarding();
-  const [appReady, setAppReady] = useState(false);
+  const [appIsReady, setAppIsReady] = useState(false);
+  const segments = useSegments();
+  const router = useRouter();
 
-  const [fontsLoaded] = useFonts({
-    Cormorant_600SemiBold,
-    Cormorant_600SemiBold_Italic,
-    Cormorant_700Bold,
-    Nunito_400Regular,
-    Nunito_600SemiBold,
-    Nunito_700Bold,
-  });
-
+  // ── 1. SPLASH 3 segundos ─────────────────────────────────
   useEffect(() => {
-    (async () => {
-      await initializeDevice();
-      await loadSettings();
-      setAppReady(true);
-    })();
+    const t = setTimeout(() => setAppIsReady(true), 3000);
+    return () => clearTimeout(t);
   }, []);
 
+  // ── 2. CONTROL DE FLUJO ──────────────────────────────────
+  // En web, expo-router SIEMPRE tiene segmentos (nunca length === 0).
+  // Detectamos "sin ruta válida" comprobando que no está en (auth) ni (tabs).
   useEffect(() => {
-    if (fontsLoaded && appReady && !onboardingLoading) {
-      SplashScreen.hideAsync();
-    }
-  }, [fontsLoaded, appReady, onboardingLoading]);
+    if (!appIsReady) return;
 
-  if (!fontsLoaded || !appReady || onboardingLoading) {
-    return <SplashAgoraAnimated />;
-  }
+    const inAuth = segments[0] === '(auth)';
+    const inTabs = segments[0] === '(tabs)';
+
+    if (!inAuth && !inTabs) {
+      router.replace('/(auth)/onboarding');
+    }
+  }, [appIsReady]); // Solo depende de appIsReady para evitar loops
+
+  if (!appIsReady) return <SplashAgoraAnimated />;
 
   return (
-    <SafeAreaProvider>
-      <StatusBar style="dark" backgroundColor={colors.bg} />
-      <Stack
-        screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}
-        initialRouteName={hasSeenOnboarding ? '(tabs)' : 'onboarding'}
-      >
-        <Stack.Screen name="onboarding" />
-        <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="subscription" options={{ presentation: 'modal' }} />
-        <Stack.Screen name="crisis" options={{ presentation: 'modal' }} />
-        <Stack.Screen name="diary/new" options={{ presentation: 'modal' }} />
-        <Stack.Screen name="conversations/index" />
-        <Stack.Screen name="cycle/index" />
-        <Stack.Screen name="monthly-record/index" />
-      </Stack>
-    </SafeAreaProvider>
+    <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+    </Stack>
   );
 }
-
-const styles = StyleSheet.create({
-  loader: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.bg,
-  },
-});

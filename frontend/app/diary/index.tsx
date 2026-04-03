@@ -1,92 +1,76 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { View, Text, FlatList, TouchableOpacity, ActivityIndicator, StyleSheet } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useFocusEffect } from '@react-navigation/native';
-import { useTranslation } from 'react-i18next';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { getDiaryEntries, type DiaryEntry } from '../../src/services/api';
-import { useStore } from '../../src/store/useStore';
-import { colors, textStyles, sp } from '../../src/theme';
+import { useUserStore } from '../../src/store/useStore';
+import { API_BASE } from '../../src/services/api';
 
-function formatDate(dateStr: string) {
-  const d = new Date(dateStr);
-  return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+interface DiaryEntry {
+  id: number;
+  created_at: string;
+  texto: string;
+  physical_state: number;
 }
 
-export default function DiaryListScreen() {
-  const { t } = useTranslation();
-  const insets = useSafeAreaInsets();
+export default function DiaryList() {
   const router = useRouter();
-  const { deviceId } = useStore();
+  const { userToken } = useUserStore();
   const [entries, setEntries] = useState<DiaryEntry[]>([]);
   const [loading, setLoading] = useState(true);
-  const flatListRef = useRef<FlatList<DiaryEntry>>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
-  // Recarga la lista cada vez que la pantalla obtiene el foco
-  useFocusEffect(
-    useCallback(() => {
-      if (!deviceId) {
-        console.log('[Diary] Sin deviceId, no se recarga');
-        return;
+  const fetchEntries = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/diary?user_token=${userToken}`);
+      const data = await res.json();
+      if (res.ok) {
+        // Ordenamos por fecha para que la más reciente salga arriba
+        setEntries(data.sort((a: { id: number; }, b: { id: number; }) => b.id - a.id));
       }
-      console.log('[Diary] Recargando entradas para deviceId:', deviceId);
-      setLoading(true);
-      getDiaryEntries(deviceId, 50)
-        .then((data) => {
-          console.log('[Diary] Entradas recibidas:', data);
-          setEntries(data);
-          setTimeout(() => {
-            flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
-          }, 300);
-        })
-        .catch((err) => {
-          console.error('[Diary] Error al obtener entradas:', err);
-        })
-        .finally(() => setLoading(false));
-    }, [deviceId])
-  );
+    } catch (e) {
+      console.error("Error cargando diario:", e);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
 
-  const renderItem = ({ item }: { item: DiaryEntry }) => (
-    <TouchableOpacity style={styles.card} activeOpacity={0.8}>
-      <View style={styles.headerRow}>
-        <Ionicons name="book-outline" size={18} color={colors.primary} />
-        <Text style={styles.date}>{formatDate(item.created_at)}</Text>
-      </View>
-      <Text style={styles.text}>{item.texto || t('noText')}</Text>
-      <View style={styles.emotionsRow}>
-        {Object.entries(item.emotional_state || {}).map(([k, v]) => (
-          <Text key={k} style={styles.emotion}>{k}: {v}</Text>
-        ))}
-      </View>
-      {item.physical_state && (
-        <View style={styles.physicalRow}>
-          <Text style={styles.physical}>{t('nivel_dolor')}: {item.physical_state.nivel_dolor}</Text>
-          <Text style={styles.physical}>{t('energia')}: {item.physical_state.energia}</Text>
-          <Text style={styles.physical}>{t('sensibilidad')}: {item.physical_state.sensibilidad}</Text>
-        </View>
-      )}
-    </TouchableOpacity>
-  );
+  useEffect(() => {
+    if (userToken) fetchEntries();
+  }, [userToken]);
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}> 
+    <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>{t('diary')}</Text>
-        <TouchableOpacity onPress={() => router.push('/diary/new')}>
-          <Ionicons name="add-circle" size={32} color={colors.primary} />
-        </TouchableOpacity>
+        <TouchableOpacity onPress={() => router.replace('/home')}><Ionicons name="home-outline" size={24} color="#4A664D" /></TouchableOpacity>
+        <Text style={styles.title}>Mi Refugio</Text>
+        <TouchableOpacity onPress={() => router.push('/diary/new')}><Ionicons name="add-circle" size={32} color="#4A664D" /></TouchableOpacity>
       </View>
+
       {loading ? (
-        <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 40 }} />
+        <ActivityIndicator size="large" color="#4A664D" style={{ marginTop: 50 }} />
       ) : (
         <FlatList
-          ref={flatListRef}
           data={entries}
-          keyExtractor={e => e.id}
-          renderItem={renderItem}
-          contentContainerStyle={{ paddingBottom: 40 }}
-          ListEmptyComponent={<Text style={styles.empty}>{t('noEntries')}</Text>}
+          keyExtractor={(item) => item.id.toString()}
+          contentContainerStyle={{ padding: 20 }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => {setRefreshing(true); fetchEntries();}} />}
+          renderItem={({ item }) => (
+            <View style={styles.card}>
+              <View style={styles.cardHeader}>
+                <Text style={styles.date}>{new Date(item.created_at).toLocaleDateString('es-ES', { day: '2-digit', month: 'long' })}</Text>
+                {item.physical_state > 0 && (
+                  <View style={styles.painBadge}><Text style={styles.painText}>Dolor: {item.physical_state}</Text></View>
+                )}
+              </View>
+              <Text style={styles.text}>{item.texto}</Text>
+            </View>
+          )}
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyText}>Tu refugio está esperando tu primera palabra...</Text>
+            </View>
+          }
         />
       )}
     </View>
@@ -94,32 +78,15 @@ export default function DiaryListScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.bg },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: sp.screenX,
-    paddingVertical: sp.sm,
-  },
-  headerTitle: { ...textStyles.h1, color: colors.textPrimary },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: 16,
-    marginHorizontal: sp.screenX,
-    marginVertical: 8,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  date: { color: colors.textMuted, fontSize: 13 },
-  text: { ...textStyles.body, color: colors.textPrimary, marginVertical: 8 },
-  emotionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  emotion: { color: colors.accent, fontSize: 13, marginRight: 8 },
-  physicalRow: { flexDirection: 'row', gap: 12, marginTop: 4 },
-  physical: { color: colors.primaryDark, fontSize: 13 },
-  empty: { color: colors.textMuted, textAlign: 'center', marginTop: 40 },
+  container: { flex: 1, backgroundColor: '#FDFBF7' },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, backgroundColor: '#FFF', borderBottomWidth: 1, borderBottomColor: '#EAE8E0' },
+  title: { fontSize: 20, fontWeight: '700', color: '#4A664D' },
+  card: { backgroundColor: '#FFF', padding: 18, borderRadius: 20, marginBottom: 15, borderWidth: 1, borderColor: '#EAE8E0', shadowColor: '#4A664D', shadowOpacity: 0.05, shadowRadius: 5 },
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10, alignItems: 'center' },
+  date: { fontSize: 13, color: '#7A8E7A', fontWeight: '600' },
+  painBadge: { backgroundColor: '#FEF2F2', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  painText: { fontSize: 11, color: '#EF4444', fontWeight: 'bold' },
+  text: { color: '#4A664D', lineHeight: 22, fontSize: 15 },
+  emptyContainer: { marginTop: 100, alignItems: 'center', padding: 40 },
+  emptyText: { textAlign: 'center', color: '#A0AFA0', fontStyle: 'italic', fontSize: 16 }
 });

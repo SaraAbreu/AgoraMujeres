@@ -55,7 +55,7 @@ if (!res.ok) {
 
       console.log("LOGIN OK:", data);
 
-      router.replace('/home');
+      router.replace('/(tabs)/home');
 
     } catch (error) {
       console.error("Error al entrar:", error);

@@ -310,22 +310,26 @@ export default function HomeScreen() {
         : null;
 
   const CYCLE_PHASES = [
-    { key: 'menstruation', label: 'Menstruaci\u00f3n', color: '#C0614A', bg: '#FEF2F2', icon: 'water-outline' },
+    { key: 'menstruation', label: 'Menstruación', color: '#C0614A', bg: '#FEF2F2', icon: 'water-outline' },
     { key: 'follicular', label: 'Folicular', color: '#4A7FA5', bg: '#EEF4FA', icon: 'sunny-outline' },
-    { key: 'ovulation', label: 'Ovulaci\u00f3n', color: C.forest, bg: C.mintSoft, icon: 'flower-outline' },
-    { key: 'luteal', label: 'L\u00fatea', color: C.gold, bg: '#FDF8EE', icon: 'moon-outline' },
+    { key: 'ovulation', label: 'Ovulación', color: C.forest, bg: C.mintSoft, icon: 'flower-outline' },
+    { key: 'luteal', label: 'Lútea', color: C.gold, bg: '#FDF8EE', icon: 'moon-outline' },
   ];
-  const CYCLE_SYMPTOMS = ['hinchaz\u00f3n', 'n\u00e1useas', 'fatiga', 'migraña', 'irritabilidad', 'insomnio', 'calambres', 'sensibilidad'];
+  const CYCLE_SYMPTOMS = ['hinchazón', 'náuseas', 'fatiga', 'migraña', 'irritabilidad', 'insomnio', 'calambres', 'sensibilidad'];
   const CYCLE_MOODS = ['tranquila', 'triste', 'irritable', 'agotada', 'ansiosa', 'bien'];
   const lastCycleEntry = cycleData?.entries?.[cycleData.entries.length - 1];
   const currentPhase = CYCLE_PHASES.find(p => p.key === (lastCycleEntry?.phase || 'menstruation')) || CYCLE_PHASES[0];
 
   const saveCycle = () => {
-    if (!deviceId) return;
+    const key = deviceId ? 'agora-cycle-' + deviceId : 'agora-cycle-guest';
     const entry = { ...cycleForm, date: new Date().toISOString() };
     const updated = { entries: [...(cycleData?.entries || []), entry] };
     setCycleData(updated);
-    if (typeof window !== 'undefined') localStorage.setItem('agora-cycle-' + deviceId, JSON.stringify(updated));
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(key, JSON.stringify(updated));
+      } catch(e) { console.error('cycle save error', e); }
+    }
     setShowCycle(false);
     setCycleForm({ phase: 'menstruation', pain: 0, symptoms: [], mood: '' });
   };
@@ -337,7 +341,7 @@ export default function HomeScreen() {
         <Text style={s.qMark}>"</Text>
         <Text style={s.qText}>{quote}</Text>
         <View style={s.qDivider} />
-        <Text style={s.qLabel}>Reflexi\u00f3n del d\u00eda</Text>
+        <Text style={s.qLabel}>Reflexión del día</Text>
       </View>
     </FadeIn>
   );
@@ -350,11 +354,11 @@ export default function HomeScreen() {
             <Ionicons name="book-outline" size={22} color={C.white} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={s.diaryTitle}>{'\u00bfC\u00f3mo te sientes hoy?'}</Text>
+            <Text style={s.diaryTitle}>{'¿Cómo te sientes hoy?'}</Text>
             <Text style={s.diarySub}>
               {lastEntry
-                ? `\u00daltima vez: ${new Date(lastEntry.created_at).toLocaleDateString('es-ES', { weekday: 'long' })}`
-                : 'Cu\u00e9ntamelo con calma'}
+                ? `Última vez: ${new Date(lastEntry.created_at).toLocaleDateString('es-ES', { weekday: 'long' })}`
+                : 'Cuéntamelo con calma'}
             </Text>
           </View>
           <View style={s.diaryArrow}>
@@ -370,11 +374,11 @@ export default function HomeScreen() {
       <View style={s.streakCard}>
         <View style={s.streakNumBox}>
           <Text style={s.streakNum}>{contador}</Text>
-          <Text style={s.streakUnit}>d\u00edas</Text>
+          <Text style={s.streakUnit}>días</Text>
         </View>
         <View style={s.streakDivider} />
         <Text style={s.streakMsg}>
-          {contador > 0 ? `Llevas ${contador} ${contador === 1 ? 'd\u00eda' : 'd\u00edas'} escuch\u00e1ndote. Eso importa.` : 'Hoy es un buen d\u00eda para empezar.'}
+          {contador > 0 ? `Llevas ${contador} ${contador === 1 ? 'día' : 'días'} escuchándote. Eso importa.` : 'Hoy es un buen día para empezar.'}
         </Text>
       </View>
     </FadeIn>
@@ -437,8 +441,8 @@ export default function HomeScreen() {
             <Text style={s.cycleTitle}>Mi ciclo</Text>
             <Text style={s.cycleSub}>
               {lastCycleEntry
-                ? currentPhase.label + ' \u00b7 ' + new Date(lastCycleEntry.date).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })
-                : 'Registra tu primer d\u00eda'}
+                ? currentPhase.label + ' · ' + new Date(lastCycleEntry.date).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })
+                : 'Registra tu primer día'}
             </Text>
           </View>
           <View style={s.cycleArrow}>
@@ -564,7 +568,7 @@ export default function HomeScreen() {
                   </TouchableOpacity>
                 ))}
               </View>
-              <Text style={s.cycleModalLabel}>S\u00edntomas</Text>
+              <Text style={s.cycleModalLabel}>Síntomas</Text>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 }}>
                 {CYCLE_SYMPTOMS.map(sym => {
                   const active = cycleForm.symptoms.includes(sym);
@@ -577,7 +581,7 @@ export default function HomeScreen() {
                   );
                 })}
               </View>
-              <Text style={s.cycleModalLabel}>Estado de \u00e1nimo</Text>
+              <Text style={s.cycleModalLabel}>Estado de ánimo</Text>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 24 }}>
                 {CYCLE_MOODS.map(m => {
                   const active = cycleForm.mood === m;

@@ -14,19 +14,22 @@
     },
     "ios": {
       "supportsTablet": true,
-      "jsEngine": "jsc" 
+      "jsEngine": "jsc"
     },
     "android": {
-      "jsEngine": "jsc", 
+      "jsEngine": "jsc",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#FDFAF7"
       },
-      "permissions": ["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"]
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ]
     },
     "web": {
       "bundler": "metro",
-      "output": "single"
+      "output": "static"
     },
     "plugins": [
       "expo-router",

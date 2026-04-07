@@ -5,15 +5,15 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useUserStore } from '../../src/store/useStore';
 import { getDiaryEntries, type DiaryEntry } from '../../src/services/api';
+import { useFocusEffect, useRouter } from 'expo-router';
 
 const T = {
-  forest:'#4A664D', forestDim:'#3A5140', moss:'#6B8F6E', sage:'#A8C5A0',
-  mint:'#D4E8D0', mintSoft:'#EAF4E8', cream:'#F8F7F2', parchment:'#F0EDE4',
-  muted:'#9A958E', charcoal:'#3D3A35', white:'#FFFFFF',
+  forest: '#4A664D', forestDim: '#3A5140', moss: '#6B8F6E', sage: '#A8C5A0',
+  mint: '#D4E8D0', mintSoft: '#EAF4E8', cream: '#F8F7F2', parchment: '#F0EDE4',
+  muted: '#9A958E', charcoal: '#3D3A35', white: '#FFFFFF',
 };
 
 function getPainColor(v: number) {
@@ -60,20 +60,26 @@ export default function DiaryList() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { deviceId } = useUserStore();
-  const [entries, setEntries]     = useState<any[]>([]);
-  const [loading, setLoading]     = useState(true);
-  const [refreshing, setRefresh]  = useState(false);
+  const [entries, setEntries] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefresh] = useState(false);
 
   const load = async (refresh = false) => {
     if (!deviceId) return;
     try {
       const data = await getDiaryEntries(deviceId, 30);
       setEntries(data);
-    } catch {}
+    } catch { }
     finally { setLoading(false); setRefresh(false); }
   };
 
   useEffect(() => { load(); }, [deviceId]);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      load();
+    }, [deviceId])
+  );
 
   return (
     <View style={{ flex: 1, backgroundColor: T.cream }}>
@@ -83,7 +89,10 @@ export default function DiaryList() {
         style={[styles.header, { paddingTop: insets.top + 14 }]}
       >
         <View style={styles.headerRow}>
-          <View>
+          <TouchableOpacity onPress={() => { window.location.href = '/home'; }} style={styles.backBtn}>
+            <Ionicons name="chevron-back" size={22} color={T.mint} />
+          </TouchableOpacity>
+          <View style={{ flex: 1 }}>
             <Text style={styles.headerEyebrow}>Mi Refugio</Text>
             <Text style={styles.headerTitle}>Diario de Alivio</Text>
           </View>
@@ -107,7 +116,7 @@ export default function DiaryList() {
               tintColor={T.forest}
             />
           }
-          renderItem={({ item }) => <EntryCard entry={item} onPress={() => {}} />}
+          renderItem={({ item }) => <EntryCard entry={item} onPress={() => router.push(`/diary/${item.id}?entry=${encodeURIComponent(JSON.stringify(item))}`)} />}
           ListEmptyComponent={
             <View style={styles.empty}>
               <Text style={styles.emptyEmoji}>🌿</Text>
@@ -127,6 +136,7 @@ export default function DiaryList() {
 const styles = StyleSheet.create({
   header: { paddingHorizontal: 22, paddingBottom: 22, borderBottomLeftRadius: 28, borderBottomRightRadius: 28 },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' },
+  backBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   headerEyebrow: { color: T.sage, fontSize: 12, letterSpacing: 2, textTransform: 'uppercase', marginBottom: 4 },
   headerTitle: { color: T.white, fontSize: 26, fontWeight: '800' },
   addBtn: {
@@ -141,16 +151,16 @@ const styles = StyleSheet.create({
   cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   cardDate: { fontSize: 12, color: T.moss, fontWeight: '600', textTransform: 'capitalize', flex: 1 },
   cardText: { fontSize: 14, color: T.charcoal, lineHeight: 22, fontStyle: 'italic' },
-  tagsRow:  { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  tag:      { backgroundColor: T.mintSoft, borderRadius: 100, paddingVertical: 4, paddingHorizontal: 10 },
-  tagText:  { fontSize: 12, color: T.moss, fontWeight: '500' },
+  tagsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  tag: { backgroundColor: T.mintSoft, borderRadius: 100, paddingVertical: 4, paddingHorizontal: 10 },
+  tagText: { fontSize: 12, color: T.moss, fontWeight: '500' },
   painPill: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 100 },
-  painDot:  { width: 6, height: 6, borderRadius: 3 },
+  painDot: { width: 6, height: 6, borderRadius: 3 },
   painPillText: { fontSize: 11, fontWeight: '700' },
   empty: { marginTop: 80, alignItems: 'center', gap: 10 },
   emptyEmoji: { fontSize: 48 },
   emptyTitle: { fontSize: 20, fontWeight: '700', color: T.charcoal },
-  emptyText:  { fontSize: 14, color: T.muted, fontStyle: 'italic' },
+  emptyText: { fontSize: 14, color: T.muted, fontStyle: 'italic' },
   emptyBtn: { marginTop: 8, backgroundColor: T.forest, borderRadius: 100, paddingVertical: 12, paddingHorizontal: 28 },
   emptyBtnText: { color: T.white, fontWeight: '700', fontSize: 14 },
 });

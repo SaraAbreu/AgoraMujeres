@@ -59,7 +59,9 @@ export const useUserStore = create<AppState>()(
     }),
     {
       name:    'agora-storage',
-      storage: createJSONStorage(() => AsyncStorage),
+      storage: createJSONStorage(() =>
+        typeof window !== 'undefined' ? localStorage : AsyncStorage
+      ),
     }
   )
 );

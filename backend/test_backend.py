@@ -156,7 +156,7 @@ async def test_subscription_starts_as_trial(use_mongomock):
 
     status = await get_subscription_status_internal("new_device")
     assert status["status"] == "trial"
-    assert status["trial_remaining_seconds"] == 7200
+    assert status["trial_remaining_seconds"] == 5400
 
 
 @pytest.mark.asyncio
@@ -166,7 +166,7 @@ async def test_trial_expires_after_usage(use_mongomock):
     from agora_backend.routers.subscriptions import get_subscription_status_internal
 
     # Simulate exhausted trial
-    sub = SubscriptionStatus(device_id="expired_dev", usage_seconds=7200)
+    sub = SubscriptionStatus(device_id="expired_dev", usage_seconds=5400)
     await db_insert_one(db.subscriptions, sub.model_dump())
 
     status = await get_subscription_status_internal("expired_dev")

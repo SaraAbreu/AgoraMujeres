@@ -172,7 +172,7 @@ export default function SubscriptionScreen() {
 
           <PlanCard
             title="Mensual"
-            price="8,99 €"
+            price="7.90 €"
             period="/ mes"
             features={[
               'Acceso ilimitado a Ágora',
@@ -186,8 +186,8 @@ export default function SubscriptionScreen() {
 
           <PlanCard
             title="Anual"
-            price="69,99 €"
-            period="/ año · 5,83 €/mes"
+            price="79,90 €"
+            period="/ año · 7.90 €/mes"
             features={[
               'Todo lo del plan mensual',
               'Ahorro del 35%',

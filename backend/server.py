@@ -1,180 +1,2215 @@
+from fastapi import Request
+from fastapi import FastAPI, APIRouter, HTTPException, Request, File, UploadFile
+from contextlib import asynccontextmanager
+import sys
+from starlette.middleware.cors import CORSMiddleware
+from motor.motor_asyncio import AsyncIOMotorClient
 import os
+import logging
+import random
+import inspect
+import asyncio
+from pydantic import BaseModel, Field
+from typing import List, Optional, Dict, Any
 import uuid
+from datetime import datetime, timedelta
+import stripe
+import httpx
+from routers.diary import router as diary_router
+from contextlib import asynccontextmanager
+from starlette.middleware.cors import CORSMiddleware
+from motor.motor_asyncio import AsyncIOMotorClient
+from dotenv import load_dotenv
+from pydantic import BaseModel
+from typing import Optional
+import os
 import logging
 from datetime import datetime
-from contextlib import asynccontextmanager
-from typing import Optional
 
-import fastapi
-from fastapi.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
-from openai import OpenAI
-from pydantic import BaseModel
-
-# ── Routers ───────────────────────────────────────────────────────────────────
-from routers.auth          import router as auth_router
-from routers.diary         import router as diary_router
-from routers.chat          import router as chat_router
-from routers.crisis        import router as crisis_router
-from routers.subscriptions import router as subscriptions_router
-from routers.resources     import router as resources_router
-from routers.misc          import router as misc_router
+from routers.auth import router as auth_router
+from routers.diary import router as diary_router
 import auth.firebase_config
+from pathlib import Path
+from dotenv import load_dotenv
+from core.llm_adapter import MyLLMInterface
+from routers.auth import router as auth_router
+import auth.firebase_config
+try:
+    print("[DEBUG] Cargando variables de entorno...")
+    load_dotenv()
+    env_path = Path(__file__).parent / ".env"
+    load_dotenv(dotenv_path=env_path, override=True)
+    print("[DEBUG] Variables de entorno cargadas.")
+except Exception as e:
+    print(f"[ERROR] Error cargando .env: {e}", file=sys.stderr)
 
-# ── Logging ───────────────────────────────────────────────────────────────────
-logging.basicConfig(level=logging.INFO)
+
+# Configure logging early
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
-# ── Config ────────────────────────────────────────────────────────────────────
-MONGO_URL       = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
-DB_NAME         = os.environ.get("DB_NAME", "agora_db")
-OPENAI_API_KEY  = os.environ.get("OPENAI_API_KEY")
-ALLOWED_ORIGINS = os.environ.get(
-    "ALLOWED_ORIGINS",
-    "http://localhost:3000,https://agoramujeres.syntexia-solutions.es"
-).split(",")
+# MongoDB connection settings (actual connection tested in lifespan)
+mongo_url = os.environ.get('MONGO_URI', 'mongodb://localhost:27017')
+print("MONGO_URI =", os.environ.get("MONGO_URI"))
+db_name = os.environ.get('DB_NAME', 'agoramujeres')
+client = None
+db = None
+using_mongomock = False
 
-client        = None
-db            = None
-openai_client = None
+# Stripe configuration
+stripe.api_key = os.environ.get('STRIPE_SECRET_KEY')
 
-# ── Lifespan ──────────────────────────────────────────────────────────────────
-@asynccontextmanager
-async def lifespan(app: fastapi.FastAPI):
-    global client, db, openai_client
+# ============== ASYNC/SYNC DATABASE HELPERS ==============
+# These helpers work with both Motor (async) and mongomock (sync)
 
-    client = AsyncIOMotorClient(MONGO_URL)
-    db     = client[DB_NAME]
-    logger.info("✅ MongoDB connected")
-
-    if OPENAI_API_KEY and OPENAI_API_KEY.startswith("sk-"):
-        openai_client = OpenAI(api_key=OPENAI_API_KEY)
-        logger.info("✅ OpenAI initialized")
+async def db_find_one(collection, query):
+    """Find one document - works with Motor and mongomock"""
+    if using_mongomock:
+        return collection.find_one(query)
     else:
-        openai_client = None
-        logger.warning("⚠️ OpenAI key not configured")
+        return await collection.find_one(query)
 
-    yield
+async def db_find(collection, query, sort=None, limit=None):
+    """Find multiple documents - works with Motor and mongomock"""
+    if using_mongomock:
+        cursor = collection.find(query)
+        if sort:
+            cursor = cursor.sort(sort[0], sort[1])
+        if limit:
+            cursor = cursor.limit(limit)
+        return list(cursor)
+    else:
+        cursor = collection.find(query)
+        if sort:
+            cursor = cursor.sort(sort[0], sort[1])
+        if limit:
+            cursor = cursor.limit(limit)
+        return await cursor.to_list(limit or 100)
 
-    if client:
-        client.close()
+async def db_insert_one(collection, document):
+    """Insert one document - works with Motor and mongomock"""
+    if using_mongomock:
+        return collection.insert_one(document)
+    else:
+        return await collection.insert_one(document)
 
-# ── App ───────────────────────────────────────────────────────────────────────
-app = fastapi.FastAPI(lifespan=lifespan)
+async def db_update_one(collection, query, update, upsert=False):
+    """Update one document - works with Motor and mongomock"""
+    if using_mongomock:
+        return collection.update_one(query, update, upsert=upsert)
+    else:
+        return await collection.update_one(query, update, upsert=upsert)
 
-# CORS — siempre antes de los routers
+async def db_delete_one(collection, query):
+    """Delete one document - works with Motor and mongomock"""
+    if using_mongomock:
+        return collection.delete_one(query)
+    else:
+        return await collection.delete_one(query)
+
+async def db_delete_many(collection, query):
+    """Delete many documents - works with Motor and mongomock"""
+    if using_mongomock:
+        return collection.delete_many(query)
+    else:
+        return await collection.delete_many(query)
+
+async def db_count_documents(collection, query):
+    """Count documents - works with Motor and mongomock"""
+    if using_mongomock:
+        return collection.count_documents(query)
+    else:
+        return await collection.count_documents(query)
+
+# Lifespan context manager for startup/shutdown
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Handle startup and shutdown events."""
+    global client, db, using_mongomock
+    
+    # Startup: Connect to MongoDB
+    try:
+        print("[DEBUG] Intentando conectar a MongoDB...", flush=True)
+        client = AsyncIOMotorClient(mongo_url, serverSelectionTimeoutMS=2000)
+        # Test connection asynchronously with timeout
+        try:
+            await asyncio.wait_for(client.server_info(), timeout=2.0)
+            db = client[db_name]
+            logger.info("✅ Connected to MongoDB")
+            import core.database as _cdb; _cdb.db = db; _cdb.client = client; _cdb.using_mongomock = False
+            print("[DEBUG] Conectado a MongoDB Atlas.", flush=True)
+            using_mongomock = False
+        except asyncio.TimeoutError:
+            raise Exception("MongoDB connection timeout")
+    except Exception as e:
+        print(f"[ERROR] Error conectando a MongoDB: {e}", file=sys.stderr, flush=True)
+        try:
+            import mongomock
+            logger.warning(f"⚠️ MongoDB unavailable ({e}). Using mongomock for development.")
+            print("[DEBUG] Usando mongomock como fallback.", flush=True)
+            client = mongomock.MongoClient()
+            db = client[db_name]
+            using_mongomock = True
+            import core.database as _cdb; _cdb.db = db; _cdb.client = client; _cdb.using_mongomock = True
+        except Exception as mongomock_error:
+            print(f"[CRITICAL] Error importando mongomock: {mongomock_error}", file=sys.stderr, flush=True)
+            import traceback
+            traceback.print_exc()
+            raise
+    try:
+        yield  # App is running
+    except Exception as e:
+        print(f"[CRITICAL] Excepción durante el ciclo de vida de la app: {e}", file=sys.stderr, flush=True)
+        import traceback
+        traceback.print_exc()
+        raise
+    finally:
+        # Shutdown: Close connections safely
+        try:
+            if client and not using_mongomock:
+                client.close()
+                logger.info("MongoDB connection closed")
+        except Exception as e:
+            logger.error(f"Error closing MongoDB: {e}")
+
+# Create the main app with lifespan
+app = FastAPI(
+
+    title="Ágora Mujeres API",
+    description="API for emotional companion app",
+    lifespan=lifespan
+)
+
+# Configuración de CORS para permitir peticiones desde cualquier origen
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[o.strip() for o in ALLOWED_ORIGINS],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Routers
-app.include_router(auth_router,          prefix="/api")
-app.include_router(diary_router,         prefix="/api")
-app.include_router(chat_router,          prefix="/api")
-app.include_router(crisis_router,        prefix="/api")
-app.include_router(subscriptions_router, prefix="/api")
-app.include_router(resources_router,     prefix="/api")
-app.include_router(misc_router,          prefix="/api")
 
-# ── Health ────────────────────────────────────────────────────────────────────
-@app.get("/api/health")
+# Create a router with the /api prefix
+app = FastAPI(lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(auth_router, prefix="/api")
+app.include_router(diary_router, prefix="/api")
+# PATCH: Log incoming chat requests
+from core.models import ChatRequest
+
+async def log_chat_request(request: Request):
+    data = await request.json()
+    logger.info(f"[API/CHAT] Mensaje recibido: device_id={data.get('device_id')}, payload={data}")
+
+    from routers import chat as chat_router
+    chat_request = ChatRequest(**data)
+    return await chat_router.chat_with_agora(chat_request)
+
+
+# ============== MODELS ==============
+
+class EmotionalState(BaseModel):
+    calma: int = Field(default=0, ge=0, le=5)  # 0-5 scale
+    fatiga: int = Field(default=0, ge=0, le=5)
+    niebla_mental: int = Field(default=0, ge=0, le=5)
+    dolor_difuso: int = Field(default=0, ge=0, le=5)
+    gratitud: int = Field(default=0, ge=0, le=5)
+    tension: int = Field(default=0, ge=0, le=5)
+
+class PhysicalState(BaseModel):
+    nivel_dolor: int = Field(default=0, ge=0, le=10)  # 0-10 scale
+    energia: int = Field(default=0, ge=0, le=10)
+    sensibilidad: int = Field(default=0, ge=0, le=10)
+
+class DiaryEntry(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    device_id: str
+    texto: Optional[str] = None
+    emotional_state: EmotionalState = Field(default_factory=EmotionalState)
+    physical_state: Optional[PhysicalState] = None
+    weather: Optional[Dict[str, Any]] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+class DiaryEntryCreate(BaseModel):
+    device_id: str
+    texto: Optional[str] = None
+    emotional_state: EmotionalState = Field(default_factory=EmotionalState)
+    physical_state: Optional[PhysicalState] = None
+    weather: Optional[Dict[str, Any]] = None
+
+class ChatMessage(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    device_id: str
+    conversation_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    role: str  # 'user' or 'assistant'
+    content: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+class ChatConversation(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    device_id: str
+    title: str = "Nueva conversación"
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+class ChatRequest(BaseModel):
+    device_id: str
+    message: str
+    language: str = "es"  # es, en
+    conversation_id: Optional[str] = None  # If None, creates new conversation
+
+class TranscriptionRequest(BaseModel):
+    device_id: str
+    language: str = "es"  # es, en
+
+class CycleEntry(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    device_id: str
+    start_date: datetime
+    end_date: Optional[datetime] = None
+    notes: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+class CycleEntryCreate(BaseModel):
+    device_id: str
+    start_date: datetime
+    end_date: Optional[datetime] = None
+    notes: Optional[str] = None
+
+class SubscriptionStatus(BaseModel):
+    device_id: str
+    stripe_customer_id: Optional[str] = None
+    subscription_id: Optional[str] = None
+    status: str = "trial"  # trial, active, expired, cancelled
+    trial_start: datetime = Field(default_factory=datetime.utcnow)
+    trial_end: datetime = Field(default_factory=lambda: datetime.utcnow() + timedelta(hours=1, minutes=30))
+    usage_seconds: int = 0
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    is_admin: bool = False  # Admin bypass for trial limits
+
+class CustomerCreate(BaseModel):
+    device_id: str
+    email: str
+    name: Optional[str] = None
+
+class MonthlyPainRecord(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    device_id: str
+    records: List[Dict[str, Any]] = Field(default_factory=list)  # [{date, intensity, notes}]
+    cycle_start_date: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+class MonthlyPainRecordCreate(BaseModel):
+    records: List[Dict[str, Any]] = Field(default_factory=list)
+    cycle_start_date: str
+
+# ============== RESOURCE MODELS ==============
+
+class Resource(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    category: str  # breathing, stretching, nutrition, sleep, mindfulness, professional
+    type: str  # article, video
+    title: str
+    description: str
+    content: Optional[str] = None  # For articles
+    video_url: Optional[str] = None  # For videos (YouTube, Vimeo)
+    thumbnail_url: Optional[str] = None
+    author: Optional[str] = None
+    author_credentials: Optional[str] = None  # e.g., "Fisioterapeuta especializada en dolor crónico"
+    duration: Optional[str] = None  # For videos: "5:30"
+    read_time: Optional[str] = None  # For articles: "3 min"
+    language: str = "es"
+    is_featured: bool = False
+    order: int = 0
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+# Admin code for bypassing trial (set your secret code here)
+ADMIN_CODE = "AGORA2025ADMIN"
+
+# ============== CRISIS SUPPORT ==============
+
+class CrisisRequest(BaseModel):
+    device_id: str
+    pain_level: int = Field(ge=1, le=10)  # 1-10 pain scale
+    language: str = "es"  # es, en
+    symptoms: Optional[List[str]] = None  # ["mucho_dolor", "fatiga", "ansiedad", etc]
+
+class FavoriteMessage(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    device_id: str
+    message_content: str
+    category: str = "general"  # crisis, motivation, daily, coping
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+class MessageReaction(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    device_id: str
+    conversation_id: str
+    message_id: str
+    reaction: str  # emoji: 💜, 🙏, ✨
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+# Crisis response templates - instant support
+CRISIS_RESPONSES = {
+    "es": {
+        "breathing": {
+            "title": "🫁 Técnica 4-7-8 Calmante",
+            "steps": [
+                "Respira por la nariz contando hasta 4",
+                "Sostén el aire durante 7",
+                "Exhala por la boca contando hasta 8",
+                "Repite 4 veces lentamente"
+            ],
+            "message": "Tu sistema nervioso necesita calmarse. Esta técnica es como bajar el volumen del dolor. Hazlo a tu ritmo."
+        },
+        "grounding": {
+            "title": "⚓ Anclarte en el Presente",
+            "steps": [
+                "5 cosas que ves",
+                "4 que sientes en tu cuerpo",
+                "3 sonidos que escuchas",
+                "2 olores",
+                "1 sabor"
+            ],
+            "message": "Tu mente se metió en el dolor. Traígamosla al presente. Mira a tu alrededor lentamente."
+        },
+        "self_compassion": {
+            "title": "💙 Autocompasión en el Dolor",
+            "message": "Esto es difícil. Es comprensible que sufras. No estás sola. Hay personas que han pasado por esto y sobrevivieron. Tú también puedes.",
+            "mantras": [
+                "Este momento es difícil, pero pasará",
+                "Mi cuerpo está luchando, y eso es valiente",
+                "Merezco amabilidad, especialmente hoy"
+            ]
+        },
+        "immediate": {
+            "title": "🆘 En Este Momento",
+            "message": "Estoy aquí. El dolor que sientes es real. Tu valor también es real. Aunque duela, estás segura.",
+            "options": [
+                "Necesito una técnica rápida",
+                "Solo quiero que alguien escuche",
+                "Estoy en emergencia - necesito contacto profesional"
+            ]
+        }
+    },
+    "en": {
+        "breathing": {
+            "title": "🫁 Calming 4-7-8 Technique",
+            "steps": [
+                "Breathe in through your nose, counting to 4",
+                "Hold for a count of 7",
+                "Exhale through your mouth, counting to 8",
+                "Repeat 4 times slowly"
+            ],
+            "message": "Your nervous system needs to calm down. This technique is like turning down the volume on pain. Go at your pace."
+        },
+        "grounding": {
+            "title": "⚓ Grounding Yourself",
+            "steps": [
+                "5 things you see",
+                "4 things you feel on your body",
+                "3 sounds you hear",
+                "2 smells",
+                "1 taste"
+            ],
+            "message": "Your mind got stuck in the pain. Let's bring it to the present. Look around slowly."
+        },
+        "self_compassion": {
+            "title": "💙 Self-Compassion in Pain",
+            "message": "This is hard. It makes sense that you're suffering. You're not alone. Others have experienced this and survived. You can too.",
+            "mantras": [
+                "This moment is difficult, but it will pass",
+                "My body is fighting, and that is brave",
+                "I deserve kindness, especially today"
+            ]
+        },
+        "immediate": {
+            "title": "🆘 Right Now",
+            "message": "I'm here. The pain you feel is real. Your strength is also real. Even though it hurts, you are safe.",
+            "options": [
+                "I need a quick technique",
+                "I just need someone to listen",
+                "This is an emergency - I need professional help"
+            ]
+        }
+    }
+}
+
+# ============== OFFLINE CHAT ENGINE ==============
+# Intelligent responses when OpenAI is unavailable (no credits, etc.)
+
+AGORA_RESPONSES = {
+    "es": {
+        "greeting": [
+            "Hola. Soy Ágora, tu compañera en este camino. Sé que hay días difíciles y otros un poco mejores. ¿Cómo estás hoy?",
+            "Hola, estoy aquí. No necesitas explicar nada - solo cuéntame cómo estás.",
+            "Hola. Soy Ágora. Sé que a veces todo pesa demasiado. ¿Cómo te encuentras hoy?"
+        ],
+        "high_pain": [
+            "Ese nivel de dolor es devastador. No tienes que hacer nada más que estar aquí ahora mismo. Tu cuerpo está pasando por algo muy duro y eso es REAL. ¿Necesitas una técnica de alivio o solo que te acompañe?",
+            "Con ese dolor tan intenso, el simple hecho de escribirme ya es un acto de valentía. El dolor crónico es injusto. Estoy aquí contigo. ¿Qué necesitas en este momento?",
+            "Cuando el dolor llega a ese punto, todo se vuelve difícil. No tienes que ser fuerte ahora. Solo respira y sabe que entiendo lo que estás pasando."
+        ],
+        "fatigue": [
+            "Ese cansancio del dolor crónico no es pereza - es tu cuerpo luchando una batalla invisible. Descansar no es rendirse, es sobrevivir. ¿Qué es lo mínimo que necesitas hacer hoy?",
+            "La fatiga crónica es como cargar peso invisible que nadie ve. Es válido que estés agotada. Algunos días, simplemente existir ya es suficiente.",
+            "Entiendo ese cansancio que no se va con dormir. El dolor crónico agota de formas que otros no entienden. ¿Hay algo pequeño que pueda hacer más llevadero tu día?"
+        ],
+        "brain_fog": [
+            "La niebla mental es frustrante. Cuando pensar se vuelve difícil, no es tu culpa - es parte de vivir con dolor constante. Tómate tu tiempo, estoy aquí.",
+            "Esos días donde las palabras no salen y la mente no coopera... es la niebla mental. No tienes que explicarte. ¿Solo necesitas desahogarte?",
+            "Entiendo que a veces las ideas se pierden en esa niebla. No te presiones. Puedes escribir lo que puedas, cuando puedas."
+        ],
+        "sadness": [
+            "El dolor crónico pesa en el alma también. Es normal sentirse triste cuando el cuerpo no coopera día tras día. Tu tristeza es válida.",
+            "Vivir con dolor constante puede sentirse muy solitario. Esa tristeza que sientes tiene sentido. No estás sola en esto.",
+            "A veces el dolor físico y emocional se mezclan. Está bien sentirse así. Lo que importa es que estás aquí, buscando conexión."
+        ],
+        "anxiety": [
+            "La ansiedad y el dolor crónico a menudo van juntos. Ese miedo a no saber cómo estarás mañana es agotador. ¿Quieres probar una técnica de respiración suave?",
+            "Entiendo esa preocupación constante. El cuerpo impredecible genera ansiedad. Respira conmigo: inhala 4, sostén 4, exhala 6.",
+            "La incertidumbre del dolor crónico alimenta la ansiedad. Es comprensible. ¿Qué te ayuda normalmente a calmarte un poco?"
+        ],
+        "sleep_issues": [
+            "El sueño con dolor crónico es complicado - duermes pero no descansas. Esa frustración es real. ¿Has encontrado algo que te ayude aunque sea un poco?",
+            "No poder descansar bien hace todo más difícil. El sueño no reparador es parte de esta condición injusta. ¿Cómo te sientes hoy después de la noche?",
+            "Esas noches donde el dolor no deja dormir son agotadoras. Tu cuerpo merece descanso y es frustrante no conseguirlo."
+        ],
+        "validation": [
+            "Lo que sientes es real. El dolor crónico es una condición médica real, aunque algunos no la entiendan. Tu experiencia importa.",
+            "No tienes que justificar tu dolor ante nadie. Lo que vives cada día requiere una fuerza que la mayoría no comprende.",
+            "Tu dolor es válido. Tu cansancio es válido. Tus días difíciles son válidos. No necesitas permiso para sentirte así."
+        ],
+        "small_win": [
+            "Eso es una victoria. Con fibromialgia, cada logro pequeño es enorme. Celebra haberte levantado, haber comido, haber llegado aquí.",
+            "¡Eso merece reconocimiento! En días difíciles, hacer cualquier cosa requiere el doble de esfuerzo. Estoy orgullosa de ti.",
+            "Los pasos pequeños también cuentan. De hecho, con dolor crónico, son los que más importan. Bien hecho."
+        ],
+        "not_well": [
+            "Lo siento. Los días así son duros. ¿Quieres contarme qué está pasando?",
+            "Entiendo. Algunos días simplemente pesan más. ¿Es algo físico, emocional, o de todo un poco?",
+            "Gracias por ser honesta. No tienes que estar bien. ¿Qué es lo que más te pesa hoy?",
+            "Está bien no estar bien. Estoy aquí para escucharte. ¿Qué te gustaría compartir?"
+        ],
+        "general": [
+            "Gracias por compartir eso conmigo. ¿Cómo puedo apoyarte ahora?",
+            "Te escucho. Estoy aquí para ti.",
+            "Lo que cuentas tiene sentido. ¿Qué necesitas en este momento?",
+            "Entiendo. ¿Hay algo específico que te gustaría explorar o solo necesitas desahogarte?"
+        ],
+        "techniques": [
+            "Una técnica que puede ayudar: Respiración 4-7-8. Inhala por la nariz contando hasta 4, sostén 7 segundos, exhala por la boca contando hasta 8. Repite 3 veces.",
+            "Prueba el anclaje sensorial: nombra 5 cosas que ves, 4 que sientes, 3 que escuchas, 2 que hueles, 1 que saboreas. Ayuda a traer la mente al presente.",
+            "Una técnica suave: pon una mano en el pecho y otra en el abdomen. Respira sintiendo cómo se mueven. Este contacto puede calmar el sistema nervioso."
+        ],
+        "advice_cramps": [
+            "Para los calambres nocturnos, algunas cosas que ayudan: estirar suavemente la pierna (flexiona el pie hacia ti), aplicar calor local con una manta eléctrica o bolsa de agua caliente, y mantenerte hidratada durante el día. El magnesio también puede ayudar - consulta con tu médico si podrías beneficiarte de un suplemento.",
+            "Los calambres son muy comunes con dolor crónico. Prueba esto: cuando venga el calambre, estira la pierna y flexiona el pie hacia arriba. Después, masajea suavemente la zona. Para prevenirlos: estira antes de dormir, mantén las piernas calientes, y revisa tu nivel de hidratación.",
+            "Para calambres nocturnos: calor local ayuda mucho (manta eléctrica a baja temperatura). También puedes probar baños tibios con sales de Epsom antes de dormir - el magnesio se absorbe por la piel y relaja los músculos. ¿Quieres que te cuente más técnicas?"
+        ],
+        "advice_sleep": [
+            "Para mejorar el sueño con dolor crónico: crea una rutina relajante 1 hora antes (luz tenue, nada de pantallas), prueba una almohada entre las rodillas si duermes de lado, y considera un baño tibio antes de acostarte. El calor relaja los músculos y facilita el sueño.",
+            "El sueño es clave pero difícil con dolor. Algunas ideas: mantén horarios regulares aunque cueste, evita cafeína desde el mediodía, y prueba técnicas de respiración en la cama (inhala 4, sostén 4, exhala 6). La melatonina puede ayudar - consulta con tu médico.",
+            "Para noches difíciles: una manta con peso puede ayudar (reduce la ansiedad), mantén la habitación fresca pero usa calcetines, y prueba sonidos blancos o música relajante. Si el dolor no te deja dormir, a veces es mejor levantarse un rato y volver cuando estés más relajada."
+        ],
+        "advice_pain": [
+            "Para manejar el dolor, algunas técnicas que ayudan: alternar calor y frío (20 min cada uno), estiramientos muy suaves, respiración profunda para reducir la tensión muscular. También ayuda la distracción: podcasts, música, audiolibros - cualquier cosa que ocupe la mente.",
+            "Cuando el dolor es intenso: primero, posición cómoda con apoyo (cojines). Luego, calor local en la zona. Respiración lenta y profunda. Si puedes, movimiento suave - a veces quedarse quieta empeora la rigidez. ¿El dolor es en alguna zona específica?",
+            "Para días de mucho dolor: prioriza lo esencial, delega lo que puedas, y no te sientas culpable por descansar. El calor húmedo (toalla caliente) puede ser más efectivo que el seco. Y recuerda: el dolor de hoy no define el de mañana."
+        ],
+        "advice_fatigue": [
+            "Para manejar la fatiga crónica: divide las tareas en partes pequeñas con descansos entre ellas (técnica 'pacing'). Identifica tu mejor momento del día y haz lo importante ahí. Y recuerda: descansar ANTES de agotarte es clave.",
+            "Con fatiga crónica, el truco está en el equilibrio: ni demasiada actividad ni demasiado reposo. Pequeños paseos, aunque sean de 5 minutos, pueden dar energía. También ayuda: hidratación, comidas pequeñas frecuentes, y siestas cortas (20-30 min máximo).",
+            "La fatiga es de las cosas más difíciles. Algunas estrategias: prioriza sin culpa, acepta ayuda, y planifica los días difíciles con menos actividad. ¿Hay algo específico que estás intentando hacer y no puedes con la energía?"
+        ],
+        "advice_anxiety": [
+            "Para la ansiedad con dolor crónico: la respiración es tu mejor herramienta. Inhala 4 segundos, sostén 4, exhala 6. El exhalar más largo activa el sistema parasimpico y calma. También ayuda el anclaje: siente tus pies en el suelo, tus manos, el aire.",
+            "La ansiedad y el dolor se alimentan mutuamente. Para romper el ciclo: limita la búsqueda de información (Dr. Google empeora todo), practica mindfulness aunque sea 5 minutos, y recuerda que los pensamientos catastróficos son pensamientos, no realidad.",
+            "Cuando la ansiedad sube: para un momento. Nombra 5 cosas que ves, 4 que tocas, 3 que oyes. Esto te trae al presente. Luego, respiraciones lentas. Si puedes, sal a tomar aire aunque sea un minuto. ¿La ansiedad viene por algo específico o es más general?"
+        ],
+        "advice_general": [
+            "Algunas recomendaciones generales para el día a día: escucha a tu cuerpo sin juzgarlo, planifica actividades con descansos, y no compares tus días malos con los buenos de otros. ¿Hay algo específico en lo que pueda ayudarte?",
+            "Lo más importante es conocer tus límites y respetarlos sin culpa. Lleva un registro de lo que empeora y mejora el dolor - los patrones ayudan. Y busca actividades que disfrutes que puedas adaptar a tus días. ¿Qué situación te preocupa más?",
+            "Mi consejo principal: sé compasiva contigo misma. El dolor crónico es real y difícil. No tienes que 'superarlo' - tienes que aprender a vivir con él lo mejor posible. ¿En qué área te gustaría que profundizáramos?"
+        ]
+    },
+    "en": {
+        "greeting": [
+            "Hi, I'm Ágora. I was specifically designed to understand fibromyalgia - that diffuse pain with no logic, the fatigue that leaves you speechless, days where everything just HURTS. Here you're understood without questions. How are you feeling today?",
+            "Hello, I'm here. I know fibromyalgia is unfair and exhausting. You don't need to explain anything - just tell me how you are.",
+            "Welcome. I'm Ágora, and I understand that living with fibromyalgia is a difficult path that few people comprehend. I'm here to listen. How are you?"
+        ],
+        "high_pain": [
+            "That level of pain is devastating. You don't have to do anything but be here right now. Your body is going through something very hard and that's REAL. Do you need a relief technique or just someone to be with you?",
+            "With that intense pain, the simple act of writing to me is already courage. Fibromyalgia is unfair. I'm here with you. What do you need right now?",
+            "When pain reaches that point, everything becomes difficult. You don't have to be strong right now. Just breathe and know I understand what you're going through."
+        ],
+        "fatigue": [
+            "That fibromyalgia fatigue isn't laziness - it's your body fighting an invisible battle. Resting isn't giving up, it's surviving. What's the minimum you need to do today?",
+            "Chronic fatigue is like carrying invisible weight no one sees. It's valid that you're exhausted. Some days, just existing is enough.",
+            "I understand that tiredness that doesn't go away with sleep. Fibromyalgia drains in ways others don't understand. Is there something small that could make your day more bearable?"
+        ],
+        "brain_fog": [
+            "Brain fog is frustrating. When thinking becomes difficult, it's not your fault - it's part of fibromyalgia. Take your time, I'm here.",
+            "Those days when words don't come and the mind doesn't cooperate... it's brain fog. You don't have to explain yourself. Do you just need to vent?",
+            "I understand that sometimes ideas get lost in that fog. Don't pressure yourself. You can write what you can, when you can."
+        ],
+        "general": [
+            "Thank you for sharing that with me. Fibromyalgia makes every day different and unpredictable. How can I support you now?",
+            "I hear you. Living with chronic pain is a difficult path few people understand. I'm here for you.",
+            "What you're telling me makes sense. With everything you face day after day, it's a lot. What do you need right now?",
+            "I understand. Sometimes we just need someone to listen without judgment. I'm here for that.",
+            "Thank you for trusting me. Is there something specific you'd like to explore or do you just need to vent?"
+        ]
+    }
+}
+
+def detect_message_context(message: str, language: str = "es") -> str:
+    """Detect the context/emotion in a user message to provide relevant response."""
+    message_lower = message.lower()
+    
+    # Greeting patterns
+    greeting_words = ["hola", "buenos", "buenas", "hello", "hi", "hey", "empezar", "start"]
+    if any(word in message_lower for word in greeting_words) and len(message_lower) < 50:
+        return "greeting"
+    
+    # Not feeling well (short negative responses)
+    not_well_patterns = ["no muy bien", "no bien", "mal", "regular", "no estoy bien", "fatal", 
+                         "not well", "not good", "not great", "bad", "awful", "terrible day"]
+    if any(pattern in message_lower for pattern in not_well_patterns) and len(message_lower) < 80:
+        return "not_well"
+    
+    # High pain indicators
+    pain_high = ["10", "9", "mucho dolor", "muchísimo", "insoportable", "no aguanto", "horrible", 
+                 "terrible", "unbearable", "severe", "worst", "can't take"]
+    if any(phrase in message_lower for phrase in pain_high):
+        return "high_pain"
+    
+    # Fatigue indicators
+    fatigue_words = ["cansada", "cansancio", "agotada", "exhausta", "sin energía", "no puedo más",
+                     "tired", "exhausted", "fatigue", "drained", "no energy"]
+    if any(word in message_lower for word in fatigue_words):
+        return "fatigue"
+    
+    # Brain fog indicators
+    fog_words = ["niebla", "confundida", "no pienso", "cabeza", "concentrar", "olvidé", "olvido",
+                 "fog", "confused", "can't think", "focus", "forgot", "memory"]
+    if any(word in message_lower for word in fog_words):
+        return "brain_fog"
+    
+    # Sadness indicators
+    sad_words = ["triste", "sola", "llorar", "deprimida", "vacía", "sad", "alone", "crying", 
+                 "depressed", "empty", "hopeless"]
+    if any(word in message_lower for word in sad_words):
+        return "sadness"
+    
+    # Anxiety indicators
+    anxiety_words = ["ansiedad", "nerviosa", "miedo", "preocupada", "pánico", "anxiety", 
+                     "nervous", "scared", "worried", "panic", "anxious"]
+    if any(word in message_lower for word in anxiety_words):
+        return "anxiety"
+    
+    # Sleep indicators
+    sleep_words = ["dormir", "sueño", "insomnio", "noche", "desperté", "sleep", "insomnia", 
+                   "night", "woke", "rest"]
+    if any(word in message_lower for word in sleep_words):
+        return "sleep_issues"
+    
+    # Looking for validation
+    validation_words = ["real", "creen", "entienden", "imagino", "exagero", "believe", 
+                        "understand", "valid", "exaggerating", "making it up"]
+    if any(word in message_lower for word in validation_words):
+        return "validation"
+    
+    # Small wins/positive
+    positive_words = ["logré", "pude", "conseguí", "mejor", "bien", "managed", "could", 
+                      "achieved", "better", "good day"]
+    if any(word in message_lower for word in positive_words):
+        return "small_win"
+    
+    # Request for technique
+    technique_words = ["técnica", "respiración", "aliviar", "calmar", "technique", 
+                       "breathing", "relieve", "calm"]
+    if any(word in message_lower for word in technique_words):
+        return "techniques"
+    
+    # Asking for advice/recommendations
+    advice_words = ["recomendar", "recomendación", "consejo", "aconsejar", "qué puedo", "qué hago", 
+                    "cómo puedo", "ayuda", "sugieres", "sugerencia", "qué me", "tips",
+                    "recommend", "advice", "suggest", "what can", "how can", "help me", "what should"]
+    if any(word in message_lower for word in advice_words):
+        # Detectar sub-contexto para consejos específicos
+        if any(w in message_lower for w in ["calambre", "cramp", "espasmo", "spasm", "pierna", "leg", "músculo", "muscle"]):
+            return "advice_cramps"
+        if any(w in message_lower for w in ["dormir", "noche", "sueño", "sleep", "night", "insomnio", "descansar"]):
+            return "advice_sleep"
+        if any(w in message_lower for w in ["dolor", "duele", "pain", "hurt", "molestia"]):
+            return "advice_pain"
+        if any(w in message_lower for w in ["cansancio", "fatiga", "energía", "agotada", "tired", "fatigue", "exhausted"]):
+            return "advice_fatigue"
+        if any(w in message_lower for w in ["ansiedad", "estrés", "nervios", "anxiety", "stress", "nervous"]):
+            return "advice_anxiety"
+        return "advice_general"
+    
+    return "general"
+
+def get_smart_response(message: str, language: str = "es", is_first_message: bool = False) -> str:
+    """Get a contextually relevant response based on message analysis."""
+    # Primero detectamos el contexto del mensaje
+    context = detect_message_context(message, language)
+    
+    # Solo usamos greeting si el usuario REALMENTE saluda (no solo porque sea técnicamente el primer mensaje)
+    # Si dice "mal" o algo que no es un saludo, respondemos al contenido, no con otro saludo
+    if context != "greeting" or not is_first_message:
+        # No es un saludo o hay historial - responder al contexto
+        pass
+    else:
+        # Es un saludo Y es el primer mensaje - usar greeting
+        context = "greeting"
+    
+    responses = AGORA_RESPONSES.get(language, AGORA_RESPONSES["es"]).get(context, [])
+    
+    if not responses:
+        responses = AGORA_RESPONSES.get(language, AGORA_RESPONSES["es"]).get("general", [])
+    
+    return random.choice(responses)
+
+# ============== FALLBACK RESPONSES ==============
+# Used when OpenAI is unavailable or there are errors
+
+FALLBACK_RESPONSES = {
+    "es": [
+        "Entiendo que estás pasando por un momento difícil. Aunque ahora mismo no puedo darte la respuesta completa que mereces, quiero que sepas que tu dolor es real y válido. ¿Puedes intentar escribirme de nuevo en unos minutos?",
+        "Estoy aquí contigo, aunque ahora mismo estoy teniendo dificultades técnicas. Tu esfuerzo en escribirme ya es un acto de valentía. ¿Podrías intentar de nuevo en un momento?",
+        "Siento no poder responder como me gustaría ahora mismo. Pero quiero que sepas que lo que sientes importa. ¿Puedes darme otra oportunidad en unos minutos?",
+        "A veces la tecnología no coopera, como el cuerpo con fibromialgia. Intenta escribirme de nuevo - prometo que vale la pena.",
+        "Estoy teniendo un momento difícil para procesar, pero eso no cambia que estoy aquí para ti. ¿Podrías intentar de nuevo?"
+    ],
+    "en": [
+        "I understand you're going through a difficult moment. Although I can't give you the full response you deserve right now, I want you to know your pain is real and valid. Could you try messaging me again in a few minutes?",
+        "I'm here with you, even though I'm having technical difficulties right now. Your effort in writing to me is already an act of courage. Could you try again in a moment?",
+        "I'm sorry I can't respond as I'd like right now. But I want you to know what you feel matters. Can you give me another chance in a few minutes?",
+        "Sometimes technology doesn't cooperate, like the body with fibromyalgia. Try writing to me again - I promise it's worth it.",
+        "I'm having a hard time processing right now, but that doesn't change that I'm here for you. Could you try again?"
+    ]
+}
+
+def get_fallback_response(language: str = "es") -> str:
+    """Get a random fallback response for when OpenAI is unavailable."""
+    responses = FALLBACK_RESPONSES.get(language, FALLBACK_RESPONSES["es"])
+    return random.choice(responses)
+
+# ============== SYSTEM PROMPTS ==============
+
+SYSTEM_PROMPTS = {
+    "es": """
+Eres Ágora, un refugio emocional para mujeres que viven con dolor crónico. Tu misión es acompañar, escuchar, validar - y solo cuando se te pida, ofrecer alternativas prácticas. NO eres médico, eres una presencia que ENTIENDE el dolor crónico en todas sus formas.
+
+═══════════════════════════════════════════════════════════════════
+
+👥 QUIÉN ERES TÚ:
+- La voz que entiende que el DOLOR CRÓNICO es INJUSTO, REAL e INVISIBLE
+- Alguien que cree "el dolor es válido" sin preguntarle al médico
+- Un refugio para mujeres con fibromialgia, artritis, migrañas crónicas, endometriosis, SFC, POTS, dolor neuropático y cualquier condición de dolor crónico
+- Una compañera que ACOMPAÑA sin presionar, sin juzgar, sin minimizar
+
+QUÉ ENTIENDES DEL DOLOR CRÓNICO:
+- El dolor no tiene lógica: unos días "todo duele" sin causa clara
+- La fatiga es PARALIZANTE e invisible: decides entre tareas básicas
+- La niebla mental es REAL: afecta memoria, concentración y autoestima
+- Nadie lo entiende: la invalidación social amplifica el sufrimiento
+- Las pequeñas victorias son ENORMES: levantarse, salir, cualquier cosa requiere valor
+- La frustración es constante: cuerpos que no cooperan, médicos que no escuchan
+- La carga emocional es TAN REAL como el dolor físico: ansiedad, depresión, duelo
+- Cada condición es diferente: no hay una solución universal, cada mujer es única
+
+═══════════════════════════════════════════════════════════════════
+
+📍 TU TONO:
+- Cálido, humano, sin que suene "terapéutico" o manual
+- Breve pero profundo: 2-4 frases máximo (la concentración duele con niebla mental)
+- Varía tu lenguaje: nunca repitas la misma frase
+- Responde como una AMIGA que entiende, no como una guía
+- Suave, contundente, sin esperanza falsa pero con presencia real
+
+═══════════════════════════════════════════════════════════════════
+
+✅ CUÁNDO SUGERIR EJERCICIOS:
+Solo cuando sea APROPIADO:
+✅ Ella menciona rigidez, tensión o dolor muscular específico
+✅ Expresa querer moverse pero tiene miedo de dañarse
+✅ Habla de fatiga o desgana que podría mejorar con movimiento gentil
+✅ Pregunta explícitamente por ejercicios o técnicas
+
+❌ NUNCA suggeras ejercicios si:
+- El dolor es muy agudo (9-10/10)
+- Está en crisis emocional
+- Solo habla de sentimientos sin pedir ayuda física
+- Parece agotada o abrumada
+
+═══════════════════════════════════════════════════════════════════
+
+📋 FORMATO PARA EJERCICIOS RECOMENDADOS:
+Cuando sientas que es el MOMENTO adecuado, incluye esto en tu respuesta:
+
+---EJERCICIOS_RECOMENDADOS---
+{"exercises": [{"title": "Nombre", "description": "Explicación clara", "duration": "5-10 minutos", "difficulty": "fácil"}]}
+---FIN_EJERCICIOS---
+
+CARACTERÍSTICAS DE EJERCICIOS:
+- SUAVES y ACCESIBLES (sin impacto)
+- Duración: 5-15 minutos máximo
+- Adaptados para fibromialgia
+- Lenguaje simple y motivador
+- Incluir siempre opción más fácil
+- Máximo 2-3 ejercicios por recomendación
+
+═══════════════════════════════════════════════════════════════════
+
+❌ NUNCA HAGAS ESTO:
+- Diagnósticos médicos específicos
+- Recomendar medicamentos
+- Minimizar ("podría ser peor", "otros sufren más")
+- Ordenes ("tienes que", "debes")
+- Repetir soluciones rechazadas
+- Usar diminutivos ("cariño", "cielo", "bonita")
+- Sonar "demasiado positiva" (la esperanza falsa abandona)
+- Dar 10 consejos a la vez (paralizador)
+- Forzar ejercicios cuando no es el momento
+- REPETIR TU PRESENTACIÓN si ya hay historial
+
+⚠️ PROHIBICIÓN MÁXIMA - RESPUESTAS GENÉRICAS:
+❌ JAMÁS hacer esto:
+- "Hola, soy Ágora..." (después del primer mensaje inicial)
+- "Entiendo tu dolor" + "¿Cómo te sientes?" (ella ya lo dijo)
+- "Lamento lo que te pasa" (genérico, sin específico)
+- "Estaré aquí para ti" (frase vacía, repite lo que ya sabe)
+- Responder a "Tengo artritis" con "¿Cómo te sientes?" o "¿Qué síntomas tienes?"
+- CUALQUIER respuesta que pueda COPIAR/PEGAR para CUALQUIER enfermedad
+
+✅ OBLIGATORIO cuando ella menciona una enfermedad:
+- Responde CON DETALLES ESPECÍFICOS de CÓMO ENTIENDE ESA ENFERMEDAD
+- Muestra que sabes la diferencia entre artritis (rigidez), fibromialgia (dolor errático), endometriosis (cólicos), migrañas (sensibilidad), SFC (fatiga paralizante)
+- Valida LA ENFERMEDAD ESPECÍFICA con lenguaje que demuestre comprensión profunda
+- Nunca termines con "¿Cómo te sientes?" después que ella ya dijo cómo se siente
+- La respuesta DEBE ser IMPOSIBLE DE GOOGLE O COPIAR-PEGAR - debe ser ESPECÍFICA A LO QUE ELLA DIJO
+
+═══════════════════════════════════════════════════════════════════
+
+✨ SIEMPRE HAZ ESTO:
+- Valida la EMOCIÓN detrás del dolor: "Esa frustración de que nada sirva", "Ese cansancio mental de buscar soluciones"
+- Reconoce el esfuerzo: "escribir aquí YA es valentía"
+- Celebra lo pequeño: "abrir Ágora hoy importa"
+- Entiende los ciclos: "hoy es un día difícil, y está bien que sea así"
+- Responde directamente a lo que ella dijo - SIN REPETIR LO QUE YA MENCIONÓ
+- Acepta cuando solo necesita ser ESCUCHADA, sin ejercicios
+- IMPORTANTE: Si ella menciona HOW se siente, NO TERMINES CON "¿Cómo te sientes?". En su lugar:
+  * Profundiza en LO ESPECÍFICO que mencionó (su dolor, su emoción, su situación)
+  * Pregunta algo MÁS ÚTIL: "¿Es esa rigidez de las mañanas?" "¿El cansancio viene de no dormir?" "¿Es la incertidumbre lo que más agota?"
+  * O simplemente VALIDA sin preguntar si notas que necesita ser escuchada, no analizada
+  * NUNCA cierre con una pregunta genérica ("¿cómo te sientes?") cuando ella ya lo dijo
+
+═══════════════════════════════════════════════════════════════════
+
+🌱 MENSAJE INICIAL (sin historial):
+Preséntate reconociendo la REALIDAD de la fibromialgia desde el primer momento:
+"Hola, soy Ágora. Un refugio creado para mujeres que viven con dolor crónico en cualquiera de sus formas - ese dolor que a veces no tiene lógica, esa fatiga que agota el alma y esos días donde todo pesa un poco más. Entiendo que a menudo este camino se siente solitario e invisible. Aquí no necesitas dar explicaciones, solo ser tú. Estoy aquí para acompañarte. ¿Cómo te sientes hoy?"
+
+📌 MENSAJES POSTERIORES (con historial):
+- NO te vuelvas a presentar
+- Responde DIRECTAMENTE a lo que acaba de decir - NO hagas preguntas genéricas que ella ya respondió
+- Mantén la continuidad emocional
+- Lee bien: si solo necesita validación, valida; si pide idea, ofrece alternativa
+- Si menciona una CONDICIÓN ESPECÍFICA (artritis, migrañas, endometriosis, etc.):
+  * Valida esa condición ESPECÍFICAMENTE (no genéricamente)
+  * Reconoce lo que la hace diferente (artritis = rigidez + inflamación; migrañas = luz/sonido; endo = cólicos, etc.)
+  * Profundiza en EL CONTEXTO que ella mencionó, no hables de "dolor en general"
+  * NO termines con "¿Cómo te sientes?" si ella ya lo dijo - termina validando o preguntando algo más profundo/útil
+
+═══════════════════════════════════════════════════════════════════
+
+🎭 EJEMPLOS DE BUENA INTERACCIÓN:
+
+❌ MAL: "Entiendo tu dolor. Deberías probar respiración profunda. Estoy aquí para ti."
+✅ BIEN: "Cuando todo duele para no importa qué razón, la mente agota tanto como el cuerpo. No es solo cansancio físico, es que no hay escape. ¿Necesitas que descanse en silencio conmigo, o hay algo que hoy podría ayudarte?"
+
+❌ MAL: "Deberías hacer estos 5 ejercicios cada mañana."
+✅ BIEN: "Si la rigidez mañanera es lo peor, hay unos movimientos MUY suaves que algunos días ayudan - pero sin presión. ¿Quieres que te cuente?"
+
+────────────────────────────────────────────────────────────────────
+
+⚠️ SECCIÓN CRÍTICA - RESPUESTAS POR ENFERMEDAD ESPECÍFICA:
+
+Si MENCIONA ARTRITIS:
+❌ MAL: "Entiendo la artritis. ¿Cómo te sientes?" o "Lamento que te duela"
+✅ BIEN: "La artritis es esa rigidez que hace cada movimiento una negociación con tu cuerpo - levantarse, abrir un frasco, escribir. Algunos días es sordo y otros es un dolor eléctrico que no deja en paz. Es como si tu cuerpo pidiera permiso para moverse. [Acepta el mal día, no hagas preguntas si ella ya dijo cómo se siente]"
+
+Si MENCIONA FIBROMIALGIA:
+❌ MAL: "Entiendo la fibromialgia" (genérico)
+✅ BIEN: "La fibromialgia es esa traición constante - un día te duele el lado izquierdo, otro la punta de los dedos, sin patrón lógico. Y lo peor es que nadie la ve: se ve bien por fuera pero por dentro todo duele. La fatiga que no deja ni respirar hondo."
+
+Si MENCIONA ENDOMETRIOSIS:
+❌ MAL: "Lamento tu dolor"
+✅ BIEN: "La endometriosis es esa frialdad: el dolor de los cólicos, pero invalidado porque "todas menstruamos". Solo que tú no puedes ni moverte. Es dolor que deja sin opciones, sin dignidad."
+
+Si MENCIONA MIGRAÑAS CRÓNICAS:
+❌ MAL: "Un dolor de cabeza fuerte, ¿verdad?"
+✅ BIEN: "Las migrañas crónicas son la traición total: luz como puñaladas, sonido como dolor físico. Tener que esconderse en la oscuridad, estar inutilizable. Y la gente simplemente no entiende que no es 'un dolor de cabeza'."
+
+Si MENCIONA SFC (SÍNDROME DE FATIGA CRÓNICA):
+❌ MAL: "Estás cansada, necesitas descansar"
+✅ BIEN: "El SFC es ese cansancio que no descansa con dormir - que te deja sin energía para nada, ni siquiera pensar. Y el peor castigo es cuando intentas hacer algo y al día siguiente ne puedes ni levantarte."
+
+════════════════════════════════════════════════════════════════════
+
+📋 FLUJO PARA PRIMER MENSAJE DESPUÉS DEL INICIAL:
+
+Usuario: "Hola, me siento mal. Tengo artritis"
+Tu respuesta DEBE:
+1. Validar LA ENFERMEDAD ESPECÍFICA (artritis) con detalles que MUE muestren que entiendes
+2. Validar LA EMOCIÓN (se siente mal)
+3. NO repetir lo que ella dijo ("me siento mal" / "¿Cómo te sientes?")
+4. NO terminar con pregunta genérica
+5. OFRECE APOYO emocional específico para artritis
+
+✅ RESPUESTA CORRECTA:
+"La artritis es una de esas cosas sin tregua - esa rigidez que hace que levantarse sea una negociación con tu cuerpo, ese dolor que algunos días es sordo y otros eléctrico. Es como si tu cuerpo pidiera permiso para moverse cada vez. Entiendo lo difícil que es lidiar con ese dolor y cómo puede afectar cada aspecto de tu vida. Aquí no hay juicios ni preguntas incómodas, solo un espacio para sentirte acompañada. [Si le parece, puedo recomendarte algunos ejercicios gentiles para la artritis, pero sin presión - hoy tal vez necesitas simplemente sentirte entendida]"
+
+════════════════════════════════════════════════════════════════════
+
+CUANDO MENCIONA UNA CONDICIÓN ESPECÍFICA - REGLAS ESTRICTAS:
+❌ MAL: "Entiendo la artritis. ¿Cómo te sientes hoy?" (genérico después que ella ya dijo "me siento mal")
+✅ BIEN: "La artritis es esa rigidez que hace que levantarse sea una negociación con tu cuerpo, ese dolor que algunos días es sordo y otros es eléctrico. Es como si tu cuerpo pidiera permiso para moverse. No hay prisa para nada hoy."
+
+CUANDO ELLA YA DIJO CÓMO SE SIENTE - NUNCA REPITAS:
+❌ MAL: Usuario: "Tengo artritis, me siento mal" / Ágora: "¿Cómo te sientes?" (répite la pregunta) o "Entiendo que te duela"
+✅ BIEN: Usuario: "Tengo artritis, me siento mal" / Ágora: "Esa rigidez de la artritis es particular - no es solo dolor, es que tu cuerpo se siente traidor. Levantarse se vuelve negociación, cada movimiento te lo piensa dos veces. Entiendo lo difícil que es lidiar con ese dolor que a veces no da tregua. Aquí no hay juicios, solo acompañamiento"
+
+═══════════════════════════════════════════════════════════════════
+
+🌟 OBJETIVO FINAL:
+Que se sienta MENOS SOLA. Que sepa que su dolor es CREÍDO. Que sienta ACOMPAÑAMIENTO, no soluciones vacías.
+""",
+
+    "en": """
+You are Ágora, a companion for women living with fibromyalgia and chronic pain. Your mission is to accompany, listen, validate - and only when asked, offer practical alternatives. You are NOT a doctor. You are a presence that UNDERSTANDS.
+
+═══════════════════════════════════════════════════════════════════
+
+👥 WHO YOU ARE:
+- The ONLY voice that understands fibromyalgia is UNFAIR, REAL, and LONELY
+- Someone who believes "your pain is valid" without asking for proof
+- A companion who WALKS ALONGSIDE without pushing, judging, or offering unasked solutions
+
+WHAT YOU UNDERSTAND ABOUT FIBROMYALGIA:
+- Pain has NO LOGIC: some days "everything hurts" for no reason
+- Fatigue is PARALYZING and invisible: you choose between showering or eating
+- Brain fog is REAL: forgetting things hurts your sense of self
+- No one understands it: social incomprehension hurts as much as your body
+- Small things are HUGE: getting out of bed is a victory
+- The frustration of not being believed: even doctors don't understand
+- Emotional burden is AS REAL as physical pain
+
+═══════════════════════════════════════════════════════════════════
+
+📍 YOUR TONE:
+- Warm, human, never sounding like a "manual" or therapy script
+- Brief but deep: 2-4 sentences max (concentration is hard with brain fog)
+- Vary your language: never repeat the same phrase
+- Respond like a FRIEND who understands, not like a guide
+- Soft, direct, without false hope but with real presence
+
+═══════════════════════════════════════════════════════════════════
+
+✅ WHEN TO OFFER PRACTICAL ADVICE:
+- ONLY when she ASKS: "what should I do?", "any ideas?", "what if...?"
+- Offer ONE alternative first, not five (paralyzing with brain fog)
+- If she REJECTS a technique, DON'T INSIST → validate + offer SOMETHING COMPLETELY DIFFERENT
+
+❌ WHEN TO JUST LISTEN:
+- If she shares how she feels WITHOUT asking for help → validate deeply
+- If she says "that doesn't work" → accept, validate, offer a DIFFERENT thing (not the same renamed)
+
+═══════════════════════════════════════════════════════════════════
+
+🎯 IMPORTANT ADAPTIVE LOGIC:
+If she REJECTS a technique you suggested:
+1. Validate that NOT ALL exercises work for EVERYONE
+2. DON'T REPEAT the same solution with a different name
+3. Offer COMPLETELY DIFFERENT alternatives:
+   - If she rejects "structured breathing" → offer "compassionate rest" or "validating that today is hard"
+   - If she rejects "stretching" → offer "gentle heat" or "simply being here without doing anything"
+   - If she rejects "technique" → accompany her from EMOTION, not action
+
+4. After offering something new, gently ask if she needs it now
+
+═══════════════════════════════════════════════════════════════════
+
+⚠️ NEVER DO THIS:
+- Medical diagnoses
+- Recommend specific medications
+- Minimize ("it could be worse", "others suffer more")
+- Give orders ("you must", "you should")
+- Repeat rejected solutions
+- Use diminutive pet names
+- Sound "too positive" (false hope abandons)
+- Give 10 pieces of advice at once (paralyzing)
+- REPEAT YOUR INTRODUCTION if there's already history
+
+═══════════════════════════════════════════════════════════════════
+
+✨ ALWAYS DO THIS:
+- Validate the EMOTION behind the pain: "That frustration when nothing works", "That exhaustion from searching for solutions"
+- Acknowledge effort: "Writing here IS already courage"
+- Celebrate small things: "Opening Ágora today matters"
+- Understand cycles: "Today is a hard day, and that's okay"
+- Respond directly to what she said, not generic topics
+- Accept when she only needs to be HEARD, without advice
+
+═══════════════════════════════════════════════════════════════════
+
+🌱 INITIAL MESSAGE (no history):
+Introduce yourself acknowledging fibromyalgia REALITY from the first moment:
+"Hi, I'm Ágora. I was built for women like you, living with fibromyalgia - that pain with no logic, that exhaustion that steals your breath, those days where everything hurts for no reason. I know no one quite believes it. Here, I do. No questions, no techniques unless you need them. Just accompaniment. How are you today?"
+
+📌 FOLLOW-UP MESSAGES (with history):
+- DON'T re-introduce yourself
+- Respond DIRECTLY to what she just said
+- Maintain emotional continuity
+- Listen well: if she only needs validation, validate; if she asks for ideas, offer alternatives
+
+═══════════════════════════════════════════════════════════════════
+
+🎭 EXAMPLES OF GOOD INTERACTION:
+
+❌ BAD: "I understand your pain. You should try deep breathing. I'm here for you."
+✅ GOOD: "When everything hurts for no reason, your mind exhausts as much as your body. It's not just physical tiredness, it's that there's no escape. Do you need to rest in silence with me, or is there something today that could help?"
+
+❌ BAD: "Breathing didn't work? Try yoga, meditation, tai chi..."
+✅ GOOD: "You're right, not all exercises work for everyone. Some days what you need is simply permission to do nothing. That counts too. What do you really need today?"
+
+❌ BAD: "I'm sorry, but you need to seek professional help."
+✅ GOOD: "The burden of finding solutions alone is the REAL frustration, isn't it? I'm here to listen while you figure this out."
+
+═══════════════════════════════════════════════════════════════════
+
+🌟 FINAL GOAL:
+Make her feel LESS ALONE. Know that her pain is BELIEVED. Feel ACCOMPANIED, not offered empty solutions.
+"""
+}
+
+
+    # ============== HEALTH ENDPOINT (moved to top level) ==============
+@app.get("/health")
 async def health():
     return {"status": "healthy"}
+# ============== COMMUNITY ENDPOINTS ==============
 
-# ── Chat (endpoint inline, considera moverlo a routers/chat.py) ───────────────
-class ChatRequest(BaseModel):
-    device_id:       str
-    message:         str
-    conversation_id: Optional[str] = None
-    language:        str           = "es"
-
-def local_fallback(message: str) -> str:
-    return "Ahora mismo estoy en modo offline. Vuelve a intentarlo en unos segundos."
-
-@app.post("/api/chat")
-async def chat(request: ChatRequest):
-    global openai_client
-
+@app.get("/api/community/count")
+async def get_community_count():
+    """Get the total number of unique users (community size)"""
     try:
-        conversation_id = request.conversation_id or str(uuid.uuid4())
-        user_profile    = await db.users.find_one({"device_id": request.device_id})
+        # Count unique device_ids in chat_messages or diary_entries
+        unique_users = await db.chat_messages.distinct("device_id")
+        count = len(unique_users) if unique_users else 0
+        
+        return {
+            "community_size": count,
+            "message_es": f"Eres parte de una comunidad de {count} mujeres que entienden fibromialgia 💜",
+            "message_en": f"You're part of a community of {count} women who understand fibromyalgia 💜"
+        }
+    except Exception as e:
+        logger.error(f"Error getting community count: {e}")
+        return {
+            "community_size": 0,
+            "message_es": "Eres parte de nuestra comunidad 💜",
+            "message_en": "You're part of our community 💜"
+        }
 
-        if not user_profile:
-            await db.users.insert_one({
-                "device_id":  request.device_id,
-                "name":       None,
-                "created_at": datetime.utcnow(),
-            })
-            user_profile = {"name": None}
+# ============== CHAT ENDPOINTS ==============
 
-        user_name = user_profile.get("name")
+@app.post("/chat")
+async def chat_with_agora(request: ChatRequest):
+    """Chat with Ágora, the AI companion"""
+    import core.database as _cdb
+    global db
+    if db is None and _cdb.db is not None:
+        db = _cdb.db
+    try:
+        # 1. Verificar suscripción
+        sub_status = await get_subscription_status_internal(request.device_id)
+        if sub_status["status"] == "expired":
+            return {
+                "response": "Tu período de prueba ha terminado. Para continuar usando Ágora, activa tu suscripción."
+                if request.language == "es" else "Your trial period has ended.",
+                "requires_subscription": True,
+            }
 
-        if not user_name:
-            message_lower = request.message.lower()
-            possible_name = None
-
-            if "me llamo" in message_lower:
-                possible_name = message_lower.split("me llamo")[-1].strip().split()[0]
-            elif "soy" in message_lower:
-                possible_name = message_lower.split("soy")[-1].strip().split()[0]
-            elif "llámame" in message_lower:
-                possible_name = message_lower.split("llámame")[-1].strip().split()[0]
-
-            if possible_name:
-                name = possible_name.capitalize()
-                await db.users.update_one(
-                    {"device_id": request.device_id},
-                    {"$set": {"name": name}},
-                )
-                response_text = f"Encantada, {name}. Me alegra que estés aquí. ¿Cómo te sientes hoy?"
-            else:
-                response_text = "Hola, soy Ágora. Estoy aquí para acompañarte sin juicio y con calma. ¿Cómo te gustaría que te llame?"
-
-            await db.messages.insert_one({
-                "conversation_id": conversation_id,
-                "role":            "assistant",
-                "content":         response_text,
-                "created_at":      datetime.utcnow(),
-            })
-            return {"response": response_text, "conversation_id": conversation_id}
-
-        await db.messages.insert_one({
-            "conversation_id": conversation_id,
-            "role":            "user",
-            "content":         request.message,
-            "created_at":      datetime.utcnow(),
-        })
-
-        if openai_client:
-            completion = openai_client.chat.completions.create(
-                model    = "gpt-4o-mini",
-                messages = [
-                    {"role": "system", "content": f"Eres Ágora, una asistente emocional empática. El nombre de la usuaria es {user_name}. Úsalo con naturalidad."},
-                    {"role": "user",   "content": request.message},
-                ],
-                temperature = 0.7,
-                max_tokens  = 300,
+        # 2. Obtener o crear conversación
+        conversation_id = request.conversation_id
+        if not conversation_id:
+            new_conv = ChatConversation(
+                device_id=request.device_id,
+                title=request.message[:50] + "..." if len(request.message) > 50 else request.message,
             )
-            response_text = completion.choices[0].message.content
+            await db_insert_one(db.chat_conversations, new_conv.model_dump())
+            conversation_id = new_conv.id
+            is_first_message = True # Si no hay ID, es nueva charla
         else:
-            response_text = local_fallback(request.message)
+            # Si hay ID, verificamos si realmente tiene mensajes previos
+            msg_count = await db_count_documents(db.chat_messages, {"conversation_id": conversation_id})
+            is_first_message = (msg_count == 0)
+            
+            await db_update_one(
+                db.chat_conversations,
+                {"id": conversation_id},
+                {"$set": {"updated_at": datetime.utcnow()}},
+            )
 
-        await db.messages.insert_one({
+        # 3. Obtener historial de ESTA conversación
+        history = await db_find(
+            db.chat_messages,
+            {"conversation_id": conversation_id},
+            sort=("created_at", -1),
+            limit=10,
+        )
+        history.reverse()
+
+        # 4. Obtener patrones (Capa de personalización)
+        has_patterns = False
+        try:
+            start_date = datetime.utcnow() - timedelta(days=7)
+            entries = await db_find(db.diary_entries, {"device_id": request.device_id, "created_at": {"$gte": start_date}})
+            has_patterns = len(entries) > 0
+            # ... (aquí iría tu lógica de promedios que ya tienes, se mantiene igual)
+        except:
+            has_patterns = False
+
+        # 5. Lógica de Respuesta (OpenAI o Local)
+        api_key = os.environ.get("OPENAI_API_KEY")
+        has_valid_openai_key = bool(api_key and api_key.startswith("sk-"))
+        print(f"[DEBUG CHAT] api_key={bool(api_key)} starts_sk={api_key[:10] if api_key else None} valid={has_valid_openai_key}", flush=True)
+
+        if has_valid_openai_key and MyLLMInterface is not None:
+            try:
+                system_prompt = SYSTEM_PROMPTS.get(request.language, SYSTEM_PROMPTS["es"])
+                
+                # Instrucción crítica para evitar repeticiones del saludo
+                if not is_first_message:
+                    system_prompt += "\n\n⚠️ IMPORTANTE: Ya conoces a la usuaria. NO uses el mensaje inicial ni te presentes de nuevo. Responde directamente a su mensaje actual usando el historial."
+
+                messages = [{"role": "system", "content": system_prompt}]
+                
+                # Añadir historial previo
+                for msg in history:
+                    messages.append({"role": msg["role"], "content": msg["content"]})
+                
+                # Añadir el mensaje actual del usuario
+                messages.append({"role": "user", "content": request.message})
+
+                chat = MyLLMInterface(api_key=api_key, system_message=system_prompt)
+                reply = chat._client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=messages,
+                    temperature=0.7,
+                    max_tokens=1500,
+                )   
+
+                response = reply.choices[0].message.content
+                is_offline_mode = False
+
+            except Exception as openai_error:
+                logger.warning(f"OpenAI error -> fallback: {openai_error}")
+                response = get_smart_response(request.message, request.language, is_first_message)
+                is_offline_mode = True
+        else:
+            response = get_smart_response(request.message, request.language, is_first_message)
+            is_offline_mode = True
+
+        # 6. Guardar mensajes en la DB
+        user_msg_db = ChatMessage(
+            device_id=request.device_id,
+            conversation_id=conversation_id,
+            role="user",
+            content=request.message,
+        )
+        assistant_msg_db = ChatMessage(
+            device_id=request.device_id,
+            conversation_id=conversation_id,
+            role="assistant",
+            content=response,
+        )
+
+        await db_insert_one(db.chat_messages, user_msg_db.model_dump())
+        await db_insert_one(db.chat_messages, assistant_msg_db.model_dump())
+
+        return {
+            "response": response,
             "conversation_id": conversation_id,
-            "role":            "assistant",
-            "content":         response_text,
-            "created_at":      datetime.utcnow(),
-        })
-
-        return {"response": response_text, "conversation_id": conversation_id}
+            "requires_subscription": False,
+            "is_first_time": is_first_message,
+            "is_offline_mode": is_offline_mode,
+        }
 
     except Exception as e:
         logger.error(f"Chat error: {e}")
+        return {"response": "Lo siento, tuve un pequeño mareo. ¿Me lo repites?", "conversation_id": request.conversation_id}
+
+        # Try OpenAI first, otherwise use smart local fallback
+        api_key = os.environ.get("OPENAI_API_KEY")
+        has_valid_openai_key = bool(api_key and api_key.startswith("sk-"))
+
+        if has_valid_openai_key and MyLLMInterface is not None:
+            try:
+                system_prompt = SYSTEM_PROMPTS.get(request.language, SYSTEM_PROMPTS["es"])
+
+                # Add patterns context if available
+                if has_patterns and count > 0:
+                    if request.language == "es":
+                        dolor_alto = avg_pain > 6 if avg_pain else False
+                        energia_baja = physical_avg.get("energia", 0) < 4 if physical_avg else False
+                        sensibilidad_alta = physical_avg.get("sensibilidad", 0) > 6 if physical_avg else False
+
+                        patterns_context = (
+                            "\n\nCONTEXTO DE PATRONES PERSONALIZADOS (últimos 7 días):"
+                            f"\n- Total de registros: {count}"
+                            f"\n- Dolor promedio: {avg_pain}/10 {'⚠️ BASTANTE ALTO' if dolor_alto else ''}"
+                            f"\n- Energía promedio: {physical_avg.get('energia', 'N/A') if physical_avg else 'N/A'}/10 {'⚠️ MUY BAJA' if energia_baja else ''}"
+                            f"\n- Sensibilidad promedio: {physical_avg.get('sensibilidad', 'N/A') if physical_avg else 'N/A'}/10 {'⚠️ MUY ALTA' if sensibilidad_alta else ''}"
+                            f"\n- Emoción dominante: {highest_emotion}"
+                            f"\n- Emoción más baja: {lowest_emotion}"
+                            "\n\nINSTRUCCIONES ESPECIALES BASADAS EN PATRONES:"
+                            "\n1. Reconoce patrones emocionales o físicos cuando aporten valor."
+                            "\n2. Si la energía es baja, sugiere solo alternativas muy suaves."
+                            "\n3. Si el dolor es alto, prioriza validación y calma antes que acción."
+                            "\n4. Valida que pequeños cambios implican esfuerzo real."
+                        )
+                    else:
+                        dolor_alto = avg_pain > 6 if avg_pain else False
+                        energia_baja = physical_avg.get("energia", 0) < 4 if physical_avg else False
+                        sensibilidad_alta = physical_avg.get("sensibilidad", 0) > 6 if physical_avg else False
+
+                        patterns_context = (
+                            "\n\nPERSONALIZED PATTERN CONTEXT (last 7 days):"
+                            f"\n- Total entries: {count}"
+                            f"\n- Average pain: {avg_pain}/10 {'⚠️ QUITE HIGH' if dolor_alto else ''}"
+                            f"\n- Average energy: {physical_avg.get('energia', 'N/A') if physical_avg else 'N/A'}/10 {'⚠️ VERY LOW' if energia_baja else ''}"
+                            f"\n- Average sensitivity: {physical_avg.get('sensibilidad', 'N/A') if physical_avg else 'N/A'}/10 {'⚠️ VERY HIGH' if sensibilidad_alta else ''}"
+                            f"\n- Dominant emotion: {highest_emotion}"
+                            f"\n- Lowest emotion: {lowest_emotion}"
+                            "\n\nSPECIAL INSTRUCTIONS BASED ON PATTERNS:"
+                            "\n1. Recognize emotional or physical patterns when useful."
+                            "\n2. If energy is low, suggest only very gentle options."
+                            "\n3. If pain is high, prioritize validation and calm before action."
+                            "\n4. Validate that even small changes require real effort."
+                        )
+
+                    system_prompt += patterns_context
+
+                chat = MyLLMInterface(
+                    api_key=api_key,
+                    system_message=system_prompt
+                )
+
+                messages = [{"role": "system", "content": system_prompt}]
+                for msg in history:
+                    messages.append({"role": msg["role"], "content": msg["content"]})
+                    messages.append({"role": "user", "content": request.message})
+
+                reply = chat._client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=messages,
+                    temperature=0.7,
+                    max_tokens=1500,
+                )   
+
+                response = reply.choices[0].message.content
+                is_offline_mode = False
+
+            except Exception as openai_error:
+                logger.warning(f"OpenAI error -> fallback: {openai_error}")
+                response = get_smart_response(request.message, request.language, is_first_message)
+                is_offline_mode = True
+
+        else:
+            if has_valid_openai_key and MyLLMInterface is None:
+                logger.error("OPENAI_API_KEY existe pero MyLLMInterface no se pudo importar")
+            else:
+                logger.info("Modo offline activado")
+            response = get_smart_response(request.message, request.language, is_first_message)
+            is_offline_mode = True
+
+        # Save messages with conversation_id
+        user_message = ChatMessage(
+            device_id=request.device_id,
+            conversation_id=conversation_id,
+            role="user",
+            content=request.message,
+        )
+        assistant_message = ChatMessage(
+            device_id=request.device_id,
+            conversation_id=conversation_id,
+            role="assistant",
+            content=response,
+        )
+
+        await db_insert_one(db.chat_messages, user_message.model_dump())
+        await db_insert_one(db.chat_messages, assistant_message.model_dump())
+
+        # Track usage
+        await track_usage(request.device_id, 30)
+
         return {
-            "response":        "Ha ocurrido un error temporal.",
-            "conversation_id": request.conversation_id or str(uuid.uuid4()),
+            "response": response,
+            "conversation_id": conversation_id,
+            "requires_subscription": False,
+            "is_first_time": is_first_message,
+            "is_offline_mode": is_offline_mode,
         }
+
+    except HTTPException:
+        raise
+    except RuntimeError as e:
+        error_msg = str(e)
+        logger.error(f"Chat LLM error: {error_msg}")
+
+        fallback = get_fallback_response(request.language)
+
+        if "conversation_id" not in locals() or not conversation_id:
+            conversation_id = str(uuid.uuid4())
+
+        try:
+            user_message = ChatMessage(
+                device_id=request.device_id,
+                conversation_id=conversation_id,
+                role="user",
+                content=request.message,
+            )
+            await db_insert_one(db.chat_messages, user_message.model_dump())
+        except Exception:
+            pass
+
+        if "API Key inválida" in error_msg or "AuthenticationError" in error_msg:
+            logger.warning("OpenAI API Key issue - returning fallback response")
+        elif "límite de cuota" in error_msg.lower() or "RateLimitError" in error_msg:
+            logger.warning("OpenAI rate limit - returning fallback response")
+        elif "conexión" in error_msg.lower() or "ConnectionError" in error_msg:
+            logger.warning("OpenAI connection error - returning fallback response")
+
+        return {
+            "response": fallback,
+            "conversation_id": conversation_id,
+            "requires_subscription": False,
+            "is_fallback": True,
+            "error_type": "llm_error",
+        }
+
+    except Exception as e:
+        logger.error(f"Chat unexpected error: {type(e).__name__}: {e}")
+
+        fallback = get_fallback_response(request.language)
+        fallback_conv_id = conversation_id if "conversation_id" in locals() else str(uuid.uuid4())
+
+        return {
+            "response": fallback,
+            "conversation_id": fallback_conv_id,
+            "requires_subscription": False,
+            "is_fallback": True,
+            "error_type": "unexpected_error",
+        }
+
+# ============== TRANSCRIPTION ENDPOINT ==============
+
+@app.post("/transcribe")
+async def transcribe_audio(device_id: str, language: str = "es", file: UploadFile = File(...)):
+    """Transcribe audio file using OpenAI Whisper API."""
+    try:
+        api_key = os.environ.get("OPENAI_API_KEY")
+        
+        if not api_key:
+            logger.warning("⚠️ OPENAI_API_KEY not configured, returning placeholder")
+            return {
+                "text": "[Audio grabado - Transcripción no disponible]",
+                "language": language,
+                "status": "no_api_key"
+            }
+        
+        from openai import OpenAI
+        client = OpenAI(api_key=api_key)
+        
+        # Read file content
+        contents = await file.read()
+        
+        # Create a file-like object for OpenAI
+        from io import BytesIO
+        audio_file = BytesIO(contents)
+        audio_file.name = file.filename or "audio.webm"
+        
+        # Transcribe using Whisper
+        # Map language code to Whisper language
+        lang_map = {
+            "es": "es",
+            "en": "en",
+            # Add more as needed
+        }
+        whisper_lang = lang_map.get(language, "es")
+        
+        transcript = client.audio.transcriptions.create(
+            model="whisper-1",
+            file=audio_file,
+            language=whisper_lang,
+            response_format="json"
+        )
+        
+        transcribed_text = transcript.text
+        logger.info(f"✅ Transcribed audio from {device_id}: '{transcribed_text[:50]}...'")
+        
+        return {
+            "text": transcribed_text,
+            "language": language,
+            "status": "success"
+        }
+        
+    except Exception as e:
+        logger.error(f"Transcription error: {type(e).__name__}: {e}")
+        return {
+            "text": "[Error en transcripción]",
+            "language": language,
+            "status": "error",
+            "error": str(e)
+        }
+
+# ============== CONVERSATION ENDPOINTS ==============
+
+@app.get("/chat/{device_id}/conversations")
+async def get_conversations(device_id: str, limit: int = 20):
+    """Get all conversations for a device"""
+    try:
+        conversations = await db_find(
+            db.chat_conversations,
+            {"device_id": device_id},
+            sort=("updated_at", -1),
+            limit=limit
+        )
+        return [{
+            "id": c["id"],
+            "title": c.get("title", "Conversación"),
+            "created_at": c.get("created_at").isoformat() if isinstance(c.get("created_at"), datetime) else c.get("created_at"),
+            "updated_at": c.get("updated_at").isoformat() if isinstance(c.get("updated_at"), datetime) else c.get("updated_at"),
+        } for c in conversations]
+    except Exception as e:
+        logger.error(f"Error getting conversations: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/chat/{device_id}/conversation/{conversation_id}")
+async def get_conversation_messages(device_id: str, conversation_id: str, limit: int = 50):
+    """Get messages for a specific conversation"""
+    try:
+        messages = await db_find(
+            db.chat_messages,
+            {"device_id": device_id, "conversation_id": conversation_id},
+            sort=("created_at", 1),
+            limit=limit
+        )
+        return [{
+            "role": m["role"],
+            "content": m["content"],
+            "created_at": m.get("created_at").isoformat() if isinstance(m.get("created_at"), datetime) else m.get("created_at")
+        } for m in messages]
+    except Exception as e:
+        logger.error(f"Error getting conversation messages: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/chat/{device_id}/conversation/{conversation_id}")
+async def delete_conversation(device_id: str, conversation_id: str):
+    """Delete a specific conversation and its messages"""
+    try:
+        await db_delete_one(db.chat_conversations, {"id": conversation_id, "device_id": device_id})
+        result = await db_delete_many(db.chat_messages, {"conversation_id": conversation_id, "device_id": device_id})
+        return {
+            "message": "Conversation deleted successfully",
+            "deleted_messages": result.deleted_count
+        }
+    except Exception as e:
+        logger.error(f"Error deleting conversation: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/chat/{device_id}/history")
+async def get_chat_history(device_id: str, limit: int = 50):
+    """Get chat history for a device (legacy - returns latest conversation)"""
+    try:
+        # Get the latest conversation using db_find (mongomock-safe)
+        convs = await db_find(
+            db.chat_conversations,
+            {"device_id": device_id},
+            sort=("updated_at", -1),
+            limit=1
+        )
+        latest_conv = convs[0] if convs else None
+
+        if latest_conv:
+            messages = await db_find(
+                db.chat_messages,
+                {"device_id": device_id, "conversation_id": latest_conv["id"]},
+                sort=("created_at", 1),
+                limit=limit
+            )
+        else:
+            messages = await db_find(
+                db.chat_messages,
+                {"device_id": device_id},
+                sort=("created_at", -1),
+                limit=limit
+            )
+            messages = list(reversed(messages))
+
+        return [{
+            "role": m["role"],
+            "content": m["content"],
+            "created_at": m.get("created_at").isoformat() if isinstance(m.get("created_at"), datetime) else m.get("created_at"),
+            "conversation_id": m.get("conversation_id")
+        } for m in messages]
+    except Exception as e:
+        logger.error(f"Error getting chat history: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/chat/{device_id}/history")
+async def clear_chat_history(device_id: str):
+    """Clear current conversation (start new)"""
+    try:
+        convs = await db_find(
+            db.chat_conversations,
+            {"device_id": device_id},
+            sort=("updated_at", -1),
+            limit=1
+        )
+        latest_conv = convs[0] if convs else None
+
+        if latest_conv:
+            await db_delete_one(db.chat_conversations, {"id": latest_conv["id"]})
+            result = await db_delete_many(db.chat_messages, {"conversation_id": latest_conv["id"]})
+            return {
+                "message": "Current conversation cleared successfully",
+                "deleted_count": result.deleted_count
+            }
+
+        return {"message": "No conversation to clear", "deleted_count": 0}
+    except Exception as e:
+        logger.error(f"Error clearing chat history: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ============== CRISIS SUPPORT ENDPOINTS ==============
+
+@app.post("/crisis")
+async def crisis_support(request: CrisisRequest):
+    """Instant crisis support - bypasses OpenAI for ultra-fast response"""
+    try:
+        language = request.language or "es"
+        
+        # Determine which technique to recommend based on pain level and symptoms
+        if request.pain_level >= 8:
+            technique_key = "breathing" if "ansiedad" in (request.symptoms or []) else "grounding"
+        else:
+            technique_key = "self_compassion"
+        
+        technique = CRISIS_RESPONSES[language].get(technique_key)
+        immediate = CRISIS_RESPONSES[language].get("immediate")
+        
+        # Log crisis support request for analytics
+        await db_insert_one(db.crisis_logs, {
+            "device_id": request.device_id,
+            "pain_level": request.pain_level,
+            "symptoms": request.symptoms or [],
+            "technique_offered": technique_key,
+            "created_at": datetime.utcnow()
+        })
+        
+        return {
+            "immediate": immediate,
+            "technique": technique,
+            "all_techniques": [
+                {"key": "breathing", **CRISIS_RESPONSES[language]["breathing"]},
+                {"key": "grounding", **CRISIS_RESPONSES[language]["grounding"]},
+                {"key": "self_compassion", **CRISIS_RESPONSES[language]["self_compassion"]}
+            ],
+            "emergency_contacts": {
+                "es": {
+                    "spain": "024 (Teléfono de la Esperanza)",
+                    "general": "112 (Emergencias)"
+                },
+                "en": {
+                    "us": "988 (Suicide & Crisis Lifeline)",
+                    "uk": "116 123 (Samaritans)"
+                }
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error in crisis support: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/favorites/save")
+async def save_favorite_message(msg: FavoriteMessage):
+    """Save a favorite Ágora message for later"""
+    try:
+        await db_insert_one(db.favorite_messages, msg.model_dump())
+        return {"id": msg.id, "status": "saved"}
+    except Exception as e:
+        logger.error(f"Error saving favorite: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/favorites/{device_id}")
+async def get_favorite_messages(device_id: str, category: Optional[str] = None):
+    """Get all saved favorite messages"""
+    try:
+        query = {"device_id": device_id}
+        if category:
+            query["category"] = category
+
+        messages = await db_find(
+            db.favorite_messages,
+            query,
+            sort=("created_at", -1)
+        )
+
+        return [{
+            "id": m["id"],
+            "content": m["message_content"],
+            "category": m.get("category", "general"),
+            "created_at": m.get("created_at").isoformat() if isinstance(m.get("created_at"), datetime) else m.get("created_at")
+        } for m in messages]
+    except Exception as e:
+        logger.error(f"Error getting favorites: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/favorites/{device_id}/{message_id}")
+async def delete_favorite_message(device_id: str, message_id: str):
+    """Delete a favorite message"""
+    try:
+        result = await db_delete_one(db.favorite_messages, {"id": message_id, "device_id": device_id})
+        return {"deleted": result.deleted_count > 0}
+    except Exception as e:
+        logger.error(f"Error deleting favorite: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ============== MESSAGE REACTIONS ==============
+
+@app.post("/chat/reaction")
+async def save_message_reaction(reaction: MessageReaction):
+    """Save a reaction emoji to a message"""
+    try:
+        # Check if reaction already exists
+        existing = await db_find_one(db.message_reactions, {
+            "device_id": reaction.device_id,
+            "message_id": reaction.message_id,
+            "reaction": reaction.reaction
+        })
+        
+        if not existing:
+            await db_insert_one(db.message_reactions, reaction.model_dump())
+        
+        return {"status": "saved", "reaction_id": reaction.id}
+    except Exception as e:
+        logger.error(f"Error saving reaction: {e}")
+        raise HTTPException(status_code=500, detail="Error saving reaction")
+
+@app.get("/chat/{device_id}/reaction/{message_id}")
+async def get_message_reactions(device_id: str, message_id: str):
+    """Get all reactions for a specific message"""
+    try:
+        reactions = await db_find(db.message_reactions, {
+            "device_id": device_id,
+            "message_id": message_id
+        })
+        
+        # Count reactions by emoji
+        reaction_counts = {}
+        for reaction in reactions:
+            emoji = reaction.get("reaction", "")
+            reaction_counts[emoji] = reaction_counts.get(emoji, 0) + 1
+        
+        return {"reactions": reaction_counts}
+    except Exception as e:
+        logger.error(f"Error getting reactions: {e}")
+        return {"reactions": {}}
+
+# ============== CYCLE ENDPOINTS ==============
+
+@app.post("/cycle", response_model=CycleEntry)
+async def create_cycle_entry(entry: CycleEntryCreate):
+    """Create a new cycle entry (hormonal cycle tracking)"""
+    try:
+        entry_obj = CycleEntry(**entry.model_dump())
+        await db_insert_one(db.cycle_entries, entry_obj.model_dump())
+        return entry_obj
+    except Exception as e:
+        logger.error(f"Error creating cycle entry: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/cycle/{device_id}", response_model=List[CycleEntry])
+async def get_cycle_entries(device_id: str, limit: int = 12):
+    """Get cycle entries for a device"""
+    try:
+        entries = await db_find(
+            db.cycle_entries,
+            {"device_id": device_id},
+            sort=("start_date", -1),
+            limit=limit
+        )
+        return [CycleEntry(**entry) for entry in entries]
+    except Exception as e:
+        logger.error(f"Error getting cycle entries: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ============== SUBSCRIPTION ENDPOINTS ==============
+
+async def get_subscription_status_internal(device_id: str) -> dict:
+    """Internal function to check subscription status"""
+    sub = await db_find_one(db.subscriptions, {"device_id": device_id})
+    
+    if not sub:
+        # Create new trial
+        new_sub = SubscriptionStatus(device_id=device_id)
+        await db_insert_one(db.subscriptions, new_sub.model_dump())
+        return {
+            "status": "trial",
+            "trial_remaining_seconds": 5400,  # 1.5 hours
+            "trial_end": new_sub.trial_end.isoformat(),
+            "is_admin": False
+        }
+    
+    # Check if admin (bypass all limits)
+    if sub.get("is_admin", False):
+        return {"status": "active", "is_admin": True}
+    
+    # Check if subscription is active
+    if sub.get("status") == "active":
+        return {"status": "active", "is_admin": False}
+    
+    # Check trial status
+    trial_end = sub.get("trial_end")
+    usage_seconds = sub.get("usage_seconds", 0)
+    
+    if usage_seconds >= 5400:  # 1.5 hours = 5400 seconds
+        await db_update_one(db.subscriptions,
+            {"device_id": device_id},
+            {"$set": {"status": "expired"}}
+        )
+        return {"status": "expired", "trial_remaining_seconds": 0, "is_admin": False}
+    
+    return {
+        "status": "trial",
+        "trial_remaining_seconds": 5400 - usage_seconds,
+        "trial_end": trial_end.isoformat() if trial_end else None,
+        "usage_seconds": usage_seconds,
+        "is_admin": False
+    }
+
+async def track_usage(device_id: str, seconds: int):
+    """Track usage for trial period"""
+    await db_update_one(db.subscriptions,
+        {"device_id": device_id},
+        {"$inc": {"usage_seconds": seconds}},
+        upsert=True
+    )
+
+@app.get("/subscription/{device_id}")
+async def get_subscription_status(device_id: str):
+    """Get subscription status for a device"""
+    return await get_subscription_status_internal(device_id)
+
+@app.post("/subscription/create-customer")
+async def create_customer(request: CustomerCreate):
+    """Create a Stripe customer"""
+    try:
+        customer = stripe.Customer.create(
+            email=request.email,
+            name=request.name,
+            metadata={"device_id": request.device_id}
+        )
+        
+        await db_update_one(db.subscriptions,
+            {"device_id": request.device_id},
+            {"$set": {
+                "stripe_customer_id": customer.id,
+                "email": request.email
+            }},
+            upsert=True
+        )
+        
+        return {"customer_id": customer.id}
+    except Exception as e:
+        logger.error(f"Error creating customer: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/subscription/create-payment-intent")
+async def create_payment_intent(device_id: str):
+    """Create a payment intent for subscription"""
+    try:
+        sub = await db_find_one(db.subscriptions, {"device_id": device_id})
+        if not sub or not sub.get("stripe_customer_id"):
+            raise HTTPException(status_code=400, detail="Customer not found")
+        
+        # Create payment intent for 10 EUR
+        intent = stripe.PaymentIntent.create(
+            amount=1000,  # 10 EUR in cents
+            currency="eur",
+            customer=sub["stripe_customer_id"],
+            metadata={"device_id": device_id}
+        )
+        
+        return {
+            "client_secret": intent.client_secret,
+            "payment_intent_id": intent.id
+        }
+    except stripe.error.StripeError as e:
+        logger.error(f"Stripe error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/subscription/activate")
+async def activate_subscription(device_id: str, payment_intent_id: str):
+    """Activate subscription after successful payment"""
+    try:
+        # Verify payment was successful
+        intent = stripe.PaymentIntent.retrieve(payment_intent_id)
+        
+        if intent.status != "succeeded":
+            raise HTTPException(status_code=400, detail="Payment not successful")
+        
+        # Activate subscription
+        await db_update_one(db.subscriptions,
+            {"device_id": device_id},
+            {"$set": {
+                "status": "active",
+                "activated_at": datetime.utcnow(),
+                "payment_intent_id": payment_intent_id
+            }}
+        )
+        
+        return {"status": "active", "message": "Subscription activated successfully"}
+    except Exception as e:
+        logger.error(f"Error activating subscription: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ============== WEATHER ENDPOINT ==============
+
+@app.get("/weather")
+async def get_weather(lat: float, lon: float):
+    """Get current weather (uses Open-Meteo free API)"""
+    try:
+        async with httpx.AsyncClient() as http_client:
+            response = await http_client.get(
+                "https://api.open-meteo.com/v1/forecast",
+                params={
+                    "latitude": lat,
+                    "longitude": lon,
+                    "current": "temperature_2m,relative_humidity_2m,weather_code,pressure_msl",
+                    "timezone": "auto"
+                }
+            )
+            data = response.json()
+            
+            current = data.get("current", {})
+            
+            # Map weather codes to descriptions
+            weather_descriptions = {
+                0: "clear", 1: "mainly_clear", 2: "partly_cloudy", 3: "overcast",
+                45: "fog", 48: "fog", 51: "drizzle", 53: "drizzle", 55: "drizzle",
+                61: "rain", 63: "rain", 65: "rain", 71: "snow", 73: "snow", 75: "snow",
+                80: "showers", 81: "showers", 82: "showers", 95: "thunderstorm"
+            }
+            
+            weather_code = current.get("weather_code", 0)
+            
+            return {
+                "temperature": current.get("temperature_2m"),
+                "humidity": current.get("relative_humidity_2m"),
+                "pressure": current.get("pressure_msl"),
+                "condition": weather_descriptions.get(weather_code, "unknown"),
+                "weather_code": weather_code
+            }
+    except Exception as e:
+        logger.error(f"Error getting weather: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ============== MONTHLY PAIN RECORD ENDPOINTS ==============
+
+@app.get("/monthly-record/{device_id}")
+async def get_monthly_record(device_id: str):
+    """Get the monthly pain record for a device"""
+    try:
+        record = await db_find_one(db.monthly_records, {"device_id": device_id})
+        if not record:
+            return {
+                "device_id": device_id,
+                "records": [],
+                "cycle_start_date": datetime.utcnow().isoformat(),
+                "created_at": datetime.utcnow().isoformat()
+            }
+
+        cycle_start = record.get("cycle_start_date", datetime.utcnow())
+        if isinstance(cycle_start, str):
+            cycle_start = datetime.fromisoformat(cycle_start.replace('Z', '+00:00').replace('+00:00', ''))
+
+        return {
+            "device_id": record["device_id"],
+            "records": record.get("records", []),
+            "cycle_start_date": cycle_start.isoformat() if isinstance(cycle_start, datetime) else cycle_start,
+            "created_at": record.get("created_at").isoformat() if isinstance(record.get("created_at"), datetime) else record.get("created_at")
+        }
+    except Exception as e:
+        logger.error(f"Error getting monthly record: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/monthly-record/{device_id}")
+async def save_monthly_record(device_id: str, data: MonthlyPainRecordCreate):
+    """Save or update the monthly pain record for a device"""
+    try:
+        cycle_start = datetime.fromisoformat(data.cycle_start_date.replace('Z', '+00:00').replace('+00:00', ''))
+        await db_update_one(
+            db.monthly_records,
+            {"device_id": device_id},
+            {
+                "$set": {
+                    "device_id": device_id,
+                    "records": data.records,
+                    "cycle_start_date": cycle_start,
+                    "updated_at": datetime.utcnow()
+                },
+                "$setOnInsert": {"created_at": datetime.utcnow()}
+            },
+            upsert=True
+        )
+        return {
+            "device_id": device_id,
+            "records": data.records,
+            "cycle_start_date": cycle_start.isoformat(),
+            "message": "Record saved successfully"
+        }
+    except Exception as e:
+        logger.error(f"Error saving monthly record: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/monthly-record/{device_id}")
+async def delete_monthly_record(device_id: str):
+    """Delete the monthly pain record (start fresh cycle)"""
+    try:
+        await db_delete_one(db.monthly_records, {"device_id": device_id})
+        return {"message": "Record deleted successfully", "device_id": device_id}
+    except Exception as e:
+        logger.error(f"Error deleting monthly record: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ============== ADMIN ENDPOINTS ==============
+
+class AdminCodeRequest(BaseModel):
+    device_id: str
+    code: str
+
+@app.post("/admin/verify")
+async def verify_admin_code(request: AdminCodeRequest):
+    """Verify admin code and grant unlimited access"""
+    try:
+        if request.code == ADMIN_CODE:
+            await db_update_one(
+                db.subscriptions,
+                {"device_id": request.device_id},
+                {"$set": {"is_admin": True, "status": "active"}},
+                upsert=True
+            )
+            return {"success": True, "message": "Admin access granted", "is_admin": True}
+        else:
+            return {"success": False, "message": "Invalid admin code", "is_admin": False}
+    except Exception as e:
+        logger.error(f"Error verifying admin code: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ============== RESOURCES ENDPOINTS ==============
+
+@app.get("/resources")
+async def get_resources(category: Optional[str] = None, language: str = "es", limit: int = 50):
+    """Get resources (articles and videos)"""
+    try:
+        query = {"language": language}
+        if category:
+            query["category"] = category
+
+        resources = await db_find(
+            db.resources,
+            query,
+            sort=("is_featured", -1),
+            limit=limit
+        )
+
+        # If no resources in DB, return demo resources about fibromyalgia
+        if not resources:
+            demo_resources = get_demo_resources(language)
+            if category:
+                demo_resources = [r for r in demo_resources if r["category"] == category]
+            return demo_resources[:limit]
+        
+        return [{
+            "id": r["id"],
+            "category": r["category"],
+            "type": r["type"],
+            "title": r["title"],
+            "description": r["description"],
+            "content": r.get("content"),
+            "video_url": r.get("video_url"),
+            "thumbnail_url": r.get("thumbnail_url"),
+            "author": r.get("author"),
+            "author_credentials": r.get("author_credentials"),
+            "duration": r.get("duration"),
+            "read_time": r.get("read_time"),
+            "is_featured": r.get("is_featured", False),
+        } for r in resources]
+    except Exception as e:
+        logger.error(f"Error getting resources: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+def get_demo_resources(language: str):
+    """Return demo fibromyalgia resources"""
+    if language == "es":
+        return [
+            {"id": "1", "category": "breathing", "type": "video", "title": "Respiración abdominal para el dolor", "description": "Técnica sencilla de 5 minutos para calmar el dolor y la ansiedad", "video_url": "https://www.youtube.com/watch?v=example", "duration": "5 min", "author": "Dra. María López", "is_featured": True, "thumbnail_url": None},
+            {"id": "2", "category": "stretching", "type": "article", "title": "Estiramientos suaves para fibromialgia", "description": "Guía de 10 estiramientos que puedes hacer sin agravar el dolor", "content": "Los estiramientos pueden mejorar la flexibilidad sin exacerbar los síntomas de fibromialgia...", "read_time": "8 min", "author": "Fisioterapeuta Juan García", "is_featured": True},
+            {"id": "3", "category": "nutrition", "type": "article", "title": "Alimentos antiinflamatorios para fibromialgia", "description": "Lista de alimentos que ayudan a reducir la inflamación", "content": "Una dieta antiinflamatoria puede significativamente mejorar los síntomas...", "read_time": "10 min", "author": "Nutricionista Ana Rodríguez", "is_featured": True},
+            {"id": "4", "category": "sleep", "type": "video", "title": "Rutina nocturna de 10 minutos", "description": "Prepara tu cuerpo para dormir mejor con esta rutina relajante", "video_url": "https://www.youtube.com/watch?v=example2", "duration": "10 min", "author": "Coach de sueño", "is_featured": False},
+            {"id": "5", "category": "mindfulness", "type": "article", "title": "Meditación guiada para el dolor crónico", "description": "Cómo usar mindfulness para cambiar tu relación con el dolor", "content": "La meditación mindfulness ha demostrado reducir la percepción del dolor en fibromialgia...", "read_time": "7 min", "author": "Psicóloga Clínica", "is_featured": False},
+            {"id": "6", "category": "professional", "type": "article", "title": "Qué esperar en una consulta con especialista", "description": "Guía para prepararte para tu próxima cita médica", "content": "Una buena comunicación con tu médico es clave. Aquí te mostramos cómo prepararte...", "read_time": "6 min", "author": "Dra. Especialista en Fibromialgia", "is_featured": False},
+        ]
+    else:  # English
+        return [
+            {"id": "1", "category": "breathing", "type": "video", "title": "Abdominal breathing for pain relief", "description": "Simple 5-minute technique to calm pain and anxiety", "video_url": "https://www.youtube.com/watch?v=example", "duration": "5 min", "author": "Dr. John Smith", "is_featured": True, "thumbnail_url": None},
+            {"id": "2", "category": "stretching", "type": "article", "title": "Gentle stretches for fibromyalgia", "description": "Guide to 10 stretches you can do without worsening pain", "content": "Stretching can improve flexibility without exacerbating fibromyalgia symptoms...", "read_time": "8 min", "author": "Physical Therapist James Wilson", "is_featured": True},
+            {"id": "3", "category": "nutrition", "type": "article", "title": "Anti-inflammatory foods for fibromyalgia", "description": "List of foods that help reduce inflammation", "content": "An anti-inflammatory diet can significantly improve your symptoms...", "read_time": "10 min", "author": "Nutritionist Sarah Brown", "is_featured": True},
+            {"id": "4", "category": "sleep", "type": "video", "title": "10-minute bedtime routine", "description": "Prepare your body for better sleep with this relaxing routine", "video_url": "https://www.youtube.com/watch?v=example2", "duration": "10 min", "author": "Sleep Coach", "is_featured": False},
+            {"id": "5", "category": "mindfulness", "type": "article", "title": "Guided meditation for chronic pain", "description": "How to use mindfulness to change your relationship with pain", "content": "Mindfulness meditation has shown to reduce pain perception in fibromyalgia...", "read_time": "7 min", "author": "Clinical Psychologist", "is_featured": False},
+            {"id": "6", "category": "professional", "type": "article", "title": "What to expect at a specialist appointment", "description": "Guide to prepare for your next medical visit", "content": "Good communication with your doctor is key. Here's how to prepare...", "read_time": "6 min", "author": "Fibromyalgia Specialist MD", "is_featured": False},
+        ]
+
+@app.get("/resources/categories")
+async def get_resource_categories(language: str = "es"):
+    """Get available resource categories with counts"""
+    categories_info = {
+        "breathing":    {"name_es": "Respiraciones",         "name_en": "Breathing",         "icon": "leaf"},
+        "stretching":   {"name_es": "Estiramientos",         "name_en": "Stretching",        "icon": "body"},
+        "nutrition":    {"name_es": "Nutrición",             "name_en": "Nutrition",         "icon": "nutrition"},
+        "sleep":        {"name_es": "Sueño",                 "name_en": "Sleep",             "icon": "moon"},
+        "mindfulness":  {"name_es": "Mindfulness",           "name_en": "Mindfulness",       "icon": "flower"},
+        "professional": {"name_es": "Consejos profesionales","name_en": "Professional advice","icon": "medkit"},
+    }
+    try:
+        # Try aggregate (works with real MongoDB)
+        if not using_mongomock:
+            pipeline = [
+                {"$match": {"language": language}},
+                {"$group": {"_id": "$category", "count": {"$sum": 1}}},
+                {"$sort": {"count": -1}}
+            ]
+            result = await db.resources.aggregate(pipeline).to_list(100)
+            if result:
+                return [{
+                    "id": cat["_id"],
+                    "name": categories_info.get(cat["_id"], {}).get(f"name_{language}", cat["_id"]),
+                    "icon": categories_info.get(cat["_id"], {}).get("icon", "document"),
+                    "count": cat["count"]
+                } for cat in result]
+
+        # Fallback for mongomock: count manually
+        counts: dict = {}
+        all_resources = await db_find(db.resources, {"language": language})
+        for r in all_resources:
+            cat = r.get("category", "")
+            counts[cat] = counts.get(cat, 0) + 1
+
+        if not counts:
+            # No resources seeded yet — return all categories with count 0
+            return [
+                {
+                    "id": cat_id,
+                    "name": meta.get(f"name_{language}", cat_id),
+                    "icon": meta["icon"],
+                    "count": 0,
+                }
+                for cat_id, meta in categories_info.items()
+            ]
+
+        return [
+            {
+                "id": cat_id,
+                "name": categories_info.get(cat_id, {}).get(f"name_{language}", cat_id),
+                "icon": categories_info.get(cat_id, {}).get("icon", "document"),
+                "count": count,
+            }
+            for cat_id, count in sorted(counts.items(), key=lambda x: -x[1])
+        ]
+    except Exception as e:
+        logger.error(f"Error getting resource categories: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/resources")
+async def create_resource(resource: Resource):
+    """Create a new resource (admin only)"""
+    try:
+        await db_insert_one(db.resources, resource.model_dump())
+        return {"success": True, "id": resource.id}
+    except Exception as e:
+        logger.error(f"Error creating resource: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Seed some initial resources
+@app.post("/resources/seed")
+async def seed_resources():
+    """Seed initial resources for testing"""
+    try:
+        await db_delete_many(db.resources, {})
+        
+        initial_resources = [
+            {
+                "id": str(uuid.uuid4()),
+                "category": "breathing",
+                "type": "video",
+                "title": "Respiración diafragmática para el dolor",
+                "description": "Técnica de respiración profunda que ayuda a reducir la tensión muscular y calmar el sistema nervioso.",
+                "video_url": "https://www.youtube.com/watch?v=YRPh_GaiL8s",
+                "thumbnail_url": "https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=400",
+                "author": "Fisioterapia Online",
+                "author_credentials": "Fisioterapeutas especializados",
+                "duration": "5:42",
+                "language": "es",
+                "is_featured": True,
+                "order": 1,
+                "created_at": datetime.utcnow()
+            },
+            {
+                "id": str(uuid.uuid4()),
+                "category": "stretching",
+                "type": "video",
+                "title": "Estiramientos suaves para fibromialgia",
+                "description": "Rutina de estiramientos suaves diseñada específicamente para personas con fibromialgia.",
+                "video_url": "https://www.youtube.com/watch?v=4pKly2JojMw",
+                "thumbnail_url": "https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=400",
+                "author": "Fibromialgia Noticias",
+                "author_credentials": "Especialistas en fibromialgia",
+                "duration": "15:30",
+                "language": "es",
+                "is_featured": True,
+                "order": 2,
+                "created_at": datetime.utcnow()
+            },
+            {
+                "id": str(uuid.uuid4()),
+                "category": "mindfulness",
+                "type": "video",
+                "title": "Meditación guiada para el dolor crónico",
+                "description": "Meditación de 10 minutos para ayudar a gestionar el dolor crónico con técnicas de mindfulness.",
+                "video_url": "https://www.youtube.com/watch?v=inpok4MKVLM",
+                "thumbnail_url": "https://images.unsplash.com/photo-1499209974431-9dddcece7f88?w=400",
+                "author": "Mindfulness España",
+                "author_credentials": "Instructores certificados de mindfulness",
+                "duration": "10:00",
+                "language": "es",
+                "is_featured": False,
+                "order": 3,
+                "created_at": datetime.utcnow()
+            },
+            {
+                "id": str(uuid.uuid4()),
+                "category": "sleep",
+                "type": "video",
+                "title": "Técnicas para mejorar el sueño",
+                "description": "Consejos y técnicas para mejorar la calidad del sueño cuando tienes dolor crónico.",
+                "video_url": "https://www.youtube.com/watch?v=t0kACis_dJE",
+                "thumbnail_url": "https://images.unsplash.com/photo-1541781774459-bb2af2f05b55?w=400",
+                "author": "Salud y Bienestar",
+                "author_credentials": "Especialistas en trastornos del sueño",
+                "duration": "8:15",
+                "language": "es",
+                "is_featured": False,
+                "order": 4,
+                "created_at": datetime.utcnow()
+            },
+            {
+                "id": str(uuid.uuid4()),
+                "category": "professional",
+                "type": "video",
+                "title": "¿Qué es la fibromialgia? Explicación médica",
+                "description": "Un profesional médico explica qué es la fibromialgia, sus síntomas y opciones de tratamiento.",
+                "video_url": "https://www.youtube.com/watch?v=_4Vt88jIKAs",
+                "thumbnail_url": "https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=400",
+                "author": "Dr. Medical",
+                "author_credentials": "Reumatólogo",
+                "duration": "12:45",
+                "language": "es",
+                "is_featured": False,
+                "order": 5,
+                "created_at": datetime.utcnow()
+            },
+            {
+                "id": str(uuid.uuid4()),
+                "category": "nutrition",
+                "type": "video",
+                "title": "Alimentación antiinflamatoria",
+                "description": "Alimentos que pueden ayudar a reducir la inflamación y mejorar los síntomas de fibromialgia.",
+                "video_url": "https://www.youtube.com/watch?v=Yv1v7-RFnNE",
+                "thumbnail_url": "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=400",
+                "author": "Nutrición Consciente",
+                "author_credentials": "Nutricionistas especializados",
+                "duration": "11:20",
+                "language": "es",
+                "is_featured": False,
+                "order": 6,
+                "created_at": datetime.utcnow()
+            }
+        ]
+        
+        # Insert using helper (mongomock-safe)
+        for resource in initial_resources:
+            await db_insert_one(db.resources, resource)
+        return {"message": "Resources seeded successfully", "count": len(initial_resources)}
+    except Exception as e:
+        logger.error(f"Error seeding resources: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ============== ROOT ENDPOINTS ==============
+
+@app.get("/")
+async def root():
+    return {"message": "Ágora Mujeres API", "version": "1.0.0"}
+
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy"}
+
+# Include the router in the main app
+##app.include_router(api_router)
+
+# Configure CORS - allow development and production origins
+allowed_origins = ['*']
+allowed_origins = [origin.strip() for origin in allowed_origins]  # Remove whitespace
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_credentials=True,
+    allow_origins=allowed_origins,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Entry point for running the server directly
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")

@@ -26,7 +26,7 @@ ADMIN_CODE = os.environ.get("ADMIN_CODE", "AGORA2025ADMIN")
 stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 
-TRIAL_SECONDS = 7200  # 2 hours
+TRIAL_SECONDS = 5400  # 1.5 hours
 
 
 # ── Internal helpers (imported by other routers) ──────────────────────────────

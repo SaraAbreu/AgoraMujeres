@@ -24,10 +24,10 @@ function resolveApiUrl(): string {
   if (fromEnv?.trim()) return fromEnv.trim();
 
   // For desarrollo local en navegador, usar localhost
-  return 'http://localhost:8000';
+  return 'http://217.154.186.186/api';
 }
 
-export const API_BASE = "https://agoramujeres.syntexia-solutions.es/api";
+export const API_BASE = process.env.EXPO_PUBLIC_API_URL || "https://agoramujeres.syntexia-solutions.es/api";
 
 const api = axios.create({
   baseURL: API_BASE,
@@ -38,14 +38,14 @@ const api = axios.create({
 api.interceptors.response.use(
   (res) => res,
   (error) => {
-    const status  = error?.response?.status;
-    const detail  = error?.response?.data?.detail;
+    const status = error?.response?.status;
+    const detail = error?.response?.data?.detail;
     const message =
       status === 422 ? `Datos inválidos enviados al servidor (422)${detail ? ': ' + JSON.stringify(detail) : ''}` :
-      status === 404 ? 'Recurso no encontrado (404)' :
-      status === 500 ? 'Error interno del servidor (500)' :
-      !error.response ? 'Sin conexión con el servidor' :
-      `Error ${status}`;
+        status === 404 ? 'Recurso no encontrado (404)' :
+          status === 500 ? 'Error interno del servidor (500)' :
+            !error.response ? 'Sin conexión con el servidor' :
+              `Error ${status}`;
     return Promise.reject(new Error(message));
   }
 );
@@ -69,27 +69,27 @@ function requireDeviceId(deviceId: string | null | undefined, caller: string): s
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface EmotionalState {
-  calma?:         number;
-  fatiga?:        number;
+  calma?: number;
+  fatiga?: number;
   niebla_mental?: number;
-  dolor_difuso?:  number;
-  gratitud?:      number;
-  tension?:       number;
-  [key: string]:  number | undefined;
+  dolor_difuso?: number;
+  gratitud?: number;
+  tension?: number;
+  [key: string]: number | undefined;
 }
 
 export interface PhysicalState {
-  nivel_dolor:  number;
-  energia:      number;
+  nivel_dolor: number;
+  energia: number;
   sensibilidad: number;
 }
 
 export interface DiaryEntry {
-  id:         string;
-  device_id:  string;
-  texto:      string;
-  dolor:      number;
-  tags:       string[];
+  id: string;
+  device_id: string;
+  texto: string;
+  dolor: number;
+  tags: string[];
   created_at: string;
 }
 
@@ -104,94 +104,94 @@ export interface DiaryEntryCreate {
 }
 
 export interface Exercise {
-  title:       string;
+  title: string;
   description: string;
-  duration:    string;
-  difficulty:  'fácil' | 'moderado' | 'avanzado';
+  duration: string;
+  difficulty: 'fácil' | 'moderado' | 'avanzado';
 }
 
 export interface ChatMessage {
-  role:       'user' | 'assistant';
-  content:    string;
+  role: 'user' | 'assistant';
+  content: string;
   exercises?: Exercise[];
   created_at: string;
 }
 
 export interface Conversation {
-  id:         string;
-  title:      string;
+  id: string;
+  title: string;
   created_at: string;
   updated_at: string;
 }
 
 export interface SubscriptionStatus {
-  status:                   'trial' | 'active' | 'expired';
+  status: 'trial' | 'active' | 'expired';
   trial_remaining_seconds?: number;
-  usage_seconds?:           number;
-  is_admin?:                boolean;
+  usage_seconds?: number;
+  is_admin?: boolean;
 }
 
 export interface CycleEntry {
-  id:         string;
-  device_id:  string;
+  id: string;
+  device_id: string;
   start_date: string;
-  end_date?:  string;
-  notes?:     string;
+  end_date?: string;
+  notes?: string;
   created_at: string;
 }
 
 export interface WeatherData {
   temperature: number;
-  humidity:    number;
-  pressure:    number;
-  condition:   string;
+  humidity: number;
+  pressure: number;
+  condition: string;
 }
 
 export interface Patterns {
-  period_days:        number;
-  total_entries:      number;
+  period_days: number;
+  total_entries: number;
   emotional_averages: EmotionalState;
   physical_averages?: PhysicalState;
-  common_words:       [string, number][];
+  common_words: [string, number][];
   trends: {
     highest_emotional: string;
-    lowest_emotional:  string;
+    lowest_emotional: string;
   };
 }
 
 export interface MonthlyPainRecord {
-  device_id:        string;
-  records:          PainRecord[];
+  device_id: string;
+  records: PainRecord[];
   cycle_start_date: string;
-  created_at?:      string;
+  created_at?: string;
 }
 
 export interface PainRecord {
-  date:      string;
+  date: string;
   intensity: number;
-  notes?:    string;
+  notes?: string;
 }
 
 export interface Resource {
-  id:                  string;
-  category:            'breathing' | 'stretching' | 'nutrition' | 'sleep' | 'mindfulness' | 'professional';
-  type:                'article' | 'video';
-  title:               string;
-  description:         string;
-  content?:            string;
-  video_url?:          string;
-  thumbnail_url?:      string;
-  author?:             string;
+  id: string;
+  category: 'breathing' | 'stretching' | 'nutrition' | 'sleep' | 'mindfulness' | 'professional';
+  type: 'article' | 'video';
+  title: string;
+  description: string;
+  content?: string;
+  video_url?: string;
+  thumbnail_url?: string;
+  author?: string;
   author_credentials?: string;
-  duration?:           string;
-  read_time?:          string;
-  is_featured:         boolean;
+  duration?: string;
+  read_time?: string;
+  is_featured: boolean;
 }
 
 export interface ResourceCategory {
-  id:    string;
-  name:  string;
-  icon:  string;
+  id: string;
+  name: string;
+  icon: string;
   count: number;
 }
 
@@ -203,24 +203,24 @@ export interface CrisisResponse {
 }
 
 export interface ChatResponse {
-  response:              string;
-  conversation_id:       string;
+  response: string;
+  conversation_id: string;
   requires_subscription: boolean;
-  is_first_time?:        boolean;
-  is_offline_mode?:      boolean;
-  exercises?:            Exercise[];
+  is_first_time?: boolean;
+  is_offline_mode?: boolean;
+  exercises?: Exercise[];
 }
 
 export interface AdminVerifyResponse {
-  success:  boolean;
-  message:  string;
+  success: boolean;
+  message: string;
   is_admin: boolean;
 }
 
 export interface FavoriteMessage {
-  id:         string;
-  content:    string;
-  category:   string;
+  id: string;
+  content: string;
+  category: string;
   created_at: string;
 }
 
@@ -274,7 +274,7 @@ export async function sendChatMessage(
   language = 'es'
 ): Promise<ChatResponse> {
   requireDeviceId(deviceId, 'sendChatMessage');
-  
+
   const lastMessage = messages[messages.length - 1];
   // Enviamos el conversation_id al backend para que sepa que la charla continúa
   const { data } = await api.post<ChatResponse>('/chat', {

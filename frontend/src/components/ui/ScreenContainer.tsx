@@ -1,6 +1,8 @@
 import React from 'react';
-import { View, Text, StyleSheet, ViewStyle } from 'react-native';
+import { View, Text, StyleSheet, ViewStyle, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { colors, sp, textStyles } from '../../theme';
 
 interface Props {
@@ -10,15 +12,22 @@ interface Props {
   headerRight?: React.ReactNode;
   style?: ViewStyle;
   padded?: boolean;
+  showBack?: boolean;
 }
 
-export function ScreenContainer({ children, title, subtitle, headerRight, style, padded = true }: Props) {
+export function ScreenContainer({ children, title, subtitle, headerRight, style, padded = true, showBack = false }: Props) {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + 8 }, style]}>
-      {(title || headerRight) && (
+      {(title || headerRight || showBack) && (
         <View style={[styles.header, padded && styles.padded]}>
+          {showBack && (
+            <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+              <Ionicons name="chevron-back" size={22} color={colors.textPrimary} />
+            </TouchableOpacity>
+          )}
           <View style={styles.headerText}>
             {title && <Text style={styles.title}>{title}</Text>}
             {subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
@@ -56,4 +65,14 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   content: { flex: 1 },
+  backBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: sp.sm,
+    marginBottom: 2,
+  },
 });

@@ -1,0 +1,18 @@
+[0;1;31m×[0m agora.service - Gunicorn instance to serve Agora Backend
+     Loaded: loaded (]8;;file://ubuntu/etc/systemd/system/agora.service/etc/systemd/system/agora.service]8;;; [0;1;32menabled[0m; preset: [0;1;32menabled[0m)
+     Active: [0;1;31mfailed[0m (Result: exit-code) since Sat 2026-03-28 16:41:03 UTC; 4s ago
+   Duration: 2.560s
+    Process: 1484458 ExecStart=/var/www/agora-backend/venv/bin/uvicorn server:app --host 0.0.0.0 --port 8000 [0;1;31m(code=exited, status=1/FAILURE)[0m
+   Main PID: 1484458 (code=exited, status=1/FAILURE)
+        CPU: 1.553s
+
+Mar 28 16:41:02 ubuntu uvicorn[1484458]: 2026-03-28 16:41:02,737 - server - INFO - ✅ Connected to MongoDB
+Mar 28 16:41:02 ubuntu uvicorn[1484458]: [DEBUG] Conectado a MongoDB Atlas.
+Mar 28 16:41:02 ubuntu uvicorn[1484458]: INFO:     Application startup complete.
+Mar 28 16:41:02 ubuntu uvicorn[1484458]: ERROR:    [Errno 98] error while attempting to bind on address ('0.0.0.0', 8000): address already in use
+Mar 28 16:41:02 ubuntu uvicorn[1484458]: INFO:     Waiting for application shutdown.
+Mar 28 16:41:02 ubuntu uvicorn[1484458]: 2026-03-28 16:41:02,780 - server - INFO - MongoDB connection closed
+Mar 28 16:41:02 ubuntu uvicorn[1484458]: INFO:     Application shutdown complete.
+Mar 28 16:41:03 ubuntu systemd[1]: [0;1;39m[0;1;31m[0;1;39magora.service: Main process exited, code=exited, status=1/FAILURE[0m
+Mar 28 16:41:03 ubuntu systemd[1]: [0;1;38;5;185m[0;1;39m[0;1;38;5;185magora.service: Failed with result 'exit-code'.[0m
+Mar 28 16:41:03 ubuntu systemd[1]: agora.service: Consumed 1.553s CPU time.

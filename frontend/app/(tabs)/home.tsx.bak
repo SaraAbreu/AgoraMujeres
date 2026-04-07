@@ -1,0 +1,261 @@
+import React, { useState, useRef, useEffect } from 'react';
+import {
+  View, Text, TextInput, TouchableOpacity,
+  Platform, FlatList, StyleSheet, ActivityIndicator, Animated,
+} from 'react-native';
+import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { sendChatMessage, clearChatHistory } from '../../src/services/api';
+import { useUserStore } from '../../src/store/useStore';
+
+const T = {
+  forest: '#4A664D', forestDim: '#3A5140', moss: '#6B8F6E', sage: '#A8C5A0',
+  mint: '#D4E8D0', mintSoft: '#EAF4E8', cream: '#F8F7F2', parchment: '#F0EDE4',
+  muted: '#9A958E', charcoal: '#3D3A35', white: '#FFFFFF', warm: '#E8E2D8',
+};
+
+const GREETING = 'Hola. Soy Ágora, tu compañera en este camino. Aquí no necesitas explicarte ni justificarte. Solo ser tú. ¿Cómo te sientes hoy?';
+
+type Msg = { content: string; role: 'user' | 'assistant'; id: string };
+
+function TypingDots() {
+  const dots = [useRef(new Animated.Value(0)).current, useRef(new Animated.Value(0)).current, useRef(new Animated.Value(0)).current];
+  useEffect(() => {
+    const anims = dots.map((d, i) =>
+      Animated.loop(Animated.sequence([
+        Animated.delay(i * 200),
+        Animated.timing(d, { toValue: -5, duration: 300, useNativeDriver: true }),
+        Animated.timing(d, { toValue: 0,  duration: 300, useNativeDriver: true }),
+        Animated.delay(600),
+      ]))
+    );
+    Animated.parallel(anims).start();
+    return () => anims.forEach(a => a.stop());
+  }, []);
+  return (
+    <View style={st.typingContainer}>
+      <View style={st.typingBubble}>
+        {dots.map((d, i) => (
+          <Animated.View key={i} style={[st.typingDot, { transform: [{ translateY: d }] }]} />
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function Bubble({ msg }: { msg: Msg }) {
+  const isUser = msg.role === 'user';
+  const fade = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(fade, { toValue: 1, duration: 300, useNativeDriver: true }).start();
+  }, []);
+  return (
+    <Animated.View style={[st.bubbleRow, isUser ? st.rowUser : st.rowAssistant, { opacity: fade }]}>
+      {!isUser && (
+        <View style={st.avatar}>
+          <Text style={st.avatarText}>Á</Text>
+        </View>
+      )}
+      <View style={[st.bubble, isUser ? st.bubbleUser : st.bubbleAssistant]}>
+        <Text style={isUser ? st.textUser : st.textAssistant}>{msg.content}</Text>
+      </View>
+    </Animated.View>
+  );
+}
+
+export default function ChatScreen() {
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const { deviceId } = useUserStore();
+
+  const [messages, setMessages] = useState<Msg[]>([]);
+  const [input, setInput] = useState('');
+  const [isSending, setIsSending] = useState(false);
+  const [isTyping, setIsTyping] = useState(false);
+  const [conversationId, setConvId] = useState<string | undefined>();
+  const listRef = useRef<FlatList>(null);
+
+  const scroll = () => setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
+
+  useEffect(() => {
+    if (!deviceId || messages.length > 0) return;
+    setMessages([{ role: 'assistant', content: GREETING, id: '0' }]);
+  }, [deviceId]);
+
+  useEffect(() => { scroll(); }, [messages, isTyping]);
+
+  const send = async () => {
+    const text = input.trim();
+    if (!text || !deviceId || isSending) return;
+    const userMsg: Msg = { content: text, role: 'user', id: Date.now().toString() };
+    setMessages(prev => [...prev, userMsg]);
+    setInput('');
+    setIsSending(true);
+    setIsTyping(true);
+    try {
+      const res = await sendChatMessage([{ role: 'user', content: text }], deviceId, conversationId);
+      if (res.conversation_id) setConvId(res.conversation_id);
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: res.response,
+        id: (Date.now() + 1).toString(),
+      }]);
+    } catch {
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: 'Mi conexión se ha debilitado un momento. ¿Volvemos a intentarlo?',
+        id: (Date.now() + 1).toString(),
+      }]);
+    } finally {
+      setIsSending(false);
+      setIsTyping(false);
+    }
+  };
+
+  const clearChat = async () => {
+    if (!deviceId) return;
+    await clearChatHistory(deviceId).catch(() => {});
+    setMessages([{ role: 'assistant', content: GREETING, id: '0' }]);
+    setConvId(undefined);
+  };
+
+  return (
+    <View style={[st.root, { paddingTop: insets.top }]}>
+      {/* Header */}
+      <LinearGradient
+        colors={[T.forestDim, T.forest]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+        style={st.header}
+      >
+        <TouchableOpacity onPress={() => router.back()} style={st.backBtn}>
+          <Ionicons name="chevron-back" size={22} color={T.mint} />
+        </TouchableOpacity>
+        <View style={st.headerAvatar}>
+          <Text style={st.headerAvatarText}>Á</Text>
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={st.headerTitle}>Ágora</Text>
+          <Text style={st.headerSub}>Tu acompañante siempre está aquí</Text>
+        </View>
+        <TouchableOpacity onPress={clearChat} style={st.clearBtn}>
+          <Ionicons name="refresh-outline" size={20} color={T.sage} />
+        </TouchableOpacity>
+      </LinearGradient>
+
+      {/* Messages */}
+      <FlatList
+        ref={listRef}
+        data={messages}
+        keyExtractor={m => m.id}
+        renderItem={({ item }) => <Bubble msg={item} />}
+        contentContainerStyle={[st.list, { paddingBottom: 16 }]}
+        ListFooterComponent={isTyping ? <TypingDots /> : null}
+        showsVerticalScrollIndicator={false}
+        style={{ flex: 1 }}
+      />
+
+      {/* Input — siempre visible */}
+      <View style={[st.inputBar, { paddingBottom: insets.bottom + (Platform.OS === 'web' ? 80 : 12) }]}>
+        <TextInput
+          style={st.input}
+          value={input}
+          onChangeText={setInput}
+          placeholder="Habla con Ágora..."
+          placeholderTextColor={T.muted}
+          multiline
+          maxLength={500}
+          blurOnSubmit={false}
+          onSubmitEditing={send}
+        />
+        <TouchableOpacity
+          style={[st.sendBtn, (!input.trim() || isSending) && st.sendBtnOff]}
+          onPress={send}
+          disabled={!input.trim() || isSending}
+        >
+          {isSending
+            ? <ActivityIndicator color={T.white} size="small" />
+            : <Ionicons name="arrow-up" size={18} color={T.white} />}
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
+const st = StyleSheet.create({
+  root: { flex: 1, backgroundColor: T.cream, flexDirection: 'column' },
+
+  header: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    paddingHorizontal: 16, paddingVertical: 14,
+  },
+  backBtn: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  headerAvatar: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  headerAvatarText: { color: T.white, fontSize: 16, fontWeight: '700' },
+  headerTitle: { color: T.white, fontSize: 17, fontWeight: '700' },
+  headerSub: { color: T.sage, fontSize: 11, marginTop: 1 },
+  clearBtn: { padding: 8 },
+
+  list: { padding: 16, gap: 4 },
+
+  bubbleRow: { flexDirection: 'row', marginBottom: 6, alignItems: 'flex-end', gap: 8 },
+  rowUser: { justifyContent: 'flex-end' },
+  rowAssistant: { justifyContent: 'flex-start' },
+
+  avatar: {
+    width: 30, height: 30, borderRadius: 15,
+    backgroundColor: T.forest,
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: 2,
+  },
+  avatarText: { color: T.white, fontSize: 12, fontWeight: '700' },
+
+  bubble: { maxWidth: '78%', padding: 14, borderRadius: 20 },
+  bubbleUser: { backgroundColor: T.forest, borderBottomRightRadius: 4 },
+  bubbleAssistant: {
+    backgroundColor: T.white, borderBottomLeftRadius: 4,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06, shadowRadius: 6, elevation: 2,
+  },
+  textUser: { color: T.white, fontSize: 15, lineHeight: 22 },
+  textAssistant: { color: T.charcoal, fontSize: 15, lineHeight: 22 },
+
+  typingContainer: { paddingLeft: 42, marginBottom: 12 },
+  typingBubble: {
+    flexDirection: 'row', gap: 5, padding: 14,
+    backgroundColor: T.white, borderRadius: 20, borderBottomLeftRadius: 4,
+    alignSelf: 'flex-start', alignItems: 'center',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
+  },
+  typingDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: T.moss },
+
+  inputBar: {
+    flexDirection: 'row', alignItems: 'flex-end', gap: 10,
+    backgroundColor: T.white,
+    paddingHorizontal: 14, paddingTop: 12,
+    borderTopWidth: 1, borderTopColor: '#EDEAE4',
+    shadowColor: '#000', shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.04, shadowRadius: 8, elevation: 6,
+  },
+  input: {
+    flex: 1, fontSize: 15, color: T.charcoal,
+    maxHeight: 100, paddingVertical: 8, lineHeight: 21,
+  },
+  sendBtn: {
+    width: 38, height: 38, borderRadius: 19,
+    backgroundColor: T.forest,
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: T.forest, shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3, shadowRadius: 6, elevation: 4,
+  },
+  sendBtnOff: { backgroundColor: T.muted, shadowOpacity: 0 },
+});

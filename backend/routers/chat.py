@@ -4,6 +4,9 @@ Chat router — Ágora conversation endpoints.
 
 import logging
 import os
+from dotenv import load_dotenv
+from pathlib import Path
+load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env", override=True)
 import uuid
 from datetime import datetime
 from typing import List, Optional
@@ -111,6 +114,7 @@ async def _generate_response(
     """
     api_key = os.environ.get("OPENAI_API_KEY", "")
     use_openai = bool(api_key.strip() and api_key != "sk-your-openai-api-key-here")
+    print(f"[CHAT DEBUG] key_len={len(api_key)} use_openai={use_openai} key_start={api_key[:15]}", flush=True)
 
     if not use_openai:
         return get_smart_response(request.message, request.language, is_first_message), True
@@ -190,7 +194,7 @@ async def _generate_response(
             model="gpt-4o-mini",
             messages=messages,
             temperature=0.7,
-            max_tokens=300,
+            max_tokens=1000,
         )
         return reply.choices[0].message.content, False
 

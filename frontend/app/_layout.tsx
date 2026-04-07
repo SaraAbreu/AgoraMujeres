@@ -4,45 +4,47 @@ import SplashAgoraAnimated from '../src/components/SplashAgoraAnimated';
 import { useUserStore } from '../src/store/useStore';
 
 export default function RootLayout() {
-  const [appIsReady, setAppIsReady] = useState(false);
+  const already = typeof window !== 'undefined' && sessionStorage.getItem('agora_ready') === '1';
+  const [appIsReady, setAppIsReady] = useState(already);
   const segments = useSegments();
   const router = useRouter();
 
-  // ── 1. Splash 3 segundos ──────────────────────────────────
   useEffect(() => {
-    const t = setTimeout(() => setAppIsReady(true), 3000);
+    if (already) return;
+    const t = setTimeout(() => {
+      if (typeof window !== 'undefined') sessionStorage.setItem('agora_ready', '1');
+      setAppIsReady(true);
+    }, 3000);
     return () => clearTimeout(t);
   }, []);
 
-  // ── 2. Routing tras el splash ─────────────────────────────
+  const userToken = useUserStore((state) => state.userToken);
+
   useEffect(() => {
     if (!appIsReady) return;
 
-    // Pequeño delay para que Zustand-persist hidrate desde localStorage.
-    // En web, el store arranca con null y se rellena unos ms después.
-    const t = setTimeout(() => {
-      const inAuth = segments[0] === '(auth)';
-      const inTabs = segments[0] === '(tabs)';
-      if (inAuth || inTabs) return;
+    const inAuth = segments[0] === '(auth)';
+    const inTabs = segments[0] === '(tabs)';
+    const inLanding = segments.length === 0 || segments[0] === 'index';
 
-      // getState() es síncrono — siempre tiene el valor actual,
-      // no el de la closure inicial del efecto.
-      const token = useUserStore.getState().userToken;
-
-      if (token) {
-        router.replace('/(tabs)/home');
-      } else {
-        router.replace('/(auth)/onboarding');
-      }
-    }, 200);
-
-    return () => clearTimeout(t);
-  }, [appIsReady]);
+    if (!userToken && inTabs) {
+      router.replace('/');
+    } else if (!userToken && inAuth) {
+      // flujo normal de login, no tocar
+    } else if (!userToken && !inLanding && !inAuth) {
+      router.replace('/');
+    } else if (userToken && inAuth) {
+      router.replace('/(tabs)/home');
+    } else if (userToken && inLanding) {
+      router.replace('/(tabs)/home');
+    }
+  }, [appIsReady, userToken, segments]);
 
   if (!appIsReady) return <SplashAgoraAnimated />;
 
   return (
     <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="index" options={{ headerShown: false }} />
       <Stack.Screen name="(auth)" options={{ headerShown: false }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
     </Stack>

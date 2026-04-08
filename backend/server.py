@@ -1831,7 +1831,8 @@ async def stripe_webhook_handler(request: Request, stripe_signature: str = Heade
         raise HTTPException(status_code=400, detail="Invalid signature.")
     if event["type"] == "checkout.session.completed":
         session = event["data"]["object"]
-        device_id = session.get("metadata", {}).get("device_id")
+        metadata = session.get("metadata") or {}
+        device_id = metadata.get("device_id") if isinstance(metadata, dict) else None
         customer_id = session.get("customer")
         if device_id:
             await _activate(device_id, session["id"], customer_id)
@@ -1845,7 +1846,8 @@ async def stripe_webhook_handler(request: Request, stripe_signature: str = Heade
             logger.info(f"Subscription activated via checkout for device {device_id}")
     elif event["type"] == "payment_intent.succeeded":
         pi = event["data"]["object"]
-        device_id = pi.get("metadata", {}).get("device_id")
+        metadata = pi.get("metadata") or {}
+        device_id = metadata.get("device_id") if isinstance(metadata, dict) else None
         if device_id:
             await _activate(device_id, pi["id"], pi.get("customer"))
     return {"received": True}

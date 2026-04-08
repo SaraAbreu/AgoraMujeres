@@ -298,12 +298,20 @@ export default function HomeScreen() {
     if (!deviceId) return;
     setBuying(plan);
     try {
-      if (userData?.email) await createCustomer(deviceId, userData.email, userData.name).catch(() => { });
-      const intent = await createPaymentIntent(deviceId);
-      await activateSubscription(deviceId, intent.payment_intent_id || intent.id);
-      setTrial(false); setPlans(false);
-      await loadSub();
-    } catch { } finally { setBuying(null); }
+      const res = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/subscription/create-checkout-session?device_id=${deviceId}&plan=${plan}`, {
+        method: 'POST',
+      });
+      const data = await res.json();
+      if (data.url) {
+        if (typeof window !== 'undefined') {
+          window.location.href = data.url;
+        }
+      }
+    } catch (e) {
+      console.error('Checkout error:', e);
+    } finally {
+      setBuying(null);
+    }
   };
 
   const trialLabel =

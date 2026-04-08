@@ -124,6 +124,40 @@ async def create_payment_intent(device_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+
+@router.post("/create-checkout-session")
+async def create_checkout_session(device_id: str, plan: str = "monthly"):
+    price_id = os.environ.get(
+        "STRIPE_PRICE_YEARLY" if plan == "yearly" else "STRIPE_PRICE_MONTHLY"
+    )
+    if not price_id:
+        raise HTTPException(status_code=500, detail="Price ID not configured.")
+
+    sub = await db_find_one(db.subscriptions, {"device_id": device_id})
+    customer_id = sub.get("stripe_customer_id") if sub else None
+
+    try:
+        params = {
+            "payment_method_types": ["card"],
+            "line_items": [{"price": price_id, "quantity": 1}],
+            "mode": "subscription",
+            "success_url": "https://agoramujeres.syntexia-solutions.es/home?payment=success",
+            "cancel_url": "https://agoramujeres.syntexia-solutions.es/home?payment=cancelled",
+            "metadata": {"device_id": device_id},
+            "subscription_data": {"metadata": {"device_id": device_id}},
+        }
+        if customer_id:
+            params["customer"] = customer_id
+        else:
+            if sub and sub.get("email"):
+                params["customer_email"] = sub["email"]
+
+        session = stripe.checkout.Session.create(**params)
+        return {"url": session.url}
+    except stripe.error.StripeError as e:
+        logger.error(f"Stripe checkout error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.post("/stripe-webhook")
 async def stripe_webhook(request: Request, stripe_signature: str = Header(None)):
     """
@@ -154,6 +188,21 @@ async def stripe_webhook(request: Request, stripe_signature: str = Header(None))
         if device_id:
             await _activate(device_id, pi["id"], pi.get("customer"))
             logger.info(f"Subscription activated via webhook for device {device_id}")
+
+    elif event["type"] == "checkout.session.completed":
+        session = event["data"]["object"]
+        device_id = session.get("metadata", {}).get("device_id")
+        customer_id = session.get("customer")
+        if device_id:
+            await _activate(device_id, session["id"], customer_id)
+            if customer_id:
+                await db_update_one(
+                    db.subscriptions,
+                    {"device_id": device_id},
+                    {"$set": {"stripe_customer_id": customer_id}},
+                    upsert=True,
+                )
+            logger.info(f"Subscription activated via checkout for device {device_id}")
 
     # Always return 200 so Stripe stops retrying
     return {"received": True}

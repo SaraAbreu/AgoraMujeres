@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Animated,
-  ScrollView, StatusBar, Platform, Alert,
+  ScrollView, StatusBar, Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,8 +9,7 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useUserStore } from '../src/store/useStore';;
 import {
-  getSubscriptionStatus, createCustomer, createPaymentIntent,
-  activateSubscription, type SubscriptionStatus,
+  getSubscriptionStatus, type SubscriptionStatus,
 } from '../src/services/api';
 
 const T = {
@@ -112,15 +111,16 @@ export default function SubscriptionScreen() {
     if (!deviceId) return;
     setLoading(plan);
     try {
-      if (userData?.email) {
-        await createCustomer(deviceId, userData.email, userData.name).catch(() => {});
+      const apiUrl = process.env.EXPO_PUBLIC_API_URL;
+      const res = await fetch(`${apiUrl}/subscription/create-checkout-session?device_id=${deviceId}&plan=${plan}`, {
+        method: 'POST',
+      });
+      const data = await res.json();
+      if (data.url && typeof window !== 'undefined') {
+        window.location.href = data.url;
       }
-      const intent = await createPaymentIntent(deviceId);
-      await activateSubscription(deviceId, intent.payment_intent_id || intent.id);
-      Alert.alert('💚 Bienvenida', 'Ágora ya es tuya. Aquí estaremos, siempre.');
-      router.replace('/(tabs)/home');
     } catch (e: any) {
-      Alert.alert('Algo salió mal', 'Por favor, inténtalo de nuevo en un momento.');
+      console.error('Checkout error:', e);
     } finally {
       setLoading(null);
     }

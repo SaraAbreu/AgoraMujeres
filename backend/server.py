@@ -279,6 +279,10 @@ class CycleEntry(BaseModel):
     device_id: str
     start_date: datetime
     end_date: Optional[datetime] = None
+    phase: Optional[str] = None
+    pain: Optional[int] = 0
+    symptoms: Optional[List[str]] = []
+    mood: Optional[str] = None
     notes: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -286,6 +290,10 @@ class CycleEntryCreate(BaseModel):
     device_id: str
     start_date: datetime
     end_date: Optional[datetime] = None
+    phase: Optional[str] = None
+    pain: Optional[int] = 0
+    symptoms: Optional[List[str]] = []
+    mood: Optional[str] = None
     notes: Optional[str] = None
 
 class SubscriptionStatus(BaseModel):
@@ -1647,6 +1655,7 @@ async def get_message_reactions(device_id: str, message_id: str):
 # ============== CYCLE ENDPOINTS ==============
 
 @app.post("/cycle", response_model=CycleEntry)
+@app.post("/api/cycle", response_model=CycleEntry)
 async def create_cycle_entry(entry: CycleEntryCreate):
     """Create a new cycle entry (hormonal cycle tracking)"""
     try:
@@ -1658,6 +1667,7 @@ async def create_cycle_entry(entry: CycleEntryCreate):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/cycle/{device_id}", response_model=List[CycleEntry])
+@app.get("/api/cycle/{device_id}", response_model=List[CycleEntry])
 async def get_cycle_entries(device_id: str, limit: int = 12):
     """Get cycle entries for a device"""
     try:
@@ -1725,11 +1735,13 @@ async def track_usage(device_id: str, seconds: int):
     )
 
 @app.get("/subscription/{device_id}")
+@app.get("/api/subscription/{device_id}")
 async def get_subscription_status(device_id: str):
     """Get subscription status for a device"""
     return await get_subscription_status_internal(device_id)
 
 @app.post("/subscription/create-customer")
+@app.post("/api/subscription/create-customer")
 async def create_customer(request: CustomerCreate):
     """Create a Stripe customer"""
     try:
@@ -1754,6 +1766,7 @@ async def create_customer(request: CustomerCreate):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/subscription/create-payment-intent")
+@app.post("/api/subscription/create-payment-intent")
 async def create_payment_intent(device_id: str):
     """Create a payment intent for subscription"""
     try:
@@ -1778,6 +1791,7 @@ async def create_payment_intent(device_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/subscription/activate")
+@app.post("/api/subscription/activate")
 async def activate_subscription(device_id: str, payment_intent_id: str):
     """Activate subscription after successful payment"""
     try:

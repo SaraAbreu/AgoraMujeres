@@ -134,19 +134,19 @@ export default function PatternsScreen() {
             <View style={styles.card}>
               <Text style={styles.cardLabel}>Dolor promedio</Text>
               <View style={styles.painSummary}>
-                <View style={[styles.painIconBox, { backgroundColor: getPainColor(patterns.physical_averages.nivel_dolor) + '22' }]}>
-                  <Ionicons name="pulse-outline" size={24} color={getPainColor(patterns.physical_averages.nivel_dolor)} />
+                <View style={[styles.painIconBox, { backgroundColor: getPainColor(patterns.physical_averages?.nivel_dolor) + '22' }]}>
+                  <Ionicons name="pulse-outline" size={24} color={getPainColor(patterns.physical_averages?.nivel_dolor)} />
                 </View>
                 <View>
-                  <Text style={[styles.painBig, { color: getPainColor(patterns.physical_averages.nivel_dolor) }]}>
-                    {patterns.physical_averages.nivel_dolor.toFixed(1)}
+                  <Text style={[styles.painBig, { color: getPainColor(patterns.physical_averages?.nivel_dolor) }]}>
+                    {patterns.physical_averages?.nivel_dolor.toFixed(1)}
                   </Text>
                   <Text style={styles.painOf}>/ 10</Text>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <BarRow label="Dolor" value={patterns.physical_averages.nivel_dolor} max={10} color={getPainColor(patterns.physical_averages.nivel_dolor)} />
-                  <BarRow label="Energía" value={patterns.physical_averages.energia} max={10} color={C.moss} />
-                  <BarRow label="Sensib." value={patterns.physical_averages.sensibilidad} max={10} color={C.amber} />
+                  <BarRow label="Dolor" value={patterns.physical_averages?.nivel_dolor} max={10} color={getPainColor(patterns.physical_averages?.nivel_dolor)} />
+                  <BarRow label="Energía" value={patterns.physical_averages?.energia} max={10} color={C.moss} />
+                  <BarRow label="Sensib." value={patterns.physical_averages?.sensibilidad} max={10} color={C.amber} />
                 </View>
               </View>
             </View>
@@ -163,7 +163,7 @@ export default function PatternsScreen() {
             </View>
           )}
 
-          {patterns.common_words.length > 0 && (
+          {patterns.common_words?.length > 0 && (
             <View style={styles.card}>
               <Text style={styles.cardLabel}>Lo que más aparece</Text>
               <View style={styles.wordsWrap}>

@@ -11,6 +11,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useUserStore } from '../../src/store/useStore';
+import { API_BASE } from '../../src/services/api';
 import {
   getSubscriptionStatus, getDiaryEntries,
   createPaymentIntent, activateSubscription, createCustomer,
@@ -182,10 +183,12 @@ function PlansModal({ visible, onSubscribe, onClose }: any) {
             </View>
           </Press>
           <Press onPress={() => onSubscribe('yearly')} style={{ width: '100%' }}>
-            <LinearGradient colors={[C.forestDim, C.forest]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={[s.planRow, { borderColor: 'transparent' }]}>
-              <View style={s.planYearBadge}><Text style={s.planYearBadgeText}>2 meses gratis</Text></View>
+            <LinearGradient colors={[C.forestDim, C.forest]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={[s.planRow, { borderColor: 'transparent', position: 'relative' as any }]}>
               <View style={{ flex: 1 }}>
-                <Text style={[s.planName, { color: C.white }]}>Anual</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Text style={[s.planName, { color: C.white }]}>Anual</Text>
+                  <View style={s.planYearBadge}><Text style={s.planYearBadgeText}>2 meses gratis</Text></View>
+                </View>
                 <Text style={[s.planDesc, { color: C.sage }]}>Todo incluido · acceso prioritario</Text>
               </View>
               <View style={{ alignItems: 'flex-end' }}>
@@ -213,6 +216,7 @@ export default function HomeScreen() {
   const screenW = useWidth();
   const isDesktop = screenW >= 768;
   const { userData, deviceId, contador } = useUserStore();
+  console.log('CONTADOR:', contador);
   const [sub, setSub] = useState<SubscriptionStatus | null>(null);
   const [secs, setSecs] = useState(0);
   const [lastEntry, setLast] = useState<any>(null);
@@ -310,28 +314,38 @@ export default function HomeScreen() {
         : null;
 
   const CYCLE_PHASES = [
-    { key: 'menstruation', label: 'Menstruación', color: '#C0614A', bg: '#FEF2F2', icon: 'water-outline' },
-    { key: 'follicular', label: 'Folicular', color: '#4A7FA5', bg: '#EEF4FA', icon: 'sunny-outline' },
-    { key: 'ovulation', label: 'Ovulación', color: C.forest, bg: C.mintSoft, icon: 'flower-outline' },
-    { key: 'luteal', label: 'Lútea', color: C.gold, bg: '#FDF8EE', icon: 'moon-outline' },
+    { key: 'menstruation', label: 'Regla o Período', color: '#C0614A', bg: '#FEF2F2', icon: 'water-outline' },
+    { key: 'follicular', label: 'Después de la regla', color: '#4A7FA5', bg: '#EEF4FA', icon: 'sunny-outline' },
+    { key: 'ovulation', label: 'Mitad del ciclo', color: C.forest, bg: C.mintSoft, icon: 'flower-outline' },
+    { key: 'luteal', label: 'Antes de la regla', color: C.gold, bg: '#FDF8EE', icon: 'moon-outline' },
   ];
   const CYCLE_SYMPTOMS = ['hinchazón', 'náuseas', 'fatiga', 'migraña', 'irritabilidad', 'insomnio', 'calambres', 'sensibilidad'];
   const CYCLE_MOODS = ['tranquila', 'triste', 'irritable', 'agotada', 'ansiosa', 'bien'];
   const lastCycleEntry = cycleData?.entries?.[cycleData.entries.length - 1];
   const currentPhase = CYCLE_PHASES.find(p => p.key === (lastCycleEntry?.phase || 'menstruation')) || CYCLE_PHASES[0];
 
-  const saveCycle = () => {
-    const key = deviceId ? 'agora-cycle-' + deviceId : 'agora-cycle-guest';
-    const entry = { ...cycleForm, date: new Date().toISOString() };
-    const updated = { entries: [...(cycleData?.entries || []), entry] };
-    setCycleData(updated);
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.setItem(key, JSON.stringify(updated));
-      } catch(e) { console.error('cycle save error', e); }
-    }
+  const [cycleSaved, setCycleSaved] = useState(false);
+
+  const saveCycle = async () => {
+    try {
+      const id = deviceId || 'guest';
+      await fetch(`${API_BASE}/cycle`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          device_id: id,
+          start_date: new Date().toISOString(),
+          phase: cycleForm.phase,
+          pain: cycleForm.pain,
+          symptoms: cycleForm.symptoms,
+          mood: cycleForm.mood,
+        }),
+      });
+    } catch(e) { console.error('cycle save error', e); }
     setShowCycle(false);
     setCycleForm({ phase: 'menstruation', pain: 0, symptoms: [], mood: '' });
+    setCycleSaved(true);
+    setTimeout(() => setCycleSaved(false), 3000);
   };
 
   // Bloques reutilizables
@@ -370,8 +384,7 @@ export default function HomeScreen() {
   );
 
   const StreakBlock = (
-    <FadeIn delay={180}>
-      <View style={s.streakCard}>
+    <View style={s.streakCard}>
         <View style={s.streakNumBox}>
           <Text style={s.streakNum}>{contador}</Text>
           <Text style={s.streakUnit}>días</Text>
@@ -381,7 +394,6 @@ export default function HomeScreen() {
           {contador > 0 ? `Llevas ${contador} ${contador === 1 ? 'día' : 'días'} escuchándote. Eso importa.` : 'Hoy es un buen día para empezar.'}
         </Text>
       </View>
-    </FadeIn>
   );
 
   const CountdownBlock = trialLabel && sub?.status === 'trial' ? (
@@ -445,8 +457,13 @@ export default function HomeScreen() {
                 : 'Registra tu primer día'}
             </Text>
           </View>
-          <View style={s.cycleArrow}>
-            <Ionicons name="add" size={18} color={C.forest} />
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <TouchableOpacity onPress={() => router.push('/cycle')} style={s.cycleArrow}>
+              <Ionicons name="time-outline" size={18} color={C.forest} />
+            </TouchableOpacity>
+            <View style={s.cycleArrow}>
+              <Ionicons name="add" size={18} color={C.forest} />
+            </View>
           </View>
         </View>
       </Press>
@@ -607,6 +624,13 @@ export default function HomeScreen() {
         onSubscribe={() => { setWarn5(false); setPlans(true); }} onDismiss={() => setWarn5(false)} />
       <TrialModal visible={showTrial} onPlans={() => { setTrial(false); setPlans(true); }} onClose={() => setTrial(false)} />
       <PlansModal visible={showPlans} onSubscribe={doPurchase} onClose={() => setPlans(false)} />
+      {/* Toast ciclo guardado */}
+      {cycleSaved && (
+        <View style={{ position: 'fixed' as any, bottom: 100, left: '50%', transform: [{ translateX: -120 }], backgroundColor: '#4A664D', paddingHorizontal: 24, paddingVertical: 14, borderRadius: 30, zIndex: 9999, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Ionicons name="checkmark-circle-outline" size={20} color="white" />
+          <Text style={{ color: 'white', fontWeight: '600', fontSize: 14 }}>Registro guardado</Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -689,7 +713,7 @@ const s = StyleSheet.create({
   plansTitle: { fontSize: 22, fontWeight: '300', color: C.charcoal, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', marginBottom: 6, textAlign: 'center' },
   plansBody: { fontSize: 13, color: C.muted, textAlign: 'center', marginBottom: 20 },
   planRow: { borderWidth: 1, borderColor: C.warm, borderRadius: 16, padding: 16, flexDirection: 'row', alignItems: 'center', marginBottom: 10, position: 'relative', overflow: 'hidden' },
-  planYearBadge: { position: 'absolute', top: 8, right: 8, backgroundColor: C.gold, borderRadius: 100, paddingHorizontal: 8, paddingVertical: 3 },
+  planYearBadge: { backgroundColor: C.gold, borderRadius: 100, paddingHorizontal: 8, paddingVertical: 3 },
   planYearBadgeText: { fontSize: 10, color: C.white, fontWeight: '700' },
   planName: { fontSize: 16, fontWeight: '600', color: C.charcoal, marginBottom: 2 },
   planDesc: { fontSize: 12, color: C.muted },

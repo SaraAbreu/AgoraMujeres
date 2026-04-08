@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useUserStore } from '../../src/store/useStore';
+import { API_BASE } from '../../src/services/api';
 import { getDiaryEntries, type DiaryEntry } from '../../src/services/api';
 
 const C = {
@@ -59,7 +60,8 @@ function EntryCard({ entry, onPress }: { entry: DiaryEntry & any; onPress: () =>
 export default function DiaryList() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { deviceId } = useUserStore();
+  const { deviceId, userData } = useUserStore();
+  const [exporting, setExporting] = useState(false);
   const [entries, setEntries] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefresh] = useState(false);
@@ -74,6 +76,78 @@ export default function DiaryList() {
   };
 
   useEffect(() => { load(); }, [deviceId]);
+
+  const exportPDF = async () => {
+    if (Platform.OS !== 'web') return;
+    setExporting(true);
+    try {
+      const today = new Date().toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' });
+      const name = userData?.name || '';
+
+      const rows = entries.map((entry: any) => {
+        const date = new Date(entry.created_at).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        const tags = [...(entry.cuerpo || []), ...(entry.mente || []), ...(entry.alma || [])];
+        const tagsHtml = tags.map((t: string) => `<span style="background:#EAF4E8;color:#4A664D;padding:2px 8px;border-radius:10px;font-size:11px;margin-right:4px">${t}</span>`).join('');
+        const painColor = entry.dolor <= 3 ? '#7BAF7E' : entry.dolor <= 6 ? '#D4A96A' : '#C07A5A';
+        return `<tr>
+          <td style="padding:10px;color:#9A958E;font-size:12px;white-space:nowrap">${date}</td>
+          <td style="padding:10px;text-align:center"><span style="background:${painColor}22;color:${painColor};padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600">${entry.dolor > 0 ? entry.dolor + '/10' : '—'}</span></td>
+          <td style="padding:10px;font-size:12px;color:#3D3A35;font-style:italic">${entry.texto ? entry.texto.slice(0, 150) + (entry.texto.length > 150 ? '…' : '') : '—'}</td>
+          <td style="padding:10px">${tagsHtml}</td>
+        </tr>`;
+      }).join('');
+
+      const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">
+        <title>Diario Ágora Mujeres</title>
+        <style>
+          * { margin:0; padding:0; box-sizing:border-box; }
+          body { font-family: Georgia, serif; background: #fff; color: #3D3A35; }
+          .header { background: #2C3D2E; color: white; padding: 32px 40px 24px; }
+          .header h1 { font-size: 24px; font-weight: 300; letter-spacing: 3px; margin-bottom: 6px; }
+          .header p { font-size: 13px; color: #A8C5A0; }
+          .header .meta { display:flex; justify-content:space-between; margin-top: 12px; font-size:12px; color:#D4E8D0; }
+          .section { padding: 32px 40px 0; }
+          .section h2 { font-size: 15px; font-weight: 400; letter-spacing: 2px; color: #2C3D2E; text-transform: uppercase; border-bottom: 1px solid #4A664D; padding-bottom: 8px; margin-bottom: 16px; }
+          table { width:100%; border-collapse:collapse; margin-bottom: 32px; }
+          th { background:#F0EDE4; color:#2C3D2E; font-size:11px; font-weight:600; letter-spacing:1px; text-transform:uppercase; padding:8px 10px; text-align:left; }
+          tr:nth-child(even) td { background: #FAFAF8; }
+          td { border-bottom: 1px solid #F0EDE4; vertical-align:top; }
+          .no-print { display:block; }
+          .footer { margin-top:40px; padding:16px 40px; border-top:1px solid #E8E2D8; font-size:10px; color:#C0C0C0; display:flex; justify-content:space-between; }
+          @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } .no-print { display: none !important; } }
+        </style>
+      </head><body>
+        <div class="header">
+          <h1>Ágora Mujeres</h1>
+          <p>Diario de bienestar y seguimiento del dolor</p>
+          <div class="meta"><span>Generado el ${today}</span><span>${name}</span></div>
+        </div>
+        <div class="section">
+          <h2>Entradas del diario</h2>
+          ${entries.length === 0 ? '<p style="color:#9A958E;font-style:italic">Sin entradas.</p>' : `
+          <table>
+            <thead><tr><th>Fecha</th><th>Dolor</th><th>Nota</th><th>Etiquetas</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>`}
+        </div>
+        <div class="no-print" style="text-align:center;padding:24px 0 8px">
+          <button onclick="window.close()" style="background:#2C3D2E;color:white;border:none;padding:12px 32px;border-radius:24px;font-size:13px;letter-spacing:1px;cursor:pointer;font-family:Georgia,serif">← Volver</button>
+        </div>
+        <div class="footer"><span>Ágora Mujeres · Informe confidencial</span><span>${today}</span></div>
+      </body></html>`;
+
+      const win = window.open('', '_blank');
+      if (win) {
+        win.document.write(html);
+        win.document.close();
+        setTimeout(() => { win.print(); }, 800);
+      }
+    } catch (e) {
+      console.error('PDF error:', e);
+    } finally {
+      setExporting(false);
+    }
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: C.cream }}>
@@ -90,6 +164,9 @@ export default function DiaryList() {
             <Text style={styles.headerEyebrow}>Mi Refugio</Text>
             <Text style={styles.headerTitle}>Diario de Alivio</Text>
           </View>
+          <TouchableOpacity onPress={exportPDF} style={[styles.addBtn, { marginRight: 8 }]} disabled={exporting}>
+            {exporting ? <ActivityIndicator size="small" color={C.white} /> : <Ionicons name="download-outline" size={20} color={C.white} />}
+          </TouchableOpacity>
           <TouchableOpacity onPress={() => router.push('/diary/new')} style={styles.addBtn}>
             <Ionicons name="add" size={22} color={C.white} />
           </TouchableOpacity>

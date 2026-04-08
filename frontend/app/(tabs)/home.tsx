@@ -149,9 +149,7 @@ function TrialModal({ visible, onPlans, onClose }: any) {
               <Text style={s.sheetBtnText}>Ver planes de acompañamiento</Text>
             </LinearGradient>
           </Press>
-          <TouchableOpacity onPress={onClose} style={{ paddingVertical: 10 }}>
-            <Text style={{ fontSize: 13, color: C.muted }}>Ahora no, gracias</Text>
-          </TouchableOpacity>
+
         </Animated.View>
       </View>
     </Modal>

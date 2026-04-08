@@ -1850,6 +1850,37 @@ async def stripe_webhook_handler(request: Request, stripe_signature: str = Heade
             await _activate(device_id, pi["id"], pi.get("customer"))
     return {"received": True}
 
+
+@app.post("/subscription/create-checkout-session")
+@app.post("/api/subscription/create-checkout-session")
+async def create_checkout_session(device_id: str, plan: str = "monthly"):
+    price_id = os.environ.get(
+        "STRIPE_PRICE_YEARLY" if plan == "yearly" else "STRIPE_PRICE_MONTHLY"
+    )
+    if not price_id:
+        raise HTTPException(status_code=500, detail="Price ID not configured.")
+    sub = await db_find_one(db.subscriptions, {"device_id": device_id})
+    customer_id = sub.get("stripe_customer_id") if sub else None
+    try:
+        params = {
+            "payment_method_types": ["card"],
+            "line_items": [{"price": price_id, "quantity": 1}],
+            "mode": "subscription",
+            "success_url": "https://agoramujeres.syntexia-solutions.es/home?payment=success",
+            "cancel_url": "https://agoramujeres.syntexia-solutions.es/home?payment=cancelled",
+            "metadata": {"device_id": device_id},
+            "subscription_data": {"metadata": {"device_id": device_id}},
+        }
+        if customer_id:
+            params["customer"] = customer_id
+        elif sub and sub.get("email"):
+            params["customer_email"] = sub["email"]
+        session = stripe.checkout.Session.create(**params)
+        return {"url": session.url}
+    except stripe.error.StripeError as e:
+        logger.error(f"Stripe checkout error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 # ============== WEATHER ENDPOINT ==============
 
 @app.get("/weather")

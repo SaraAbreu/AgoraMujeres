@@ -68,34 +68,40 @@ function Chip({ label, selected, onPress, accent }: any) {
 function PainSelector({ value, onChange }: { value: number; onChange: (v: number) => void }) {
   const getColor = (v: number) =>
     v <= 2 ? '#7BAF7E' : v <= 4 ? '#A8C07A' : v <= 6 ? '#D4A96A' : v <= 8 ? '#C07A5A' : '#A85050';
-
+  const getLabel = (v: number) =>
+    v === 0 ? 'Sin dolor' : v <= 2 ? 'Muy leve' : v <= 4 ? 'Leve' : v <= 6 ? 'Moderado' : v <= 8 ? 'Intenso' : 'Muy intenso';
+  const color = getColor(value);
   return (
     <View style={styles.painWrap}>
-      <View style={styles.painTop}>
-        <View style={[styles.painIconCircle, { backgroundColor: getColor(value) + '22' }]}>
-          <Ionicons name="pulse-outline" size={22} color={getColor(value)} />
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 4 }}>
+          <Text style={{ fontSize: 40, fontWeight: '300', color }}>{value}</Text>
+          <Text style={{ fontSize: 13, color: '#9A958E' }}>/ 10</Text>
         </View>
-        <View>
-          <Text style={[styles.painBig, { color: getColor(value) }]}>{value}</Text>
-          <Text style={styles.painOf}>/ 10</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, backgroundColor: color + '18', borderWidth: 1, borderColor: color + '40' }}>
+          <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: color }} />
+          <Text style={{ fontSize: 13, fontWeight: '500', color }}>{getLabel(value)}</Text>
         </View>
       </View>
-      <View style={styles.painNodes}>
-        {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(v => {
-          const active = v <= value;
-          const sel    = v === value;
-          return (
-            <TouchableOpacity key={v} onPress={() => onChange(v)} activeOpacity={0.7}>
-              <View style={[
-                styles.painNode,
-                active && { backgroundColor: getColor(value), borderColor: getColor(value) },
-                sel && styles.painNodeSel,
-              ]}>
-                <Text style={[styles.painNodeNum, active && { color: C.white }]}>{v}</Text>
-              </View>
-            </TouchableOpacity>
-          );
-        })}
+      <View style={{ height: 6, backgroundColor: '#F0EDE4', borderRadius: 3, position: 'relative', marginBottom: 16 }}>
+        <View style={{ position: 'absolute', left: 0, top: 0, height: 6, borderRadius: 3, backgroundColor: color, width: (value * 10) + '%' as any }} />
+        {[0,1,2,3,4,5,6,7,8,9,10].map(v => (
+          <TouchableOpacity
+            key={v}
+            onPress={() => onChange(v)}
+            style={{
+              position: 'absolute',
+              width: 20, height: 20, borderRadius: 10,
+              backgroundColor: v <= value ? color : '#F8F7F2',
+              borderWidth: 2,
+              borderColor: v <= value ? color : '#E8E2D8',
+              top: -7, marginLeft: -10,
+              left: (v * 10) + '%' as any,
+              transform: [{ scale: v === value ? 1.35 : 1 }],
+            }}
+            activeOpacity={0.7}
+          />
+        ))}
       </View>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
         <Text style={styles.painScale}>Sin dolor</Text>
@@ -345,4 +351,12 @@ const styles = StyleSheet.create({
     fontStyle: 'italic', marginTop: 4,
     fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
   },
+  painHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 },
+  painLeft: { flexDirection: 'row', alignItems: 'baseline', gap: 4 },
+  painLabelBox: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, borderWidth: 1 },
+  painDot: { width: 7, height: 7, borderRadius: 4 },
+  painLabelText: { fontSize: 13, fontWeight: '500' },
+  painTrack: { height: 6, backgroundColor: '#F0EDE4', borderRadius: 3, position: 'relative', marginBottom: 4 },
+  painFill: { position: 'absolute', left: 0, top: 0, height: 6, borderRadius: 3 },
+  painThumb: { position: 'absolute', width: 18, height: 18, borderRadius: 9, borderWidth: 2, top: -6, marginLeft: -9 },
 });

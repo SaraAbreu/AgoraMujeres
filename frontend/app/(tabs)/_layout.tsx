@@ -1,14 +1,7 @@
-/**
- * (tabs)/_layout.tsx — Navbar con hoja central para el chat
- * CAMBIOS:
- *  - Botón central: hoja 🍃 (Ionicons leaf) en lugar del logo
- *  - Diseño limpio, consistente con la estética Ágora
- */
 import React, { useEffect } from 'react';
-import { View, StyleSheet, Platform } from 'react-native';
+import { View, Text, StyleSheet, Platform } from 'react-native';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as SplashScreen from 'expo-splash-screen';
@@ -22,16 +15,12 @@ import {
 SplashScreen.preventAutoHideAsync();
 
 const C = {
-  forest: '#4A664D',
-  moss:   '#6B8F6E',
-  mint:   '#D4E8D0',
-  muted:  '#9A958E',
-  cream:  '#F8F7F2',
-  white:  '#FFFFFF',
-  border: '#E8E4DC',
+  forestDeep: '#2C3D2E',
+  forest:     '#4A664D',
+  gold:       '#C9A84C',
+  white:      '#FFFFFF',
 };
 
-// ── Tab icon wrapper ──────────────────────────────────────────
 function TabIcon({ name, color, focused }: { name: keyof typeof Ionicons.glyphMap; color: string; focused: boolean }) {
   return (
     <View style={[styles.iconWrap, focused && styles.iconWrapActive]}>
@@ -40,30 +29,26 @@ function TabIcon({ name, color, focused }: { name: keyof typeof Ionicons.glyphMa
   );
 }
 
-// ── Central leaf button ───────────────────────────────────────
-function LeafButton({ focused }: { focused: boolean }) {
+function LeafButton() {
   return (
     <View style={styles.leafOuter}>
       <LinearGradient
-        colors={focused ? [C.forest, C.moss] : ['#5A7A5D', '#7A9F7D']}
+        colors={['#C9A84C', '#B8963E']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={styles.leafGradient}
       >
-        <Ionicons name="leaf" size={26} color={C.white} />
+        <Ionicons name="leaf" size={24} color={C.white} />
+        <Text style={styles.leafLabel}>ÁGORA</Text>
       </LinearGradient>
     </View>
   );
 }
 
-// ── Tab bar background ────────────────────────────────────────
 function TabBg() {
-  if (Platform.OS === 'web') return <View style={[StyleSheet.absoluteFill, styles.bgWeb]} />;
-  if (Platform.OS === 'android') return <View style={[StyleSheet.absoluteFill, styles.bgAndroid]} />;
-  return <BlurView intensity={80} tint="light" style={[StyleSheet.absoluteFill, styles.bgIOS]} />;
+  return <View style={[StyleSheet.absoluteFill, styles.bg]} />;
 }
 
-// ── Layout ────────────────────────────────────────────────────
 export default function TabsLayout() {
   const insets = useSafeAreaInsets();
 
@@ -83,8 +68,8 @@ export default function TabsLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: C.forest,
-        tabBarInactiveTintColor: C.muted,
+        tabBarActiveTintColor: C.gold,
+        tabBarInactiveTintColor: 'rgba(255,255,255,0.45)',
         tabBarShowLabel: true,
         tabBarLabelStyle: styles.label,
         tabBarStyle: {
@@ -115,9 +100,9 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="chat"
         options={{
-          title: '',
+          title: 'Ágora',
           tabBarLabel: () => null,
-          tabBarIcon: ({ focused }) => <LeafButton focused={focused} />,
+          tabBarIcon: () => <LeafButton />,
         }}
       />
       <Tabs.Screen
@@ -140,31 +125,42 @@ export default function TabsLayout() {
 }
 
 const styles = StyleSheet.create({
-  label: { fontFamily: 'Quicksand_500Medium', fontSize: 11, marginTop: -2 },
-
-  iconWrap: { width:40, height:32, borderRadius:10, alignItems:'center', justifyContent:'center' },
-  iconWrapActive: { backgroundColor: '#4A664D18' },
-
-  // Leaf central button
+  label: {
+    fontFamily: 'Quicksand_500Medium',
+    fontSize: 11,
+    marginTop: -2,
+  },
+  iconWrap: {
+    width: 40, height: 32, borderRadius: 10,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  iconWrapActive: {
+    backgroundColor: 'rgba(201,168,76,0.15)',
+  },
   leafOuter: {
-    width: 60, height: 60, borderRadius: 30,
+    width: 70, height: 70, borderRadius: 35,
     position: 'absolute',
-    left: '50%', marginLeft: -30,
-    top: -18,
-    shadowColor: '#4A664D',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 10,
-    elevation: 10,
-    backgroundColor: C.forest,
+    left: '50%' as any, marginLeft: -35,
+    top: -24,
+    shadowColor: '#C9A84C',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.5,
+    shadowRadius: 12,
+    elevation: 12,
     overflow: 'hidden',
   },
   leafGradient: {
-    flex: 1, alignItems: 'center', justifyContent: 'center',
+    flex: 1, alignItems: 'center', justifyContent: 'center', gap: 2,
   },
-
-  // Tab bar backgrounds
-  bgWeb: { backgroundColor: 'rgba(248,247,242,0.94)', borderTopWidth: 1, borderTopColor: '#E8E4DC' },
-  bgAndroid: { backgroundColor: '#FDFAF7', borderTopWidth: 1, borderTopColor: '#E8E4DC' },
-  bgIOS: { borderTopWidth: 1, borderTopColor: '#E8E4DC' },
+  leafLabel: {
+    color: '#FFFFFF',
+    fontSize: 8,
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
+  bg: {
+    backgroundColor: '#2C3D2E',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.08)',
+  },
 });

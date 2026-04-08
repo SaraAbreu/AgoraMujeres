@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image, ActivityIndicator, Alert, TextInput } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image, ActivityIndicator, TextInput, Platform } from 'react-native';
 import { auth, googleProvider } from '../../src/services/firebase';
 import { signInWithPopup, signInWithEmailAndPassword } from 'firebase/auth';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,9 +13,11 @@ export default function LoginScreen() {
   const [showEmail, setShowEmail] = React.useState(false);
   const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
+  const [error, setError] = React.useState('');
   const { setToken, setUserData, setDeviceId } = useUserStore();
 
-  const handleSocialLogin = async (provider: any) => {
+  const handleSocialLogin = async (provider) => {
+    setError('');
     setLoading(true);
     try {
       const result = await signInWithPopup(auth, provider);
@@ -31,17 +33,18 @@ export default function LoginScreen() {
       setToken(data.access_token);
       setDeviceId(data.user.uid);
       setUserData({ name: user.displayName, email: user.email, photo: user.photoURL });
-    } catch (error) {
-      console.error('Error al entrar:', error);
-      Alert.alert('Error', 'No pudimos iniciar sesión correctamente.');
+    } catch (err) {
+      console.error('Error al entrar:', err);
+      setError('No pudimos iniciar sesión con Google. Inténtalo de nuevo.');
     } finally {
       setLoading(false);
     }
   };
 
   const handleEmailLogin = async () => {
+    setError('');
     if (!email || !password) {
-      Alert.alert('Faltan datos', 'Introduce tu correo y contraseña.');
+      setError('Introduce tu correo y contraseña.');
       return;
     }
     setLoading(true);
@@ -59,13 +62,15 @@ export default function LoginScreen() {
       setToken(data.access_token);
       setDeviceId(data.user.uid);
       setUserData({ name: user.displayName || email, email: user.email, photo: user.photoURL });
-    } catch (error: any) {
-      const msg = error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password'
+    } catch (err) {
+      const msg = err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password'
         ? 'Correo o contraseña incorrectos.'
-        : error.code === 'auth/user-not-found'
+        : err.code === 'auth/user-not-found'
         ? 'No existe una cuenta con ese correo.'
+        : err.code === 'auth/too-many-requests'
+        ? 'Demasiados intentos. Espera un momento.'
         : 'No pudimos iniciar sesión. Comprueba tus datos.';
-      Alert.alert('Error', msg);
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -73,11 +78,7 @@ export default function LoginScreen() {
 
   return (
     <View style={styles.container}>
-      <Image
-        source={require('../../assets/images/logo-silueta.png')}
-        style={styles.logo}
-        resizeMode="contain"
-      />
+      <Image source={require('../../assets/images/logo-silueta.png')} style={styles.logo} resizeMode="contain" />
       <View style={styles.textContainer}>
         <Text style={styles.title}>Ágora Mujeres</Text>
         <Text style={styles.subtitle}>Tu refugio de calma y conexión</Text>
@@ -87,18 +88,12 @@ export default function LoginScreen() {
         <ActivityIndicator color="#4A664D" size="large" />
       ) : (
         <View style={styles.buttonWrapper}>
-
-          {/* Google */}
           <TouchableOpacity style={styles.btnOutline} onPress={() => handleSocialLogin(googleProvider)}>
             <Ionicons name="logo-google" size={20} color="#EA4335" />
             <Text style={styles.btnOutlineText}>Continuar con Google</Text>
           </TouchableOpacity>
 
-          {/* Email login */}
-          <TouchableOpacity
-            style={styles.btnSolid}
-            onPress={() => setShowEmail(e => !e)}
-          >
+          <TouchableOpacity style={styles.btnSolid} onPress={() => { setShowEmail(e => !e); setError(''); }}>
             <Ionicons name="mail-outline" size={20} color="white" />
             <Text style={styles.btnSolidText}>Iniciar sesión</Text>
           </TouchableOpacity>
@@ -110,35 +105,45 @@ export default function LoginScreen() {
                 placeholder="Correo electrónico"
                 placeholderTextColor="#9A958E"
                 value={email}
-                onChangeText={setEmail}
+                onChangeText={t => { setEmail(t); setError(''); }}
                 autoCapitalize="none"
                 keyboardType="email-address"
               />
               <TextInput
                 style={[styles.input, { marginTop: 10 }]}
-                placeholder="Contraseña"
+                placeholder="Contrasena"
                 placeholderTextColor="#9A958E"
                 value={password}
-                onChangeText={setPassword}
+                onChangeText={t => { setPassword(t); setError(''); }}
                 secureTextEntry
               />
+              {error ? (
+                <View style={styles.errorBox}>
+                  <Ionicons name="alert-circle-outline" size={15} color="#C0392B" />
+                  <Text style={styles.errorText}>{error}</Text>
+                </View>
+              ) : null}
               <TouchableOpacity style={styles.submitBtn} onPress={handleEmailLogin}>
                 <Text style={styles.submitBtnText}>Entrar</Text>
               </TouchableOpacity>
             </View>
           )}
 
-          {/* Crear cuenta */}
+          {error && !showEmail ? (
+            <View style={[styles.errorBox, { marginTop: 12 }]}>
+              <Ionicons name="alert-circle-outline" size={15} color="#C0392B" />
+              <Text style={styles.errorText}>{error}</Text>
+            </View>
+          ) : null}
+
           <View style={styles.registerRow}>
-            <Text style={styles.registerText}>¿Todavía no tienes cuenta? </Text>
+            <Text style={styles.registerText}>Todavía no tienes cuenta? </Text>
             <TouchableOpacity onPress={() => router.push('/(auth)/register')}>
               <Text style={styles.registerLink}>Créala aquí</Text>
             </TouchableOpacity>
           </View>
-
         </View>
       )}
-
       <Text style={styles.footerText}>Al entrar, aceptas nuestras condiciones de seguridad.</Text>
     </View>
   );
@@ -148,24 +153,19 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FDFBF7', alignItems: 'center', justifyContent: 'center', padding: 30 },
   logo: { width: 180, height: 180, marginBottom: 20 },
   textContainer: { alignItems: 'center', marginBottom: 50 },
-  title: { fontSize: 32, fontWeight: '300', color: '#1A1A1A', letterSpacing: 3 },
+  title: { fontSize: 32, fontWeight: '300', color: '#1A1A1A', letterSpacing: 3, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif' },
   subtitle: { fontSize: 14, color: '#4A664D', fontStyle: 'italic', marginTop: 5 },
   buttonWrapper: { width: '100%', maxWidth: 320 },
-  btnOutline: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    paddingVertical: 14, borderRadius: 50, borderWidth: 1,
-    borderColor: 'rgba(74,102,77,0.3)', backgroundColor: 'white', marginBottom: 12,
-  },
+  btnOutline: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: 50, borderWidth: 1, borderColor: 'rgba(74,102,77,0.3)', backgroundColor: 'white', marginBottom: 12 },
   btnOutlineText: { marginLeft: 12, color: '#1A1A1A', fontSize: 15, fontWeight: '500' },
-  btnSolid: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    paddingVertical: 14, borderRadius: 50, backgroundColor: '#4A664D',
-  },
+  btnSolid: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: 50, backgroundColor: '#4A664D' },
   btnSolidText: { marginLeft: 12, color: 'white', fontSize: 15, fontWeight: '500' },
   emailBox: { backgroundColor: '#F0EDE4', borderRadius: 16, padding: 16, marginTop: 12, borderWidth: 1, borderColor: '#E8E2D8' },
   input: { backgroundColor: 'white', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: '#3D3A35', borderWidth: 1, borderColor: '#E8E2D8' },
   submitBtn: { backgroundColor: '#4A664D', borderRadius: 10, paddingVertical: 13, alignItems: 'center', marginTop: 12 },
   submitBtnText: { color: 'white', fontWeight: '600', fontSize: 15 },
+  errorBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FDF0EE', borderRadius: 8, padding: 10, marginTop: 10, borderWidth: 1, borderColor: '#F5C6C2' },
+  errorText: { color: '#C0392B', fontSize: 13, marginLeft: 6, flex: 1 },
   registerRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: 24 },
   registerText: { fontSize: 13, color: '#9A958E' },
   registerLink: { fontSize: 13, color: '#4A664D', fontWeight: '600', textDecorationLine: 'underline' },

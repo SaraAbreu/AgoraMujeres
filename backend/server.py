@@ -1,5 +1,5 @@
 from fastapi import Request
-from fastapi import FastAPI, APIRouter, HTTPException, Request, File, UploadFile
+from fastapi import FastAPI, APIRouter, HTTPException, Request, File, UploadFile, Header
 from contextlib import asynccontextmanager
 import sys
 from starlette.middleware.cors import CORSMiddleware
@@ -1816,6 +1816,39 @@ async def activate_subscription(device_id: str, payment_intent_id: str):
     except Exception as e:
         logger.error(f"Error activating subscription: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/subscription/stripe-webhook")
+@app.post("/api/subscription/stripe-webhook")
+async def stripe_webhook_handler(request: Request, stripe_signature: str = Header(None)):
+    from routers.subscriptions import STRIPE_WEBHOOK_SECRET, _activate
+    if not STRIPE_WEBHOOK_SECRET:
+        raise HTTPException(status_code=501, detail="Webhook not configured.")
+    payload = await request.body()
+    try:
+        event = stripe.Webhook.construct_event(payload, stripe_signature, STRIPE_WEBHOOK_SECRET)
+    except stripe.error.SignatureVerificationError:
+        raise HTTPException(status_code=400, detail="Invalid signature.")
+    if event["type"] == "checkout.session.completed":
+        session = event["data"]["object"]
+        device_id = session.get("metadata", {}).get("device_id")
+        customer_id = session.get("customer")
+        if device_id:
+            await _activate(device_id, session["id"], customer_id)
+            if customer_id:
+                await db_update_one(
+                    db.subscriptions,
+                    {"device_id": device_id},
+                    {"$set": {"stripe_customer_id": customer_id}},
+                    upsert=True,
+                )
+            logger.info(f"Subscription activated via checkout for device {device_id}")
+    elif event["type"] == "payment_intent.succeeded":
+        pi = event["data"]["object"]
+        device_id = pi.get("metadata", {}).get("device_id")
+        if device_id:
+            await _activate(device_id, pi["id"], pi.get("customer"))
+    return {"received": True}
 
 # ============== WEATHER ENDPOINT ==============
 

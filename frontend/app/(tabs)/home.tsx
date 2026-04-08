@@ -228,6 +228,7 @@ export default function HomeScreen() {
   const [showCycle, setShowCycle] = useState(false);
   const [cycleData, setCycleData] = useState<any>(null);
   const [cycleForm, setCycleForm] = useState({ phase: 'menstruation', pain: 0, symptoms: [] as string[], mood: '' });
+  const [paymentMsg, setPaymentMsg] = useState<string | null>(null);
   const warned10Ref = useRef(false);
   const warned5Ref = useRef(false);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -263,6 +264,21 @@ export default function HomeScreen() {
     if (deviceId && typeof window !== 'undefined') {
       const saved = localStorage.getItem('agora-cycle-' + deviceId);
       if (saved) try { setCycleData(JSON.parse(saved)); } catch {}
+    }
+    // Detect ?payment=success/cancelled from Stripe redirect
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const payment = params.get('payment');
+      if (payment === 'success') {
+        setPaymentMsg('¡Pago completado! Tu suscripción está activa.');
+        loadSub();
+        window.history.replaceState({}, '', window.location.pathname);
+        setTimeout(() => setPaymentMsg(null), 6000);
+      } else if (payment === 'cancelled') {
+        setPaymentMsg('El pago fue cancelado. Puedes intentarlo cuando quieras.');
+        window.history.replaceState({}, '', window.location.pathname);
+        setTimeout(() => setPaymentMsg(null), 5000);
+      }
     }
   }, [deviceId]);
 
@@ -529,6 +545,26 @@ export default function HomeScreen() {
           </View>
         )}
       </LinearGradient>
+
+      {paymentMsg && (
+        <View style={{
+          backgroundColor: paymentMsg.includes('cancelado') ? '#FEF3C7' : '#D1FAE5',
+          paddingVertical: 12, paddingHorizontal: 20,
+          flexDirection: 'row', alignItems: 'center', gap: 10,
+        }}>
+          <Ionicons
+            name={paymentMsg.includes('cancelado') ? 'alert-circle-outline' : 'checkmark-circle-outline'}
+            size={20}
+            color={paymentMsg.includes('cancelado') ? '#92400E' : '#065F46'}
+          />
+          <Text style={{ flex: 1, fontSize: 14, color: paymentMsg.includes('cancelado') ? '#92400E' : '#065F46', fontWeight: '500' }}>
+            {paymentMsg}
+          </Text>
+          <TouchableOpacity onPress={() => setPaymentMsg(null)}>
+            <Ionicons name="close" size={18} color={paymentMsg.includes('cancelado') ? '#92400E' : '#065F46'} />
+          </TouchableOpacity>
+        </View>
+      )}
 
       <ScrollView showsVerticalScrollIndicator={false}>
         <View style={[s.page, { paddingBottom: insets.bottom + 100 }]}>

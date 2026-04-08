@@ -84,6 +84,47 @@ export default function DiaryList() {
       const today = new Date().toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' });
       const name = userData?.name || '';
 
+      const payload = {
+        name,
+        today,
+        entries: entries.map((entry: any) => ({
+          date: new Date(entry.created_at).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+          dolor: entry.dolor || 0,
+          texto: entry.texto || '',
+          tags: [...(entry.cuerpo || []), ...(entry.mente || []), ...(entry.alma || [])],
+        })),
+      };
+
+      const res = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/export/diary-pdf`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) throw new Error('Error generando PDF');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'agora-diario.pdf';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      return;
+    } catch (e) {
+      console.error('PDF error:', e);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const exportPDF_OLD = async () => {
+    if (Platform.OS !== 'web') return;
+    try {
+      const today = new Date().toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' });
+      const name = userData?.name || '';
+
       const rows = entries.map((entry: any) => {
         const date = new Date(entry.created_at).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
         const tags = [...(entry.cuerpo || []), ...(entry.mente || []), ...(entry.alma || [])];
@@ -136,12 +177,15 @@ export default function DiaryList() {
         <div class="footer"><span>Ágora Mujeres · Informe confidencial</span><span>${today}</span></div>
       </body></html>`;
 
-      const win = window.open('', '_blank');
-      if (win) {
-        win.document.write(html);
-        win.document.close();
-        setTimeout(() => { win.print(); }, 800);
-      }
+      const blob = new Blob([html], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'agora-diario.html';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (e) {
       console.error('PDF error:', e);
     } finally {

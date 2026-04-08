@@ -128,12 +128,40 @@ export default function CycleScreen() {
         <div class="footer"><span>Ágora Mujeres · Informe confidencial</span><span>${today}</span></div>
       </body></html>`;
 
-      const win = window.open('', '_blank');
-      if (win) {
-        win.document.write(html);
-        win.document.close();
-        setTimeout(() => { win.print(); }, 800);
-      }
+      const payload = {
+        name,
+        today,
+        cycle_entries: entries.map((entry: any) => ({
+          date: formatDateShort(entry.start_date),
+          phase: PHASES[entry.phase]?.label || entry.phase,
+          pain: entry.pain,
+          mood: entry.mood || '-',
+          symptoms: entry.symptoms || [],
+        })),
+        diary_entries: diaryEntries.slice(0, 20).map((entry: any) => ({
+          date: entry.created_at ? formatDateShort(entry.created_at) : '',
+          dolor: entry.dolor || entry.pain || 0,
+          texto: entry.texto || entry.content || '',
+          tags: [...(entry.cuerpo || []), ...(entry.mente || []), ...(entry.alma || [])],
+        })),
+      };
+
+      const res = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/export/cycle-pdf`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) throw new Error('Error generando PDF');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'agora-ciclo.pdf';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (e) {
       console.error('PDF error:', e);
     } finally {

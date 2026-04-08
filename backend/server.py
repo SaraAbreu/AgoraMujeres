@@ -1883,6 +1883,180 @@ async def create_checkout_session(device_id: str, plan: str = "monthly"):
         logger.error(f"Stripe checkout error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@app.post("/api/export/diary-pdf")
+async def export_diary_pdf(request: Request):
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import cm
+    from reportlab.lib import colors
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    from reportlab.lib.enums import TA_LEFT, TA_CENTER
+    import io
+    from fastapi.responses import StreamingResponse
+
+    data = await request.json()
+    entries = data.get("entries", [])
+    name = data.get("name", "")
+    today = data.get("today", "")
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4,
+        rightMargin=2*cm, leftMargin=2*cm, topMargin=2*cm, bottomMargin=2*cm)
+
+    styles = getSampleStyleSheet()
+    forest = colors.HexColor("#2C3D2E")
+    gold = colors.HexColor("#C9A84C")
+    muted = colors.HexColor("#9A958E")
+
+    story = []
+
+    # Header
+    title_style = ParagraphStyle("title", fontSize=22, fontName="Helvetica-Light" if hasattr(styles["Normal"], "Helvetica-Light") else "Helvetica", textColor=forest, spaceAfter=4)
+    story.append(Paragraph("Ágora Mujeres", styles["Heading1"]))
+    story.append(Paragraph("Diario de bienestar y seguimiento del dolor", styles["Normal"]))
+    story.append(Paragraph(f"Generado el {today} · {name}", styles["Normal"]))
+    story.append(Spacer(1, 0.5*cm))
+
+    # Table
+    table_data = [["Fecha", "Dolor", "Nota", "Etiquetas"]]
+    for entry in entries:
+        date = entry.get("date", "")
+        dolor = str(entry.get("dolor", "—"))
+        texto = (entry.get("texto") or "—")[:120]
+        tags = ", ".join(entry.get("tags", []))
+        table_data.append([date, dolor, texto, tags])
+
+    t = Table(table_data, colWidths=[2.5*cm, 1.5*cm, 8*cm, 4*cm])
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0,0), (-1,0), forest),
+        ("TEXTCOLOR", (0,0), (-1,0), colors.white),
+        ("FONTSIZE", (0,0), (-1,0), 9),
+        ("FONTSIZE", (0,1), (-1,-1), 8),
+        ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, colors.HexColor("#F8F7F2")]),
+        ("GRID", (0,0), (-1,-1), 0.25, colors.HexColor("#E8E2D8")),
+        ("VALIGN", (0,0), (-1,-1), "TOP"),
+        ("TOPPADDING", (0,0), (-1,-1), 6),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 6),
+    ]))
+    story.append(t)
+
+    doc.build(story)
+    buffer.seek(0)
+    return StreamingResponse(buffer, media_type="application/pdf",
+        headers={"Content-Disposition": "attachment; filename=agora-diario.pdf"})
+
+
+@app.post("/api/export/cycle-pdf")
+async def export_cycle_pdf(request: Request):
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import cm
+    from reportlab.lib import colors
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    import io
+    from fastapi.responses import StreamingResponse
+
+    data = await request.json()
+    cycle_entries = data.get("cycle_entries", [])
+    diary_entries = data.get("diary_entries", [])
+    name = data.get("name", "")
+    today = data.get("today", "")
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4,
+        rightMargin=2*cm, leftMargin=2*cm, topMargin=2*cm, bottomMargin=2*cm)
+
+    forest = colors.HexColor("#2C3D2E")
+    muted = colors.HexColor("#9A958E")
+
+    title_style = ParagraphStyle("title", fontSize=28, fontName="Times-Roman", textColor=forest, spaceAfter=6, leading=32)
+    subtitle_style = ParagraphStyle("subtitle", fontSize=14, fontName="Times-Roman", textColor=muted, spaceAfter=4)
+    meta_style = ParagraphStyle("meta", fontSize=13, fontName="Helvetica", textColor=muted, spaceAfter=12)
+    section_style = ParagraphStyle("section", fontSize=13, fontName="Helvetica-Bold", textColor=forest, spaceAfter=8, spaceBefore=16)
+    header_style = ParagraphStyle("header", fontSize=12, fontName="Helvetica-Bold", textColor=colors.white)
+    cell_style = ParagraphStyle("cell", fontSize=13, fontName="Times-Roman", textColor=colors.HexColor("#3D3A35"), leading=16)
+    tag_style = ParagraphStyle("tag", fontSize=12, fontName="Helvetica", textColor=colors.HexColor("#4A664D"), leading=15)
+
+    story = []
+    story.append(Paragraph("Agora Mujeres", title_style))
+    story.append(Paragraph("Informe de seguimiento del ciclo y bienestar", subtitle_style))
+    story.append(Paragraph(f"Generado el {today} - {name}", meta_style))
+    story.append(Spacer(1, 0.5*cm))
+
+    # Ciclo
+    story.append(Paragraph("REGISTROS DEL CICLO", section_style))
+    if cycle_entries:
+        cycle_data = [[
+            Paragraph("Fecha", header_style),
+            Paragraph("Fase", header_style),
+            Paragraph("Dolor", header_style),
+            Paragraph("Estado", header_style),
+            Paragraph("Sintomas", header_style),
+        ]]
+        for entry in cycle_entries:
+            cycle_data.append([
+                Paragraph(entry.get("date", ""), cell_style),
+                Paragraph(entry.get("phase", ""), cell_style),
+                Paragraph(str(entry.get("pain", "-")), cell_style),
+                Paragraph(entry.get("mood", "-"), cell_style),
+                Paragraph(", ".join(entry.get("symptoms", [])), tag_style),
+            ])
+        ct = Table(cycle_data, colWidths=[2.5*cm, 4*cm, 1.8*cm, 3*cm, 5.7*cm])
+        ct.setStyle(TableStyle([
+            ("BACKGROUND", (0,0), (-1,0), forest),
+            ("TEXTCOLOR", (0,0), (-1,0), colors.white),
+            ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, colors.HexColor("#F8F7F2")]),
+            ("GRID", (0,0), (-1,-1), 0.25, colors.HexColor("#E8E2D8")),
+            ("VALIGN", (0,0), (-1,-1), "TOP"),
+            ("TOPPADDING", (0,0), (-1,-1), 8),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 8),
+            ("LEFTPADDING", (0,0), (-1,-1), 6),
+            ("RIGHTPADDING", (0,0), (-1,-1), 6),
+        ]))
+        story.append(ct)
+    else:
+        story.append(Paragraph("Sin registros de ciclo.", cell_style))
+
+    story.append(Spacer(1, 0.5*cm))
+
+    # Diario
+    story.append(Paragraph("ENTRADAS DEL DIARIO", section_style))
+    if diary_entries:
+        diary_data = [[
+            Paragraph("Fecha", header_style),
+            Paragraph("Dolor", header_style),
+            Paragraph("Nota", header_style),
+            Paragraph("Etiquetas", header_style),
+        ]]
+        for entry in diary_entries:
+            diary_data.append([
+                Paragraph(entry.get("date", ""), cell_style),
+                Paragraph(str(entry.get("dolor", "-")), cell_style),
+                Paragraph((entry.get("texto") or "-")[:200], cell_style),
+                Paragraph(", ".join(entry.get("tags", [])), tag_style),
+            ])
+        dt = Table(diary_data, colWidths=[2.5*cm, 1.5*cm, 9*cm, 4*cm])
+        dt.setStyle(TableStyle([
+            ("BACKGROUND", (0,0), (-1,0), forest),
+            ("TEXTCOLOR", (0,0), (-1,0), colors.white),
+            ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, colors.HexColor("#F8F7F2")]),
+            ("GRID", (0,0), (-1,-1), 0.25, colors.HexColor("#E8E2D8")),
+            ("VALIGN", (0,0), (-1,-1), "TOP"),
+            ("TOPPADDING", (0,0), (-1,-1), 8),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 8),
+            ("LEFTPADDING", (0,0), (-1,-1), 6),
+            ("RIGHTPADDING", (0,0), (-1,-1), 6),
+        ]))
+        story.append(dt)
+    else:
+        story.append(Paragraph("Sin entradas de diario.", cell_style))
+
+    doc.build(story)
+    buffer.seek(0)
+    return StreamingResponse(buffer, media_type="application/pdf",
+        headers={"Content-Disposition": "attachment; filename=agora-ciclo.pdf"})
+
 # ============== WEATHER ENDPOINT ==============
 
 @app.get("/weather")

@@ -222,20 +222,6 @@ export default function CrisisScreen() {
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity
-          onPress={() => router.replace('/(tabs)/chat')}
-          activeOpacity={0.88}
-          style={{ marginTop: 8 }}
-        >
-          <LinearGradient
-            colors={[C.forestDeep, C.forest]}
-            start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-            style={s.chatBtn}
-          >
-            <Ionicons name="chatbubble-ellipses-outline" size={20} color={C.white} />
-            <Text style={s.chatBtnText}>Necesito hablar con \u00c1gora</Text>
-          </LinearGradient>
-        </TouchableOpacity>
 
         <Text style={s.disclaimer}>
           Esta herramienta es un apoyo, no sustituye a un profesional sanitario o de emergencias.

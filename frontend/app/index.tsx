@@ -291,7 +291,42 @@ export default function LandingScreen() {
           />
         </View>
 
-        {/* ── PRECIOS ───────────────────────────────────────── */}
+        {/* ── FUNCIONALIDADES PDF ──────────────────────────── */}
+        <View style={s.section}>
+          <FadeUp>
+            <Text style={s.sectionEyebrow}>Nuevo en Ágora</Text>
+            <Text style={s.sectionTitle}>Tu historial, lista para tu médica.</Text>
+            <Text style={[s.sectionSub, { marginTop: 12, marginBottom: 28 }]}>
+              Genera un informe PDF con tus registros del ciclo y entradas del diario. Llévalo a tu próxima consulta y deja que los datos hablen por ti.
+            </Text>
+          </FadeUp>
+          <FadeUp delay={100}>
+            <View style={s.featureRow}>
+              <View style={s.featureCard}>
+                <View style={[s.featureIcon, { backgroundColor: '#EAF4E8' }]}>
+                  <Ionicons name="document-text-outline" size={24} color={C.forest} />
+                </View>
+                <Text style={s.featureTitle}>Informe del ciclo</Text>
+                <Text style={s.featureText}>Fases, nivel de dolor, síntomas y estado de ánimo. Todo ordenado por fecha.</Text>
+              </View>
+              <View style={s.featureCard}>
+                <View style={[s.featureIcon, { backgroundColor: '#FDF8EE' }]}>
+                  <Ionicons name="book-outline" size={24} color={C.gold} />
+                </View>
+                <Text style={s.featureTitle}>Entradas del diario</Text>
+                <Text style={s.featureText}>Tus notas, etiquetas y niveles de dolor recogidos en un documento claro y profesional.</Text>
+              </View>
+              <View style={s.featureCard}>
+                <View style={[s.featureIcon, { backgroundColor: '#FEF2F2' }]}>
+                  <Ionicons name="download-outline" size={24} color="#C0614A" />
+                </View>
+                <Text style={s.featureTitle}>Descarga en un toque</Text>
+                <Text style={s.featureText}>Sin complicaciones. Un botón, un PDF. Listo para imprimir o enviar a tu especialista.</Text>
+              </View>
+            </View>
+          </FadeUp>
+        </View>
+                {/* ── PRECIOS ───────────────────────────────────────── */}
         <LinearGradient
           colors={[C.goldSoft, C.cream]}
           style={s.section}
@@ -316,7 +351,7 @@ export default function LandingScreen() {
                   <Text style={s.pricingDesc}>Acceso completo · cancela cuando quieras</Text>
                 </View>
                 <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={s.pricingPrice}>5,90€</Text>
+                  <Text style={s.pricingPrice}>7,90€</Text>
                   <Text style={s.pricingPer}>/mes</Text>
                 </View>
               </View>
@@ -342,7 +377,7 @@ export default function LandingScreen() {
                   <Text style={[s.pricingDesc, { color: C.sage }]}>Acceso prioritario · todo incluido</Text>
                 </View>
                 <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={[s.pricingPrice, { color: C.gold }]}>59€</Text>
+                  <Text style={[s.pricingPrice, { color: C.gold }]}>79,90€</Text>
                   <Text style={[s.pricingPer, { color: C.sage }]}>/año</Text>
                 </View>
               </View>
@@ -521,6 +556,11 @@ const s = StyleSheet.create({
   heroStatDivider: { width: 1, backgroundColor: 'rgba(255,255,255,0.2)', marginHorizontal: 8 },
 
   // Sections
+  featureRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 16, marginTop: 8 },
+  featureCard: { flex: 1, minWidth: 200, backgroundColor: '#FFFFFF', borderRadius: 18, padding: 20, borderWidth: 1, borderColor: '#E8E2D8', gap: 8 },
+  featureIcon: { width: 48, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
+  featureTitle: { fontSize: 15, fontWeight: '600', color: '#2C3D2E' },
+  featureText: { fontSize: 13, color: '#9A958E', lineHeight: 20 },
   section: {
     paddingHorizontal: 24, paddingVertical: 56,
   },

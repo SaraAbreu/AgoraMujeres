@@ -29,7 +29,16 @@
     },
     "web": {
       "bundler": "metro",
-      "output": "static"
+      "output": "static",
+      "name": "Ágora Mujeres",
+      "shortName": "Ágora",
+      "description": "Tu refugio de calma y conexión",
+      "themeColor": "#2C3D2E",
+      "backgroundColor": "#F8F7F2",
+      "favicon": "./public/logo-silueta.png",
+      "splash": {
+        "backgroundColor": "#F8F7F2"
+      }
     },
     "plugins": [
       "expo-router",

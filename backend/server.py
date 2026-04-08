@@ -209,6 +209,7 @@ app.include_router(diary_router, prefix="/api")
 # PATCH: Log incoming chat requests
 from core.models import ChatRequest
 
+@app.post("/api/chat")
 async def log_chat_request(request: Request):
     data = await request.json()
     logger.info(f"[API/CHAT] Mensaje recibido: device_id={data.get('device_id')}, payload={data}")

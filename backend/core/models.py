@@ -65,3 +65,22 @@ class SubscriptionStatus(BaseModel):
     status: str = "trial"
     trial_remaining_seconds: int = 5400
     is_admin: bool = False
+    trial_end: Optional[datetime] = None
+    usage_seconds: int = 0
+    stripe_customer_id: Optional[str] = None
+    email: Optional[str] = None
+
+    def __init__(self, **data):
+        from datetime import datetime, timedelta
+        if "trial_end" not in data or data["trial_end"] is None:
+            data["trial_end"] = datetime.utcnow() + timedelta(seconds=data.get("trial_remaining_seconds", 5400))
+        super().__init__(**data)
+
+class CustomerCreate(BaseModel):
+    device_id: str
+    email: str
+    name: Optional[str] = None
+
+class AdminCodeRequest(BaseModel):
+    device_id: str
+    code: str

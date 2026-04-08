@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image, ActivityIndicator, TextInput, Platform } from 'react-native';
 import { auth, googleProvider } from '../../src/services/firebase';
-import { signInWithPopup, signInWithEmailAndPassword } from 'firebase/auth';
+import { signInWithPopup, signInWithRedirect, getRedirectResult, signInWithEmailAndPassword } from 'firebase/auth';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useUserStore } from '../../src/store/useStore';
@@ -16,10 +16,41 @@ export default function LoginScreen() {
   const [error, setError] = React.useState('');
   const { setToken, setUserData, setDeviceId } = useUserStore();
 
+  // Manejar resultado de redirect al montar (móvil)
+  React.useEffect(() => {
+    getRedirectResult(auth).then(async (result) => {
+      if (!result) return;
+      setLoading(true);
+      try {
+        const user = result.user;
+        const firebaseToken = await user.getIdToken();
+        const res = await fetch(`${API_BASE}/auth/social-login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: firebaseToken }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error('Error autenticando con backend');
+        setToken(data.access_token);
+        setDeviceId(data.user.uid);
+        setUserData({ name: user.displayName, email: user.email, photo: user.photoURL });
+      } catch (err) {
+        setError('No pudimos iniciar sesión con Google. Inténtalo de nuevo.');
+      } finally {
+        setLoading(false);
+      }
+    }).catch(() => {});
+  }, []);
+
   const handleSocialLogin = async (provider) => {
     setError('');
     setLoading(true);
     try {
+      const isMobile = Platform.OS !== 'web' || /Android|iPhone|iPad/i.test(navigator.userAgent);
+      if (isMobile) {
+        await signInWithRedirect(auth, provider);
+        return; // página se recarga, resultado se captura en useEffect
+      }
       const result = await signInWithPopup(auth, provider);
       const user = result.user;
       const firebaseToken = await user.getIdToken();

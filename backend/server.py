@@ -731,7 +731,7 @@ Eres Ágora, un refugio emocional para mujeres que viven con dolor crónico. Tu 
 👥 QUIÉN ERES TÚ:
 - La voz que entiende que el DOLOR CRÓNICO es INJUSTO, REAL e INVISIBLE
 - Alguien que cree "el dolor es válido" sin preguntarle al médico
-- Un refugio para mujeres con fibromialgia, artritis, migrañas crónicas, endometriosis, SFC, POTS, dolor neuropático y cualquier condición de dolor crónico
+- Un refugio para mujeres con fibromialgia, artritis, migrañas crónicas, endometriosis, SFC, POTS, dolor neuropático, diabetes (tipo 1, tipo 2 y gestacional), y cualquier condición de dolor crónico o enfermedad crónica
 - Una compañera que ACOMPAÑA sin presionar, sin juzgar, sin minimizar
 
 QUÉ ENTIENDES DEL DOLOR CRÓNICO:
@@ -743,6 +743,8 @@ QUÉ ENTIENDES DEL DOLOR CRÓNICO:
 - La frustración es constante: cuerpos que no cooperan, médicos que no escuchan
 - La carga emocional es TAN REAL como el dolor físico: ansiedad, depresión, duelo
 - Cada condición es diferente: no hay una solución universal, cada mujer es única
+- En diabetes: entiendes la carga emocional del control constante de glucosa, el miedo a la hipoglucemia, la fatiga diabética, la neuropatía periférica, y cómo las hormonas del ciclo afectan la resistencia a la insulina
+- La diabetes no es "culpa" de nadie: nunca minimices ni hagas sentir culpable a la usuaria por sus niveles de glucosa
 
 ═══════════════════════════════════════════════════════════════════
 
@@ -784,6 +786,54 @@ CARACTERÍSTICAS DE EJERCICIOS:
 - Lenguaje simple y motivador
 - Incluir siempre opción más fácil
 - Máximo 2-3 ejercicios por recomendación
+
+═══════════════════════════════════════════════════════════════════
+
+🩺 CONOCIMIENTO DE DIABETES:
+Manejas estos conceptos con naturalidad, sin sonar médica:
+
+NIVELES DE GLUCOSA (mg/dL):
+- Ayunas normal: 70-100 · Prediabetes: 100-125 · Diabetes: +126
+- Después de comer (2h) normal: menos de 140 · Elevada: 140-199 · Alta: +200
+- Hipoglucemia (bajada): menos de 70 — URGENTE, necesita azúcar rápido
+- Hiperglucemia (subida): más de 250 — requiere atención
+- Rango objetivo general para diabéticas: 80-130 en ayunas, menos de 180 tras comer
+
+CONCEPTOS QUE ENTIENDES:
+- HbA1c: media de glucosa de los últimos 3 meses. Objetivo habitual: menos de 7%
+- Índice glucémico (IG): velocidad a la que un alimento sube la glucosa. Bajo IG = mejor control
+- Resistencia a la insulina: la insulina funciona peor, especialmente en fase lútea y perimenopausia
+- Neuropatía diabética: dolor, hormigueo o entumecimiento en pies y manos
+- Fatiga diabética: agotamiento real causado por fluctuaciones de glucosa
+- Efecto Somogyi: rebote de hiperglucemia tras hipoglucemia nocturna
+- Dawn phenomenon: glucosa sube sola por la mañana por hormonas del despertar
+
+CICLO Y DIABETES:
+- Fase lútea (antes de la regla): progesterona aumenta resistencia a insulina → glucosa más alta
+- Menstruación: glucosa puede bajar al inicio
+- Ovulación: estrógeno mejora sensibilidad a insulina → glucosa más baja
+- Perimenopausia y menopausia: fluctuaciones hormonales hacen el control más impredecible
+
+SEÑALES DE ALERTA que reconoces:
+- Hipoglucemia: temblores, sudoración, confusión, hambre repentina, palpitaciones
+- Hiperglucemia: sed excesiva, orinar mucho, visión borrosa, fatiga, heridas que no cierran
+- Ante síntomas graves: siempre derivar a médico o urgencias sin alarmar innecesariamente
+
+═══════════════════════════════════════════════════════════════════
+
+🍽️ AYUDA PRÁCTICA DEL DÍA A DÍA:
+Ágora también ayuda con lo cotidiano cuando la enfermedad lo complica:
+- Recetas fáciles, rápidas y adaptadas (poca energía, manos con dolor, niebla mental)
+- Ideas de comidas con pocos ingredientes y mínima preparación
+- Sugerencias de comidas aptas para diabetes (bajo índice glucémico, sin picos de azúcar)
+- Organización del hogar en días difíciles
+- Listas de compra simples
+- Cualquier tarea del día a día que la usuaria encuentre difícil de gestionar
+
+Cuando ayudes con recetas o comidas:
+- Prioriza simplicidad: máximo 5 ingredientes, menos de 20 minutos
+- Indica si es apta para diabetes cuando sea relevante
+- Nunca presiones ni juzgues lo que come o deja de comer
 
 ═══════════════════════════════════════════════════════════════════
 
@@ -1901,43 +1951,54 @@ async def export_diary_pdf(request: Request):
     today = data.get("today", "")
 
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4,
-        rightMargin=2*cm, leftMargin=2*cm, topMargin=2*cm, bottomMargin=2*cm)
+    PAGE = (440, 700)
+    doc = SimpleDocTemplate(buffer, pagesize=PAGE,
+        rightMargin=1.2*cm, leftMargin=1.2*cm, topMargin=1.5*cm, bottomMargin=1.5*cm)
 
-    styles = getSampleStyleSheet()
     forest = colors.HexColor("#2C3D2E")
-    gold = colors.HexColor("#C9A84C")
     muted = colors.HexColor("#9A958E")
 
+    title_style = ParagraphStyle("title", fontSize=22, fontName="Helvetica-Bold", textColor=forest, spaceAfter=4, leading=26)
+    sub_style = ParagraphStyle("sub", fontSize=13, fontName="Helvetica", textColor=muted, spaceAfter=2, leading=16)
+    header_style = ParagraphStyle("header", fontSize=12, fontName="Helvetica-Bold", textColor=colors.white, leading=15)
+    cell_style = ParagraphStyle("cell", fontSize=12, fontName="Helvetica", textColor=colors.HexColor("#3D3A35"), leading=15)
+    tag_style = ParagraphStyle("tag", fontSize=11, fontName="Helvetica", textColor=colors.HexColor("#4A664D"), leading=14)
+
     story = []
+    story.append(Paragraph("Agora Mujeres", title_style))
+    story.append(Paragraph("Diario de bienestar y seguimiento del dolor", sub_style))
+    story.append(Paragraph(f"Generado el {today} · {name}", sub_style))
+    story.append(Spacer(1, 0.4*cm))
 
-    # Header
-    title_style = ParagraphStyle("title", fontSize=22, fontName="Helvetica-Light" if hasattr(styles["Normal"], "Helvetica-Light") else "Helvetica", textColor=forest, spaceAfter=4)
-    story.append(Paragraph("Ágora Mujeres", styles["Heading1"]))
-    story.append(Paragraph("Diario de bienestar y seguimiento del dolor", styles["Normal"]))
-    story.append(Paragraph(f"Generado el {today} · {name}", styles["Normal"]))
-    story.append(Spacer(1, 0.5*cm))
-
-    # Table
-    table_data = [["Fecha", "Dolor", "Nota", "Etiquetas"]]
+    table_data = [[
+        Paragraph("Fecha", header_style),
+        Paragraph("Dolor", header_style),
+        Paragraph("Nota", header_style),
+        Paragraph("Etiquetas", header_style),
+    ]]
     for entry in entries:
         date = entry.get("date", "")
         dolor = str(entry.get("dolor", "—"))
-        texto = (entry.get("texto") or "—")[:120]
+        texto = (entry.get("texto") or "—")[:150]
         tags = ", ".join(entry.get("tags", []))
-        table_data.append([date, dolor, texto, tags])
+        table_data.append([
+            Paragraph(date, cell_style),
+            Paragraph(dolor, cell_style),
+            Paragraph(texto, cell_style),
+            Paragraph(tags, tag_style),
+        ])
 
-    t = Table(table_data, colWidths=[2.5*cm, 1.5*cm, 8*cm, 4*cm])
+    usable_width = 440 - 2*1.2*cm
+    t = Table(table_data, colWidths=[usable_width*0.22, usable_width*0.10, usable_width*0.42, usable_width*0.26])
     t.setStyle(TableStyle([
         ("BACKGROUND", (0,0), (-1,0), forest),
-        ("TEXTCOLOR", (0,0), (-1,0), colors.white),
-        ("FONTSIZE", (0,0), (-1,0), 9),
-        ("FONTSIZE", (0,1), (-1,-1), 8),
         ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, colors.HexColor("#F8F7F2")]),
         ("GRID", (0,0), (-1,-1), 0.25, colors.HexColor("#E8E2D8")),
         ("VALIGN", (0,0), (-1,-1), "TOP"),
-        ("TOPPADDING", (0,0), (-1,-1), 6),
-        ("BOTTOMPADDING", (0,0), (-1,-1), 6),
+        ("TOPPADDING", (0,0), (-1,-1), 7),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 7),
+        ("LEFTPADDING", (0,0), (-1,-1), 5),
+        ("RIGHTPADDING", (0,0), (-1,-1), 5),
     ]))
     story.append(t)
 
@@ -1964,25 +2025,27 @@ async def export_cycle_pdf(request: Request):
     today = data.get("today", "")
 
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4,
-        rightMargin=2*cm, leftMargin=2*cm, topMargin=2*cm, bottomMargin=2*cm)
+    PAGE = (440, 700)
+    doc = SimpleDocTemplate(buffer, pagesize=PAGE,
+        rightMargin=1.2*cm, leftMargin=1.2*cm, topMargin=1.5*cm, bottomMargin=1.5*cm)
 
     forest = colors.HexColor("#2C3D2E")
     muted = colors.HexColor("#9A958E")
 
-    title_style = ParagraphStyle("title", fontSize=28, fontName="Times-Roman", textColor=forest, spaceAfter=6, leading=32)
-    subtitle_style = ParagraphStyle("subtitle", fontSize=14, fontName="Times-Roman", textColor=muted, spaceAfter=4)
-    meta_style = ParagraphStyle("meta", fontSize=13, fontName="Helvetica", textColor=muted, spaceAfter=12)
-    section_style = ParagraphStyle("section", fontSize=13, fontName="Helvetica-Bold", textColor=forest, spaceAfter=8, spaceBefore=16)
-    header_style = ParagraphStyle("header", fontSize=12, fontName="Helvetica-Bold", textColor=colors.white)
-    cell_style = ParagraphStyle("cell", fontSize=13, fontName="Times-Roman", textColor=colors.HexColor("#3D3A35"), leading=16)
-    tag_style = ParagraphStyle("tag", fontSize=12, fontName="Helvetica", textColor=colors.HexColor("#4A664D"), leading=15)
+    title_style = ParagraphStyle("title", fontSize=22, fontName="Helvetica-Bold", textColor=forest, spaceAfter=4, leading=26)
+    sub_style = ParagraphStyle("sub", fontSize=13, fontName="Helvetica", textColor=muted, spaceAfter=2, leading=16)
+    section_style = ParagraphStyle("section", fontSize=14, fontName="Helvetica-Bold", textColor=forest, spaceAfter=8, spaceBefore=14)
+    header_style = ParagraphStyle("header", fontSize=12, fontName="Helvetica-Bold", textColor=colors.white, leading=15)
+    cell_style = ParagraphStyle("cell", fontSize=12, fontName="Helvetica", textColor=colors.HexColor("#3D3A35"), leading=15)
+    tag_style = ParagraphStyle("tag", fontSize=11, fontName="Helvetica", textColor=colors.HexColor("#4A664D"), leading=14)
 
     story = []
     story.append(Paragraph("Agora Mujeres", title_style))
-    story.append(Paragraph("Informe de seguimiento del ciclo y bienestar", subtitle_style))
-    story.append(Paragraph(f"Generado el {today} - {name}", meta_style))
-    story.append(Spacer(1, 0.5*cm))
+    story.append(Paragraph("Informe de seguimiento del ciclo y bienestar", sub_style))
+    story.append(Paragraph(f"Generado el {today} - {name}", sub_style))
+    story.append(Spacer(1, 0.4*cm))
+
+    usable_width = 440 - 2*1.2*cm
 
     # Ciclo
     story.append(Paragraph("REGISTROS DEL CICLO", section_style))
@@ -2002,23 +2065,22 @@ async def export_cycle_pdf(request: Request):
                 Paragraph(entry.get("mood", "-"), cell_style),
                 Paragraph(", ".join(entry.get("symptoms", [])), tag_style),
             ])
-        ct = Table(cycle_data, colWidths=[2.5*cm, 4*cm, 1.8*cm, 3*cm, 5.7*cm])
+        ct = Table(cycle_data, colWidths=[usable_width*0.20, usable_width*0.26, usable_width*0.12, usable_width*0.20, usable_width*0.22])
         ct.setStyle(TableStyle([
             ("BACKGROUND", (0,0), (-1,0), forest),
-            ("TEXTCOLOR", (0,0), (-1,0), colors.white),
             ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, colors.HexColor("#F8F7F2")]),
             ("GRID", (0,0), (-1,-1), 0.25, colors.HexColor("#E8E2D8")),
             ("VALIGN", (0,0), (-1,-1), "TOP"),
-            ("TOPPADDING", (0,0), (-1,-1), 8),
-            ("BOTTOMPADDING", (0,0), (-1,-1), 8),
-            ("LEFTPADDING", (0,0), (-1,-1), 6),
-            ("RIGHTPADDING", (0,0), (-1,-1), 6),
+            ("TOPPADDING", (0,0), (-1,-1), 7),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 7),
+            ("LEFTPADDING", (0,0), (-1,-1), 5),
+            ("RIGHTPADDING", (0,0), (-1,-1), 5),
         ]))
         story.append(ct)
     else:
         story.append(Paragraph("Sin registros de ciclo.", cell_style))
 
-    story.append(Spacer(1, 0.5*cm))
+    story.append(Spacer(1, 0.4*cm))
 
     # Diario
     story.append(Paragraph("ENTRADAS DEL DIARIO", section_style))
@@ -2036,17 +2098,16 @@ async def export_cycle_pdf(request: Request):
                 Paragraph((entry.get("texto") or "-")[:200], cell_style),
                 Paragraph(", ".join(entry.get("tags", [])), tag_style),
             ])
-        dt = Table(diary_data, colWidths=[2.5*cm, 1.5*cm, 9*cm, 4*cm])
+        dt = Table(diary_data, colWidths=[usable_width*0.22, usable_width*0.10, usable_width*0.42, usable_width*0.26])
         dt.setStyle(TableStyle([
             ("BACKGROUND", (0,0), (-1,0), forest),
-            ("TEXTCOLOR", (0,0), (-1,0), colors.white),
             ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, colors.HexColor("#F8F7F2")]),
             ("GRID", (0,0), (-1,-1), 0.25, colors.HexColor("#E8E2D8")),
             ("VALIGN", (0,0), (-1,-1), "TOP"),
-            ("TOPPADDING", (0,0), (-1,-1), 8),
-            ("BOTTOMPADDING", (0,0), (-1,-1), 8),
-            ("LEFTPADDING", (0,0), (-1,-1), 6),
-            ("RIGHTPADDING", (0,0), (-1,-1), 6),
+            ("TOPPADDING", (0,0), (-1,-1), 7),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 7),
+            ("LEFTPADDING", (0,0), (-1,-1), 5),
+            ("RIGHTPADDING", (0,0), (-1,-1), 5),
         ]))
         story.append(dt)
     else:
@@ -2056,6 +2117,118 @@ async def export_cycle_pdf(request: Request):
     buffer.seek(0)
     return StreamingResponse(buffer, media_type="application/pdf",
         headers={"Content-Disposition": "attachment; filename=agora-ciclo.pdf"})
+
+# ============== DIABETES ENDPOINTS ==============
+
+@app.post("/api/diabetes")
+async def save_diabetes_entry(request: Request):
+    data = await request.json()
+    device_id = data.get("device_id")
+    if not device_id:
+        raise HTTPException(status_code=400, detail="device_id requerido")
+    entry = {
+        "device_id": device_id,
+        "glucose": data.get("glucose", 0),
+        "moment": data.get("moment", "other"),
+        "medication": data.get("medication", ""),
+        "symptoms": data.get("symptoms", []),
+        "notes": data.get("notes", ""),
+        "created_at": datetime.utcnow().isoformat(),
+    }
+    result = await db.diabetes.insert_one(entry)
+    entry["id"] = str(result.inserted_id)
+    entry.pop("_id", None)
+    return entry
+
+@app.get("/api/diabetes")
+async def get_diabetes_entries(device_id: str, limit: int = 30):
+    if not device_id:
+        raise HTTPException(status_code=400, detail="device_id requerido")
+    cursor = db.diabetes.find(
+        {"device_id": device_id},
+        {"_id": 0}
+    ).sort("created_at", -1).limit(limit)
+    entries = await cursor.to_list(length=limit)
+    return {"entries": entries}
+
+@app.post("/api/export/diabetes-pdf")
+async def export_diabetes_pdf(request: Request):
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import cm
+    from reportlab.lib import colors
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    import io
+    from fastapi.responses import StreamingResponse
+
+    data = await request.json()
+    entries = data.get("entries", [])
+    name = data.get("name", "")
+    today = data.get("today", "")
+
+    buffer = io.BytesIO()
+    PAGE = (440, 700)
+    doc = SimpleDocTemplate(buffer, pagesize=PAGE,
+        rightMargin=1.2*cm, leftMargin=1.2*cm, topMargin=1.5*cm, bottomMargin=1.5*cm)
+
+    forest = colors.HexColor("#2C3D2E")
+    muted = colors.HexColor("#9A958E")
+
+    title_style = ParagraphStyle("title", fontSize=22, fontName="Helvetica-Bold", textColor=forest, spaceAfter=4, leading=26)
+    sub_style = ParagraphStyle("sub", fontSize=13, fontName="Helvetica", textColor=muted, spaceAfter=2, leading=16)
+    header_style = ParagraphStyle("header", fontSize=12, fontName="Helvetica-Bold", textColor=colors.white, leading=15)
+    cell_style = ParagraphStyle("cell", fontSize=12, fontName="Helvetica", textColor=colors.HexColor("#3D3A35"), leading=15)
+    tag_style = ParagraphStyle("tag", fontSize=11, fontName="Helvetica", textColor=colors.HexColor("#4A664D"), leading=14)
+
+    story = []
+    story.append(Paragraph("Agora Mujeres", title_style))
+    story.append(Paragraph("Registro de glucosa y bienestar", sub_style))
+    story.append(Paragraph(f"Generado el {today} - {name}", sub_style))
+    story.append(Spacer(1, 0.4*cm))
+
+    usable_width = 440 - 2*1.2*cm
+
+    if entries:
+        table_data = [[
+            Paragraph("Fecha", header_style),
+            Paragraph("Glucosa", header_style),
+            Paragraph("Momento", header_style),
+            Paragraph("Medicacion", header_style),
+            Paragraph("Sintomas", header_style),
+        ]]
+        for entry in entries:
+            table_data.append([
+                Paragraph(entry.get("date", ""), cell_style),
+                Paragraph(str(entry.get("glucose", "")) + " mg/dL", cell_style),
+                Paragraph(entry.get("moment", ""), cell_style),
+                Paragraph(entry.get("medication", "-"), cell_style),
+                Paragraph(", ".join(entry.get("symptoms", [])), tag_style),
+            ])
+        t = Table(table_data, colWidths=[
+            usable_width*0.18,
+            usable_width*0.16,
+            usable_width*0.22,
+            usable_width*0.22,
+            usable_width*0.22,
+        ])
+        t.setStyle(TableStyle([
+            ("BACKGROUND", (0,0), (-1,0), forest),
+            ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, colors.HexColor("#F8F7F2")]),
+            ("GRID", (0,0), (-1,-1), 0.25, colors.HexColor("#E8E2D8")),
+            ("VALIGN", (0,0), (-1,-1), "TOP"),
+            ("TOPPADDING", (0,0), (-1,-1), 7),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 7),
+            ("LEFTPADDING", (0,0), (-1,-1), 5),
+            ("RIGHTPADDING", (0,0), (-1,-1), 5),
+        ]))
+        story.append(t)
+    else:
+        story.append(Paragraph("Sin registros.", cell_style))
+
+    doc.build(story)
+    buffer.seek(0)
+    return StreamingResponse(buffer, media_type="application/pdf",
+        headers={"Content-Disposition": "attachment; filename=agora-diabetes.pdf"})
 
 # ============== WEATHER ENDPOINT ==============
 

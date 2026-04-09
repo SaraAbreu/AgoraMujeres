@@ -13,10 +13,12 @@ const C = {
 };
 
 const PHASES: Record<string, { label: string; color: string; bg: string; icon: any }> = {
-  menstruation: { label: 'Regla o Período',     color: '#C0614A', bg: '#FEF2F2', icon: 'water-outline' },
-  follicular:   { label: 'Después de la regla', color: '#4A7FA5', bg: '#EEF4FA', icon: 'sunny-outline' },
-  ovulation:    { label: 'Mitad del ciclo',      color: C.forest,  bg: C.mintSoft, icon: 'flower-outline' },
-  luteal:       { label: 'Antes de la regla',    color: C.gold,    bg: '#FDF8EE', icon: 'moon-outline' },
+  menstruation:  { label: 'Regla o Período',     color: '#C0614A', bg: '#FEF2F2', icon: 'water-outline' },
+  follicular:    { label: 'Después de la regla', color: '#4A7FA5', bg: '#EEF4FA', icon: 'sunny-outline' },
+  ovulation:     { label: 'Mitad del ciclo',      color: C.forest,  bg: C.mintSoft, icon: 'flower-outline' },
+  luteal:        { label: 'Antes de la regla',    color: C.gold,    bg: '#FDF8EE', icon: 'moon-outline' },
+  perimenopause: { label: 'Perimenopausia',       color: '#7B5EA7', bg: '#F3EEF8', icon: 'contrast-outline' },
+  menopause:     { label: 'Menopausia',           color: '#A0522D', bg: '#FDF4EE', icon: 'infinite-outline' },
 };
 
 function formatDate(iso: string) {

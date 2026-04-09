@@ -261,7 +261,7 @@ export default function HomeScreen() {
     if (deviceId) getDiaryEntries(deviceId, 1).then(e => e.length && setLast(e[0])).catch(() => { });
     if (deviceId && typeof window !== 'undefined') {
       const saved = localStorage.getItem('agora-cycle-' + deviceId);
-      if (saved) try { setCycleData(JSON.parse(saved)); } catch {}
+      if (saved) try { setCycleData(JSON.parse(saved)); } catch { }
     }
     // Detect ?payment=success/cancelled from Stripe redirect
     if (typeof window !== 'undefined') {
@@ -340,8 +340,10 @@ export default function HomeScreen() {
     { key: 'follicular', label: 'Después de la regla', color: '#4A7FA5', bg: '#EEF4FA', icon: 'sunny-outline' },
     { key: 'ovulation', label: 'Mitad del ciclo', color: C.forest, bg: C.mintSoft, icon: 'flower-outline' },
     { key: 'luteal', label: 'Antes de la regla', color: C.gold, bg: '#FDF8EE', icon: 'moon-outline' },
+    { key: 'perimenopause', label: 'Perimenopausia', color: '#7B5EA7', bg: '#F3EEF8', icon: 'contrast-outline' },
+    { key: 'menopause', label: 'Menopausia', color: '#A0522D', bg: '#FDF4EE', icon: 'infinite-outline' },
   ];
-  const CYCLE_SYMPTOMS = ['hinchazón', 'náuseas', 'fatiga', 'migraña', 'irritabilidad', 'insomnio', 'calambres', 'sensibilidad'];
+  const CYCLE_SYMPTOMS = ['hinchazón', 'náuseas', 'fatiga', 'migraña', 'irritabilidad', 'insomnio', 'calambres', 'sensibilidad', 'sofocos', 'sudores nocturnos', 'sequedad', 'palpitaciones', 'cambios de humor'];
   const CYCLE_MOODS = ['tranquila', 'triste', 'irritable', 'agotada', 'ansiosa', 'bien'];
   const lastCycleEntry = cycleData?.entries?.[cycleData.entries.length - 1];
   const currentPhase = CYCLE_PHASES.find(p => p.key === (lastCycleEntry?.phase || 'menstruation')) || CYCLE_PHASES[0];
@@ -363,7 +365,7 @@ export default function HomeScreen() {
           mood: cycleForm.mood,
         }),
       });
-    } catch(e) { console.error('cycle save error', e); }
+    } catch (e) { console.error('cycle save error', e); }
     setShowCycle(false);
     setCycleForm({ phase: 'menstruation', pain: 0, symptoms: [], mood: '' });
     setCycleSaved(true);
@@ -407,15 +409,15 @@ export default function HomeScreen() {
 
   const StreakBlock = (
     <View style={s.streakCard}>
-        <View style={s.streakNumBox}>
-          <Text style={s.streakNum}>{contador}</Text>
-          <Text style={s.streakUnit}>días</Text>
-        </View>
-        <View style={s.streakDivider} />
-        <Text style={s.streakMsg}>
-          {contador > 0 ? `Llevas ${contador} ${contador === 1 ? 'día' : 'días'} escuchándote. Eso importa.` : 'Hoy es un buen día para empezar.'}
-        </Text>
+      <View style={s.streakNumBox}>
+        <Text style={s.streakNum}>{contador}</Text>
+        <Text style={s.streakUnit}>días</Text>
       </View>
+      <View style={s.streakDivider} />
+      <Text style={s.streakMsg}>
+        {contador > 0 ? `Llevas ${contador} ${contador === 1 ? 'día' : 'días'} escuchándote. Eso importa.` : 'Hoy es un buen día para empezar.'}
+      </Text>
+    </View>
   );
 
   const CountdownBlock = trialLabel && sub?.status === 'trial' ? (
@@ -489,6 +491,30 @@ export default function HomeScreen() {
           </View>
         </View>
       </Press>
+    </FadeIn>
+  );
+
+  const DiabetesBlock = (
+    <FadeIn delay={185}>
+      <TouchableOpacity onPress={() => router.push('/diabetes')} activeOpacity={0.85}>
+        <View style={s.cycleCard}>
+          <View style={[s.cycleIconBox, { backgroundColor: '#EEF4FA' }]}>
+            <Ionicons name="pulse-outline" size={20} color="#5B8DB8" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={s.cycleTitle}>Glucosa y Diabetes</Text>
+            <Text style={s.cycleSub}>Registra y sigue tu evolución</Text>
+          </View>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <TouchableOpacity onPress={() => router.push('/diabetes')} style={s.cycleArrow}>
+              <Ionicons name="time-outline" size={18} color={C.forest} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => router.push('/diabetes/new')} style={s.cycleArrow}>
+              <Ionicons name="add" size={18} color={C.forest} />
+            </TouchableOpacity>
+          </View>
+        </View>
+      </TouchableOpacity>
     </FadeIn>
   );
 
@@ -579,6 +605,7 @@ export default function HomeScreen() {
                 {SOSBlock}
                 {PatternsBlock}
                 {CycleBlock}
+                {DiabetesBlock}
               </View>
             </View>
           ) : (
@@ -591,6 +618,7 @@ export default function HomeScreen() {
                 <View style={{ flex: 1 }}>{PatternsBlock}</View>
               </View>
               {CycleBlock}
+              {DiabetesBlock}
               {LastEntryBlock}
               {StreakBlock}
             </View>
@@ -620,7 +648,7 @@ export default function HomeScreen() {
               </View>
               <Text style={s.cycleModalLabel}>Intensidad del dolor (0-5)</Text>
               <View style={{ flexDirection: 'row', gap: 10, marginBottom: 20 }}>
-                {[0,1,2,3,4,5].map(n => (
+                {[0, 1, 2, 3, 4, 5].map(n => (
                   <TouchableOpacity key={n} onPress={() => setCycleForm(f => ({ ...f, pain: n }))}
                     style={[s.painDotBtn, { backgroundColor: cycleForm.pain === n ? C.forest : C.parchment, borderColor: cycleForm.pain === n ? C.forest : C.warm }]}>
                     <Text style={[s.painDotBtnText, { color: cycleForm.pain === n ? C.white : C.muted }]}>{n}</Text>

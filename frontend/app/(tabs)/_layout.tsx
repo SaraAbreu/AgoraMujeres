@@ -60,7 +60,7 @@ export default function TabsLayout() {
     if (!deviceId) return;
     getSubscriptionStatus(deviceId).then((data) => {
       if (data.status === 'expired') {
-        router.replace('/subscription');
+        window.location.href = 'https://agoramujeres.syntexia-solutions.es';
       }
     }).catch(() => {});
   }, [deviceId]);

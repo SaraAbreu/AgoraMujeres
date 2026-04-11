@@ -7,7 +7,7 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { sendChatMessage, clearChatHistory } from '../../src/services/api';
+import { sendChatMessage, clearChatHistory, getChatHistory } from '../../src/services/api';
 import { useUserStore } from '../../src/store/useStore';
 
 const T = {
@@ -129,8 +129,21 @@ export default function ChatScreen() {
   const scroll = () => setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
 
   useEffect(() => {
-    if (!deviceId || messages.length > 0) return;
-    setMessages([{ role: 'assistant', content: GREETING, id: '0' }]);
+    if (!deviceId) return;
+    getChatHistory(deviceId, 40).then(msgs => {
+      if (msgs && msgs.length > 0) {
+        setMessages(msgs.map((m, i) => ({
+          role: m.role,
+          content: m.content,
+          id: i.toString(),
+          exercises: (m as any).exercises,
+        })));
+      } else {
+        setMessages([{ role: 'assistant', content: GREETING, id: '0' }]);
+      }
+    }).catch(() => {
+      setMessages([{ role: 'assistant', content: GREETING, id: '0' }]);
+    });
   }, [deviceId]);
 
   useEffect(() => { scroll(); }, [messages, isTyping]);

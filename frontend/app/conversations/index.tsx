@@ -9,7 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { GlassCard } from '../../src/components/ui';
 import { EmptyState } from '../../src/components/ui';
-import { useStore } from '../../src/store/useStore';
+import { useUserStore } from '../../src/store/useStore';
 import {
   getConversations, deleteConversation, type Conversation,
 } from '../../src/services/api';
@@ -19,7 +19,7 @@ export default function ConversationsScreen() {
   const { t } = useTranslation();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { deviceId } = useStore();
+  const { deviceId } = useUserStore();
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading]         = useState(true);

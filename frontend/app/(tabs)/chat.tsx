@@ -197,6 +197,9 @@ export default function ChatScreen() {
           <Text style={st.headerTitle}>Ágora</Text>
           <Text style={st.headerSub}>Tu acompañante siempre está aquí</Text>
         </View>
+        <TouchableOpacity onPress={() => router.push('/conversations')} style={st.clearBtn}>
+          <Ionicons name="time-outline" size={20} color={T.sage} />
+        </TouchableOpacity>
         <TouchableOpacity onPress={clearChat} style={st.clearBtn}>
           <Ionicons name="refresh-outline" size={20} color={T.sage} />
         </TouchableOpacity>

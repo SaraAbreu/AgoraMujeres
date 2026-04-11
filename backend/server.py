@@ -1457,7 +1457,7 @@ async def transcribe_audio(device_id: str, language: str = "es", file: UploadFil
 
 # ============== CONVERSATION ENDPOINTS ==============
 
-@app.get("/chat/{device_id}/conversations")
+@app.get("/api/chat/{device_id}/conversations")
 async def get_conversations(device_id: str, limit: int = 20):
     """Get all conversations for a device"""
     try:
@@ -1477,7 +1477,7 @@ async def get_conversations(device_id: str, limit: int = 20):
         logger.error(f"Error getting conversations: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/chat/{device_id}/conversation/{conversation_id}")
+@app.get("/api/chat/{device_id}/conversation/{conversation_id}")
 async def get_conversation_messages(device_id: str, conversation_id: str, limit: int = 50):
     """Get messages for a specific conversation"""
     try:
@@ -1496,7 +1496,7 @@ async def get_conversation_messages(device_id: str, conversation_id: str, limit:
         logger.error(f"Error getting conversation messages: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.delete("/chat/{device_id}/conversation/{conversation_id}")
+@app.delete("/api/chat/{device_id}/conversation/{conversation_id}")
 async def delete_conversation(device_id: str, conversation_id: str):
     """Delete a specific conversation and its messages"""
     try:
@@ -1510,7 +1510,7 @@ async def delete_conversation(device_id: str, conversation_id: str):
         logger.error(f"Error deleting conversation: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/chat/{device_id}/history")
+@app.get("/api/chat/{device_id}/history")
 async def get_chat_history(device_id: str, limit: int = 50):
     """Get chat history for a device (legacy - returns latest conversation)"""
     try:
@@ -1549,7 +1549,7 @@ async def get_chat_history(device_id: str, limit: int = 50):
         logger.error(f"Error getting chat history: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.delete("/chat/{device_id}/history")
+@app.delete("/api/chat/{device_id}/history")
 async def clear_chat_history(device_id: str):
     """Clear current conversation (start new)"""
     try:
@@ -1669,7 +1669,7 @@ async def delete_favorite_message(device_id: str, message_id: str):
 
 # ============== MESSAGE REACTIONS ==============
 
-@app.post("/chat/reaction")
+@app.post("/api/chat/reaction")
 async def save_message_reaction(reaction: MessageReaction):
     """Save a reaction emoji to a message"""
     try:
@@ -1688,7 +1688,7 @@ async def save_message_reaction(reaction: MessageReaction):
         logger.error(f"Error saving reaction: {e}")
         raise HTTPException(status_code=500, detail="Error saving reaction")
 
-@app.get("/chat/{device_id}/reaction/{message_id}")
+@app.get("/api/chat/{device_id}/reaction/{message_id}")
 async def get_message_reactions(device_id: str, message_id: str):
     """Get all reactions for a specific message"""
     try:

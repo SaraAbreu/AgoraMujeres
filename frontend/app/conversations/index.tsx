@@ -33,21 +33,13 @@ export default function ConversationsScreen() {
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const handleDelete = (id: string) => {
-    Alert.alert(t('deleteConversation'), t('deleteConversationConfirm'), [
-      { text: t('cancel'), style: 'cancel' },
-      {
-        text: t('delete'), style: 'destructive',
-        onPress: async () => {
-          if (!deviceId) return;
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-          try {
-            await deleteConversation(deviceId, id);
-            setConversations((prev) => prev.filter((c) => c.id !== id));
-          } catch {}
-        },
-      },
-    ]);
+  const handleDelete = async (id: string) => {
+    const ok = window.confirm("¿Segura que quieres eliminar esta conversación?");
+    if (!ok || !deviceId) return;
+    try {
+      await deleteConversation(deviceId, id);
+      setConversations((prev) => prev.filter((c) => c.id !== id));
+    } catch {}
   };
 
   const handleOpen = (id: string) => {
@@ -69,7 +61,7 @@ export default function ConversationsScreen() {
           </View>
           <View style={styles.cardInfo}>
             <Text style={styles.cardTitle} numberOfLines={1}>
-              {item.title || t('conversation')}
+              {item.title || "Conversación"}
             </Text>
             <Text style={styles.cardDate}>{formatDate(item.created_at)}</Text>
           </View>

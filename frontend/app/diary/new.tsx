@@ -23,21 +23,21 @@ const C = {
 
 const OPTIONS = {
   cuerpo: ['Pinchazos', 'Ardor', 'Electricidad', 'Cuerpo de plomo', 'Rigidez', 'Latidos', 'Tensión', 'Adormecimiento'],
-  mente:  ['Nublada', 'Saturada', 'En pausa', 'Modo supervivencia', 'Desconectada', 'Inquieta', 'Agotada', 'Presente'],
-  alma:   ['Invisibilidad', 'Cansancio de ser fuerte', 'Pequeña', 'Un hilo de esperanza', 'Orgullo de seguir', 'Gratitud', 'Soledad'],
+  mente: ['Nublada', 'Saturada', 'En pausa', 'Modo supervivencia', 'Desconectada', 'Inquieta', 'Agotada', 'Presente'],
+  alma: ['Invisibilidad', 'Cansancio de ser fuerte', 'Pequeña', 'Un hilo de esperanza', 'Orgullo de seguir', 'Gratitud', 'Soledad'],
   suelto: ['La culpa', 'La exigencia', 'El miedo a fallar', 'La presión de estar bien', 'Las expectativas', 'El control'],
 };
 
 const META = {
-  cuerpo: { label: 'Mi cuerpo siente…', icon: 'body-outline',    accent: '#6B8F6E' },
-  mente:  { label: 'Mi mente está…',    icon: 'cloud-outline',   accent: '#8E9BAD' },
-  alma:   { label: 'Mi alma siente…',   icon: 'heart-outline',   accent: '#B09BB0' },
-  suelto: { label: 'Hoy suelto…',       icon: 'leaf-outline',    accent: '#A8B89A' },
+  cuerpo: { label: 'Mi cuerpo siente…', icon: 'body-outline', accent: '#6B8F6E' },
+  mente: { label: 'Mi mente está…', icon: 'cloud-outline', accent: '#8E9BAD' },
+  alma: { label: 'Mi alma siente…', icon: 'heart-outline', accent: '#B09BB0' },
+  suelto: { label: 'Hoy suelto…', icon: 'leaf-outline', accent: '#A8B89A' },
 };
 
 function Chip({ label, selected, onPress, accent }: any) {
-  const sc  = useRef(new Animated.Value(1)).current;
-  const bg  = useRef(new Animated.Value(0)).current;
+  const sc = useRef(new Animated.Value(1)).current;
+  const bg = useRef(new Animated.Value(0)).current;
   React.useEffect(() => {
     Animated.timing(bg, { toValue: selected ? 1 : 0, duration: 160, useNativeDriver: false }).start();
   }, [selected]);
@@ -85,7 +85,7 @@ function PainSelector({ value, onChange }: { value: number; onChange: (v: number
       </View>
       <View style={{ height: 6, backgroundColor: '#F0EDE4', borderRadius: 3, position: 'relative', marginBottom: 16 }}>
         <View style={{ position: 'absolute', left: 0, top: 0, height: 6, borderRadius: 3, backgroundColor: color, width: (value * 10) + '%' as any }} />
-        {[0,1,2,3,4,5,6,7,8,9,10].map(v => (
+        {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(v => (
           <TouchableOpacity
             key={v}
             onPress={() => onChange(v)}
@@ -112,14 +112,14 @@ function PainSelector({ value, onChange }: { value: number; onChange: (v: number
 }
 
 export default function NewDiaryEntry() {
-  const router   = useRouter();
-  const insets   = useSafeAreaInsets();
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { deviceId, incrementarContador } = useUserStore();
 
-  const [dolor,   setDolor]   = useState(5);
-  const [sel,     setSel]     = useState<Record<string, string[]>>({ cuerpo: [], mente: [], alma: [], suelto: [] });
-  const [texto,   setTexto]   = useState('');
-  const [saving,  setSaving]  = useState(false);
+  const [dolor, setDolor] = useState(5);
+  const [sel, setSel] = useState<Record<string, string[]>>({ cuerpo: [], mente: [], alma: [], suelto: [] });
+  const [texto, setTexto] = useState('');
+  const [saving, setSaving] = useState(false);
 
   const toggleTag = (key: string, tag: string) => {
     setSel(prev => ({
@@ -142,8 +142,8 @@ export default function NewDiaryEntry() {
         texto: texto.trim(),
         dolor,
         cuerpo: sel.cuerpo,
-        mente:  sel.mente,
-        alma:   sel.alma,
+        mente: sel.mente,
+        alma: sel.alma,
         suelto: sel.suelto,
       });
       incrementarContador();

@@ -1072,8 +1072,13 @@ Make her feel LESS ALONE. Know that her pain is BELIEVED. Feel ACCOMPANIED, not 
 
     # ============== HEALTH ENDPOINT (moved to top level) ==============
 @app.get("/health")
-async def health():
+async def health_check():
     return {"status": "healthy"}
+
+@app.api_route("/api/health", methods=["GET", "HEAD"])
+async def api_health_check():
+    return {"status": "healthy"}
+
 # ============== COMMUNITY ENDPOINTS ==============
 
 @app.get("/api/community/count")

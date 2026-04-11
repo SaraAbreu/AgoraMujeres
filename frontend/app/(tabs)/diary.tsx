@@ -10,12 +10,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useUserStore } from '../../src/store/useStore';
 import { API_BASE } from '../../src/services/api';
 import { getDiaryEntries, type DiaryEntry } from '../../src/services/api';
+import { db } from '../../src/services/firebase';
 
 const C = {
-  forest:'#4A664D', forestDim:'#3A5140', forestDeep:'#2C3D2E',
-  moss:'#6B8F6E', sage:'#A8C5A0',
-  mint:'#D4E8D0', mintSoft:'#EAF4E8', cream:'#F8F7F2', parchment:'#F0EDE4',
-  warm:'#E8E2D8', muted:'#9A958E', charcoal:'#3D3A35', white:'#FFFFFF', gold:'#C9A84C',
+  forest: '#4A664D', forestDim: '#3A5140', forestDeep: '#2C3D2E',
+  moss: '#6B8F6E', sage: '#A8C5A0',
+  mint: '#D4E8D0', mintSoft: '#EAF4E8', cream: '#F8F7F2', parchment: '#F0EDE4',
+  warm: '#E8E2D8', muted: '#9A958E', charcoal: '#3D3A35', white: '#FFFFFF', gold: '#C9A84C',
 };
 
 function getPainColor(v: number) {
@@ -71,7 +72,7 @@ export default function DiaryList() {
     try {
       const data = await getDiaryEntries(deviceId, 30);
       setEntries(data);
-    } catch {}
+    } catch { }
     finally { setLoading(false); setRefresh(false); }
   };
 

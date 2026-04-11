@@ -1,5 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider, FacebookAuthProvider } from "firebase/auth";
+import { getFirestore } from "firebase/firestore"; // 1. Importamos la base de datos
 
 const firebaseConfig = {
   apiKey: "AIzaSyBMKRBscuqSx1nSXZPmrPr1qXXNkuoYl4Y",
@@ -13,6 +14,9 @@ const firebaseConfig = {
 
 // Inicializamos Firebase
 const app = initializeApp(firebaseConfig);
+
+// 2. Inicializamos y exportamos Firestore para usarlo en el diario
+export const db = getFirestore(app);
 
 // Exportamos lo que usaremos en la pantalla de Login
 export const auth = getAuth(app);

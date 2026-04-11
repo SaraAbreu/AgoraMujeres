@@ -4,7 +4,6 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { GlassCard } from '../../src/components/ui';
@@ -16,7 +15,6 @@ import {
 import { colors, textStyles, sp, radius, fonts } from '../../src/theme';
 
 export default function ConversationsScreen() {
-  const { t } = useTranslation();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { deviceId } = useUserStore();
@@ -90,7 +88,7 @@ export default function ConversationsScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>{t('conversationHistory')}</Text>
+        <Text style={styles.headerTitle}>"Mis conversaciones"</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -101,8 +99,8 @@ export default function ConversationsScreen() {
       ) : conversations.length === 0 ? (
         <EmptyState
           icon="chatbubbles-outline"
-          title={t('noConversations')}
-          message={t('noConversationsDesc')}
+          title="Sin conversaciones"
+          message="Tus conversaciones con Ágora aparecerán aquí"
         />
       ) : (
         <FlatList

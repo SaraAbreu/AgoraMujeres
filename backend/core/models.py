@@ -3,27 +3,6 @@ from datetime import datetime, timezone
 from typing import List, Optional
 from pydantic import BaseModel, Field
 
-class DiaryEntryCreate(BaseModel):
-    device_id: str
-    texto: Optional[str] = None
-    dolor: int = 0
-    cuerpo: List[str] = []
-    mente: List[str] = []
-    alma: List[str] = []
-    suelto: List[str] = []
-
-class DiaryEntry(BaseModel):
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    device_id: str
-    texto: Optional[str] = None
-    dolor: int = 0
-    cuerpo: List[str] = []
-    mente: List[str] = []
-    alma: List[str] = []
-    suelto: List[str] = []
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-
 class ChatRequest(BaseModel):
     device_id: str
     message: str
@@ -45,21 +24,6 @@ class ChatMessage(BaseModel):
     content: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
-class MessageReaction(BaseModel):
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    device_id: str
-    conversation_id: Optional[str] = None
-    message_id: str
-    reaction: str
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-class FavoriteMessage(BaseModel):
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    device_id: str
-    message_content: str
-    category: str = "general"
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
 class SubscriptionStatus(BaseModel):
     device_id: str
     status: str = "trial"
@@ -69,18 +33,19 @@ class SubscriptionStatus(BaseModel):
     usage_seconds: int = 0
     stripe_customer_id: Optional[str] = None
     email: Optional[str] = None
-
-    def __init__(self, **data):
-        from datetime import datetime, timedelta
-        if "trial_end" not in data or data["trial_end"] is None:
-            data["trial_end"] = datetime.utcnow() + timedelta(seconds=data.get("trial_remaining_seconds", 5400))
-        super().__init__(**data)
-
-class CustomerCreate(BaseModel):
+    
+class DiaryEntry(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     device_id: str
-    email: str
-    name: Optional[str] = None
+    content: str
+    emotion: Optional[str] = None
+    pain_level: Optional[int] = None   # Escala 1-10
+    voice_transcript: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
-class AdminCodeRequest(BaseModel):
+class BodyMapEntry(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     device_id: str
-    code: str
+    zone: str           # ej: "lumbar", "cervical", "rodillas"
+    intensity: int      # Escala 1-10
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

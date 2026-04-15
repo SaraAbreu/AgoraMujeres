@@ -349,6 +349,21 @@ AGORA_RESPONSES = {
             "The most important thing is knowing your limits and respecting them without guilt. Track what worsens and improves pain - patterns help.",
             "My main advice: be compassionate with yourself. Chronic pain is real and difficult. You don't have to 'overcome' it - you have to learn to live with it as well as possible."
         ],
+        "advice_cramps": [
+            "Para los calambres, intenta aplicar calor suave o estiramientos muy lentos. Estoy aquí contigo."
+        ],
+        "advice_sleep": [
+            "Dormir con dolor es un desafío. Prueba a relajar los hombros y enfocarte solo en tu respiración un momento."
+        ],
+        "advice_pain": [
+            "Siento mucho que el dolor sea tan intenso hoy. No estás sola en esto, permítete descansar."
+        ],
+        "advice_fatigue": [
+            "La fatiga es agotadora. No te presiones por ser productiva hoy; tu cuerpo necesita calma."
+        ],
+        "advice_anxiety": [
+            "Es normal sentir ansiedad ante el dolor. Respira hondo, exhala lento. Todo esto pasará."
+        ]
     }
 }
 
@@ -364,7 +379,17 @@ FALLBACK_RESPONSES = {
         "Sometimes technology doesn't cooperate, like the body with fibromyalgia. Try writing to me again - I promise it's worth it.",
     ]
 }
-
+DAILY_CARDS = {
+    "es": [
+        "Tu valor no depende de lo que puedas hacer hoy, sino de quién eres.",
+        "Está bien descansar. Tu cuerpo no es un obstáculo, es tu hogar.",
+        "Hoy me permito ser amable conmigo misma y con mis tiempos.",
+        "Incluso en los días oscuros, tu luz sigue ahí. Respira.",
+        "Paso a paso. Un momento a la vez. Lo estás haciendo bien.",
+        "Tu sensibilidad es tu superpoder, no tu debilidad.",
+        "Hoy elijo escuchar a mi cuerpo sin juzgarlo."
+    ]
+}
 # ── Context detection ─────────────────────────────────────────────────────────
 
 def detect_message_context(message: str, language: str = "es") -> str:
@@ -428,13 +453,29 @@ def detect_message_context(message: str, language: str = "es") -> str:
     return "general"
 
 
+import random
+
 def get_smart_response(message: str, language: str = "es", is_first_message: bool = False) -> str:
-    """Return a contextually relevant offline response."""
+    """Retorna una respuesta offline contextual con prioridad de bienvenida."""
+    
+    # 1. Detectamos el contexto (dolor, ansiedad, fatiga, etc.)
     context = detect_message_context(message, language)
     lang_responses = AGORA_RESPONSES.get(language, AGORA_RESPONSES["es"])
-    responses = lang_responses.get(context) or lang_responses.get("general", [])
-    return random.choice(responses)
 
+    # 2. LÓGICA DE PRIORIDAD:
+    # Si es el primer mensaje, queremos dar la bienvenida, 
+    # A MENOS que el usuario ya esté expresando dolor o crisis.
+    if is_first_message and context == "general":
+        responses = lang_responses.get("welcome", lang_responses.get("general", []))
+    else:
+        # Buscamos el contexto específico (ej: advice_pain)
+        responses = lang_responses.get(context, lang_responses.get("general", []))
+
+    # 3. SEGURIDAD: Si la lista de respuestas está vacía, evitamos que random.choice explote
+    if not responses:
+        return "Estoy aquí contigo. Cuéntame, ¿cómo te sientes en este momento?"
+
+    return random.choice(responses)
 
 def get_fallback_response(language: str = "es") -> str:
     """Return a random fallback response for when OpenAI is unavailable."""

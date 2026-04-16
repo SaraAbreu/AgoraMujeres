@@ -4,11 +4,13 @@ import bcrypt
 import logging
 from datetime import datetime, timezone
 from contextlib import asynccontextmanager
+from firebase_admin import auth as firebase_auth, credentials, initialize_app
 
-from fastapi import FastAPI, HTTPException, Body, Request
+from fastapi import FastAPI, HTTPException, Body, Request, status
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, EmailStr, Field
+from fastapi.responses import JSONResponse
 
 # --- CONFIGURACIÓN DE SEGURIDAD ---
 logging.basicConfig(level=logging.INFO)
@@ -88,6 +90,35 @@ async def update_profile(data: dict = Body(...)):
     name = data.get("name")
     await db.users.update_one({"email": email}, {"$set": {"profile.name": name}})
     return {"status": "success"}
+
+@app.post("/api/auth/google")
+async def google_login(data: dict = Body(...)):
+    id_token = data.get('token')
+    print(f"[DEBUG] Token recibido en backend: {id_token}")
+    if not id_token:
+        return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, content={"error": "Falta el token de Google"})
+    try:
+        decoded_token = firebase_auth.verify_id_token(id_token)
+        email = decoded_token['email']
+        name = decoded_token.get('name', 'Usuaria Ágora')
+        # Buscar o crear usuario en la base de datos
+        user_db = await db.users.find_one({"email": email})
+        if not user_db:
+            await db.users.insert_one({
+                "email": email,
+                "password": None,  # No hay contraseña para Google
+                "created_at": datetime.now(timezone.utc),
+                "profile": {"name": name, "intention": ""}
+            })
+        # Generar token de sesión
+        session_token = f"agora_session_{uuid.uuid4()}"
+        return {
+            "status": "success",
+            "token": session_token,
+            "user": {"email": email, "name": name}
+        }
+    except Exception as e:
+        return JSONResponse(status_code=status.HTTP_401_UNAUTHORIZED, content={"error": str(e)})
 
 # --- SISTEMA DE SALUD ---
 @app.get("/api/health") # <--- ASEGÚRATE DE QUE PONGA /api/health

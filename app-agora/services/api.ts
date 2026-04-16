@@ -2,10 +2,11 @@ import axios from 'axios';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 
-// 1. Configuración de la URL según la plataforma
+
+// 1. Configuración de la URL según la plataforma (sin /api)
 const API_URL = Platform.OS === 'android' 
-    ? 'http://10.0.2.2:8001/api' 
-    : 'http://127.0.0.1:8001/api';
+    ? 'http://10.0.2.2:8001' 
+    : 'http://127.0.0.1:8001';
 
 const api = axios.create({
     baseURL: API_URL,
@@ -26,6 +27,15 @@ export const saveToken = async (token: string) => {
         localStorage.setItem('userToken', token);
     } else {
         await SecureStore.setItemAsync('userToken', token);
+    }
+};
+
+// 4. FUNCIÓN PARA ELIMINAR EL TOKEN
+export const removeToken = async () => {
+    if (Platform.OS === 'web') {
+        localStorage.removeItem('userToken');
+    } else {
+        await SecureStore.deleteItemAsync('userToken');
     }
 };
 

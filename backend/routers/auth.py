@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel
 from firebase_admin import auth as firebase_auth
 from auth.auth_utils import create_access_token
@@ -6,6 +6,7 @@ import auth.firebase_config  # inicializa firebase
 from core.database import (
     db, db_delete_many
 )
+from auth.dependencies import get_current_user
 
 router = APIRouter()
 
@@ -16,6 +17,7 @@ class SocialLoginRequest(BaseModel):
 
 class DeleteAccountRequest(BaseModel):
     device_id: str
+    confirm: bool
 
 
 @router.post("/auth/social-login")
@@ -42,14 +44,25 @@ async def social_login(data: SocialLoginRequest):
         raise HTTPException(status_code=401, detail="Token inválido")
 
 
+
+# Endpoint reforzado: autenticación, validación, confirmación, borrado en Firebase y log
 @router.delete("/auth/delete-account")
-async def delete_account(data: DeleteAccountRequest):
+async def delete_account(
+    data: DeleteAccountRequest,
+    user=Depends(get_current_user),
+    request: Request = None
+):
     """
     Borra todos los datos de la usuaria asociados a device_id.
     Cumple con LOPD / RGPD — derecho de supresión.
     """
     if not data.device_id:
         raise HTTPException(status_code=400, detail="device_id requerido")
+    if not data.confirm:
+        raise HTTPException(status_code=400, detail="Debes confirmar la eliminación (confirm=true)")
+    # Solo puede borrar su propio device_id
+    if user["device_id"] != data.device_id:
+        raise HTTPException(status_code=403, detail="No puedes borrar otra cuenta")
 
     q = {"device_id": data.device_id}
 
@@ -71,4 +84,13 @@ async def delete_account(data: DeleteAccountRequest):
         except Exception as e:
             print(f"Error borrando {col.name}: {e}")
 
-    return {"ok": True, "message": "Cuenta y datos eliminados correctamente"}
+    # Borrado en Firebase Auth
+    try:
+        firebase_auth.delete_user(user["uid"])
+    except Exception as e:
+        print(f"Error borrando usuario en Firebase Auth: {e}")
+
+    # Log de auditoría
+    print(f"AUDITORIA: Usuario {user['email']} ({user['uid']}) eliminó su cuenta desde IP {request.client.host if request else 'N/A'}")
+
+    return {"ok": True, "message": "Cuenta y datos eliminados permanentemente"}

@@ -6,7 +6,8 @@ import logging
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
+from auth.dependencies import get_current_user
 
 from ..core.database import db, db_aggregate, db_delete_many, db_find, db_insert_many, db_insert_one
 from ..core.models import Resource
@@ -25,7 +26,7 @@ CATEGORY_META = {
 
 
 @router.get("")
-async def get_resources(category: Optional[str] = None, language: str = "es", limit: int = 50):
+async def get_resources(category: Optional[str] = None, language: str = "es", limit: int = 50, user=Depends(get_current_user)):
     query: dict = {"language": language}
     if category:
         query["category"] = category

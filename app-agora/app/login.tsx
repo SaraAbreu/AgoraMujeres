@@ -12,10 +12,14 @@ import Animated, {
 import { useRouter } from 'expo-router';
 // IMPORTS DE AUTENTICACIÓN
 import api, { saveToken } from '../services/api';
+import { useUserStore } from '../store/userStore';
 import { signInWithGoogle } from '../services/firebaseConfig';
 const { width } = Dimensions.get('window');
 
 export default function LoginScreen() {
+  // Acceso directo a las funciones del store
+  const setUser = useUserStore.getState().setUser;
+  const setToken = useUserStore.getState().setToken;
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -30,16 +34,13 @@ export default function LoginScreen() {
       if (token) {
         const res = await api.post('/api/auth/google', { token });
         if (res.data.status === "success") {
-          if (res.data.token) await saveToken(res.data.token);
-          // Espera breve para asegurar que el layout esté montado
+          if (res.data.token) {
+            await setToken(res.data.token);
+            await saveToken(res.data.token); // Opcional: compatibilidad
+          }
+          if (res.data.user) setUser(res.data.user);
           setTimeout(() => {
-            router.replace({
-              pathname: '/home',
-              params: {
-                userName: res.data.user.name || "Usuaria Ágora",
-                userEmail: res.data.user.email
-              }
-            });
+            router.replace('/home');
           }, 150);
         } else {
           Alert.alert('Error', res.data.error || 'No se pudo iniciar sesión');
@@ -70,9 +71,11 @@ export default function LoginScreen() {
       const endpoint = isRegistering ? '/api/auth/register' : '/api/auth/login';
       const res = await api.post(endpoint, { email, password });
       if (res.data.token) {
-        await saveToken(res.data.token);
-        router.replace('/home');
+        await setToken(res.data.token);
+        await saveToken(res.data.token); // Opcional: compatibilidad
       }
+      if (res.data.user) setUser(res.data.user);
+      router.replace('/home');
     } catch (error) {
       Alert.alert("Error", "Acceso denegado. Revisa tus credenciales.");
     }

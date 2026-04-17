@@ -1,17 +1,39 @@
 import React from 'react';
+import { useUserStore } from '../../store/userStore';
 import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Dimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { removeToken } from '../../services/api';
+import * as SecureStore from 'expo-secure-store';
+import { Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 
 const { width } = Dimensions.get('window');
 
 export default function AjustesScreen() {
   const router = useRouter();
+  const user = useUserStore((state) => state.user);
+  const clearSession = useUserStore((state) => state.clearSession);
+
   const handleLogout = async () => {
-    await removeToken();
-    router.replace('/login');
+    Alert.alert(
+      'Cerrar sesión',
+      '¿Estás segura de que quieres cerrar sesión? Se eliminarán todos los datos locales.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Cerrar sesión',
+          style: 'destructive',
+          onPress: async () => {
+            // Borra todo SecureStore (token y posibles datos futuros)
+            await SecureStore.deleteItemAsync('session_token');
+            await removeToken();
+            await clearSession();
+            router.replace('/login');
+          },
+        },
+      ]
+    );
   };
 
   return (
@@ -26,8 +48,8 @@ export default function AjustesScreen() {
           <View style={styles.avatarPlaceholder}>
             <Ionicons name="person" size={40} color="#8B5A2B" />
           </View>
-          <Text style={styles.userName}>María García</Text>
-          <Text style={styles.userType}>Plan Áurea</Text>
+          <Text style={styles.userName}>{user?.name || 'Nombre no disponible'}</Text>
+          <Text style={styles.userType}>{user?.plan ? `Plan ${user.plan}` : 'Sin plan activo'}</Text>
         </View>
 
         {/* SECCIONES DE AJUSTES */}
@@ -62,10 +84,10 @@ export default function AjustesScreen() {
             <Ionicons name="chevron-forward" size={18} color="#C5A059" />
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.row}>
+          <TouchableOpacity style={styles.row} onPress={() => router.push('/politica-privacidad')}>
             <View style={styles.rowLeft}>
               <Ionicons name="shield-checkmark-outline" size={20} color="#8B5A2B" />
-              <Text style={styles.rowText}>Privacidad y Seguridad</Text>
+              <Text style={styles.rowText}>Política de Privacidad</Text>
             </View>
             <Ionicons name="chevron-forward" size={18} color="#C5A059" />
           </TouchableOpacity>

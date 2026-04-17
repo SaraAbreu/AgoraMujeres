@@ -19,9 +19,8 @@ export const provider = new GoogleAuthProvider();
 export async function signInWithGoogle() {
   try {
     const result = await signInWithPopup(auth, provider);
-    const credential = GoogleAuthProvider.credentialFromResult(result);
-    const token = credential?.idToken;
     const user = result.user;
+    const token = await user.getIdToken(); // Token de Firebase, válido para el backend
     return { token, user };
   } catch (error) {
     throw error;

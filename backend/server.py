@@ -4,6 +4,7 @@ import bcrypt
 import logging
 from datetime import datetime, timezone
 from contextlib import asynccontextmanager
+import firebase_admin
 from firebase_admin import auth as firebase_auth, credentials, initialize_app
 
 from fastapi import FastAPI, HTTPException, Body, Request, status
@@ -15,6 +16,11 @@ from fastapi.responses import JSONResponse
 # --- CONFIGURACIÓN DE SEGURIDAD ---
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("SyntexiaSecurity")
+
+# --- INICIALIZACIÓN DE FIREBASE ADMIN ---
+if not len(firebase_admin._apps):
+    cred = credentials.Certificate("firebase_key.json")
+    initialize_app(cred)
 
 class UserRegister(BaseModel):
     email: EmailStr
@@ -118,6 +124,7 @@ async def google_login(data: dict = Body(...)):
             "user": {"email": email, "name": name}
         }
     except Exception as e:
+        print(f"[ERROR] Google login: {e}")
         return JSONResponse(status_code=status.HTTP_401_UNAUTHORIZED, content={"error": str(e)})
 
 # --- SISTEMA DE SALUD ---

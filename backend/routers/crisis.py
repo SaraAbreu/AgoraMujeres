@@ -5,10 +5,12 @@ Crisis router — instant support, bypasses OpenAI for speed.
 import logging
 from datetime import datetime
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, HTTPException
+from auth.dependencies import get_current_user
 
 from ..core.database import db, db_insert_one
 from ..core.models import CrisisRequest
+from ..core.crypto_utils import encrypt_text, decrypt_text
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/crisis", tags=["crisis"])
@@ -105,7 +107,9 @@ EMERGENCY_CONTACTS = {
 
 
 @router.post("")
-async def crisis_support(request: CrisisRequest):
+async def crisis_support(request: CrisisRequest, user=Depends(get_current_user)):
+    if hasattr(user, 'device_id') and user.device_id != request.device_id:
+        raise HTTPException(status_code=403, detail="No autorizado")
     """
     Instant crisis support — bypasses OpenAI for ultra-fast response.
     Logs every request for analytics.
@@ -120,11 +124,12 @@ async def crisis_support(request: CrisisRequest):
     technique = CRISIS_RESPONSES[lang].get(technique_key)
     immediate  = CRISIS_RESPONSES[lang].get("immediate")
 
+    import json
     await db_insert_one(db.crisis_logs, {
         "device_id":        request.device_id,
         "pain_level":       request.pain_level,
-        "symptoms":         request.symptoms or [],
-        "technique_offered": technique_key,
+        "symptoms":         encrypt_text(json.dumps(request.symptoms or [])),
+        "technique_offered": encrypt_text(technique_key),
         "created_at":       datetime.utcnow(),
     })
 

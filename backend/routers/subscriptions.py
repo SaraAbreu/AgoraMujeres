@@ -12,7 +12,8 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 import stripe
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, Header, HTTPException, Request, Depends
+from auth.dependencies import get_current_user
 
 from core.database import db, db_find_one, db_insert_one, db_update_one
 from core.models import AdminCodeRequest, CustomerCreate, SubscriptionStatus
@@ -81,12 +82,16 @@ async def track_usage(device_id: str, seconds: int) -> None:
 # ── Public endpoints ──────────────────────────────────────────────────────────
 
 @router.get("/{device_id}")
-async def get_subscription_status(device_id: str):
+async def get_subscription_status(device_id: str, user=Depends(get_current_user)):
+    if hasattr(user, 'device_id') and user.device_id != device_id:
+        raise HTTPException(status_code=403, detail="No autorizado")
     return await get_subscription_status_internal(device_id)
 
 
 @router.post("/create-customer")
-async def create_customer(request: CustomerCreate):
+async def create_customer(request: CustomerCreate, user=Depends(get_current_user)):
+    if hasattr(user, 'device_id') and user.device_id != request.device_id:
+        raise HTTPException(status_code=403, detail="No autorizado")
     try:
         customer = stripe.Customer.create(
             email=request.email,
@@ -106,7 +111,9 @@ async def create_customer(request: CustomerCreate):
 
 
 @router.post("/create-payment-intent")
-async def create_payment_intent(device_id: str):
+async def create_payment_intent(device_id: str, user=Depends(get_current_user)):
+    if hasattr(user, 'device_id') and user.device_id != device_id:
+        raise HTTPException(status_code=403, detail="No autorizado")
     sub = await db_find_one(db.subscriptions, {"device_id": device_id})
     if not sub or not sub.get("stripe_customer_id"):
         raise HTTPException(status_code=400, detail="Customer not found. Call /create-customer first.")
@@ -126,7 +133,9 @@ async def create_payment_intent(device_id: str):
 
 
 @router.post("/create-checkout-session")
-async def create_checkout_session(device_id: str, plan: str = "monthly"):
+async def create_checkout_session(device_id: str, plan: str = "monthly", user=Depends(get_current_user)):
+    if hasattr(user, 'device_id') and user.device_id != device_id:
+        raise HTTPException(status_code=403, detail="No autorizado")
     price_id = os.environ.get(
         "STRIPE_PRICE_YEARLY" if plan == "yearly" else "STRIPE_PRICE_MONTHLY"
     )

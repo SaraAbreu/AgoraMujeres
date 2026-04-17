@@ -11,7 +11,8 @@ import uuid
 from datetime import datetime
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
+from auth.dependencies import get_current_user
 
 from core.agora_content import  (
     SYSTEM_PROMPTS,
@@ -20,6 +21,7 @@ from core.agora_content import  (
 )
 from core.database import db, db_count_documents, db_find, db_find_one, db_insert_one, db_update_one
 from core.models import ChatConversation, ChatMessage, ChatRequest, FavoriteMessage, MessageReaction
+from core.crypto_utils import encrypt_text, decrypt_text
 from core.patterns import build_patterns_context, get_patterns_for_device
 from routers.subscriptions import get_subscription_status_internal, track_usage
 
@@ -30,7 +32,10 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 # ── Main chat endpoint ────────────────────────────────────────────────────────
 
 @router.post("")
-async def chat_with_agora(request: ChatRequest):
+async def chat_with_agora(request: ChatRequest, user=Depends(get_current_user)):
+    # Validar que el usuario solo accede a su propio device_id
+    if hasattr(user, 'device_id') and user.device_id != request.device_id:
+        raise HTTPException(status_code=403, detail="No autorizado")
     """Send a message to Ágora and receive a response."""
     # 1. Subscription gate
     sub_status = await get_subscription_status_internal(request.device_id)
@@ -78,16 +83,16 @@ async def chat_with_agora(request: ChatRequest):
         request, history, is_first_message, conversation_id
     )
 
-    # 6. Persist both messages
+    # 6. Persist both messages (cifrado)
     await db_insert_one(
         db.chat_messages,
         ChatMessage(device_id=request.device_id, conversation_id=conversation_id,
-                    role="user", content=request.message).model_dump(),
+                    role="user", content=encrypt_text(request.message)).model_dump(),
     )
     await db_insert_one(
         db.chat_messages,
         ChatMessage(device_id=request.device_id, conversation_id=conversation_id,
-                    role="assistant", content=response).model_dump(),
+                    role="assistant", content=encrypt_text(response)).model_dump(),
     )
 
     # 7. Track trial usage (30 s per chat exchange)
@@ -206,7 +211,9 @@ async def _generate_response(
 # ── Conversation management ───────────────────────────────────────────────────
 
 @router.get("/{device_id}/conversations")
-async def get_conversations(device_id: str, limit: int = 20):
+async def get_conversations(device_id: str, limit: int = 20, user=Depends(get_current_user)):
+    if hasattr(user, 'device_id') and user.device_id != device_id:
+        raise HTTPException(status_code=403, detail="No autorizado")
     conversations = await db_find(
         db.chat_conversations,
         {"device_id": device_id},
@@ -225,21 +232,29 @@ async def get_conversations(device_id: str, limit: int = 20):
 
 
 @router.get("/{device_id}/conversation/{conversation_id}")
-async def get_conversation_messages(device_id: str, conversation_id: str, limit: int = 50):
+async def get_conversation_messages(device_id: str, conversation_id: str, limit: int = 50, user=Depends(get_current_user)):
+    if hasattr(user, 'device_id') and user.device_id != device_id:
+        raise HTTPException(status_code=403, detail="No autorizado")
     messages = await db_find(
         db.chat_messages,
         {"device_id": device_id, "conversation_id": conversation_id},
         sort=("created_at", 1),
         limit=limit,
     )
-    return [
-        {"role": m["role"], "content": m["content"], "created_at": _iso(m.get("created_at"))}
-        for m in messages
-    ]
+    result = []
+    for m in messages:
+        try:
+            m["content"] = decrypt_text(m["content"])
+        except Exception:
+            m["content"] = "[ERROR: No se pudo descifrar]"
+        result.append({"role": m["role"], "content": m["content"], "created_at": _iso(m.get("created_at"))})
+    return result
 
 
 @router.delete("/{device_id}/conversation/{conversation_id}")
-async def delete_conversation(device_id: str, conversation_id: str):
+async def delete_conversation(device_id: str, conversation_id: str, user=Depends(get_current_user)):
+    if hasattr(user, 'device_id') and user.device_id != device_id:
+        raise HTTPException(status_code=403, detail="No autorizado")
     from ..core.database import db_delete_many, db_delete_one
     await db_delete_one(db.chat_conversations, {"id": conversation_id, "device_id": device_id})
     result = await db_delete_many(db.chat_messages, {"conversation_id": conversation_id, "device_id": device_id})
@@ -247,7 +262,9 @@ async def delete_conversation(device_id: str, conversation_id: str):
 
 
 @router.get("/{device_id}/history")
-async def get_chat_history(device_id: str, limit: int = 50):
+async def get_chat_history(device_id: str, limit: int = 50, user=Depends(get_current_user)):
+    if hasattr(user, 'device_id') and user.device_id != device_id:
+        raise HTTPException(status_code=403, detail="No autorizado")
     """Legacy endpoint — returns messages from the most recent conversation."""
     latest = await db_find_one(
         db.chat_conversations,
@@ -273,19 +290,25 @@ async def get_chat_history(device_id: str, limit: int = 50):
         )
         messages = list(reversed(messages))
 
-    return [
-        {
+    result = []
+    for m in messages:
+        try:
+            m["content"] = decrypt_text(m["content"])
+        except Exception:
+            m["content"] = "[ERROR: No se pudo descifrar]"
+        result.append({
             "role":            m["role"],
             "content":         m["content"],
             "created_at":      _iso(m.get("created_at")),
             "conversation_id": m.get("conversation_id"),
-        }
-        for m in messages
-    ]
+        })
+    return result
 
 
 @router.delete("/{device_id}/history")
-async def clear_chat_history(device_id: str):
+async def clear_chat_history(device_id: str, user=Depends(get_current_user)):
+    if hasattr(user, 'device_id') and user.device_id != device_id:
+        raise HTTPException(status_code=403, detail="No autorizado")
     from ..core.database import db_delete_many, db_delete_one
     convs = await db_find(
         db.chat_conversations, {"device_id": device_id}, sort=("updated_at", -1), limit=1

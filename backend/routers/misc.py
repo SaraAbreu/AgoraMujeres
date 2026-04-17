@@ -7,10 +7,13 @@ from datetime import datetime
 from typing import List, Optional
 
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
+from auth.dependencies import get_current_user
 
 from ..core.database import db, db_delete_one, db_find, db_insert_one, db_update_one
 from ..core.models import CycleEntry, CycleEntryCreate, MonthlyPainRecordCreate
+from ..core.crypto_utils import encrypt_text, decrypt_text
+from ..core.crypto_utils import encrypt_text, decrypt_text
 
 logger = logging.getLogger(__name__)
 
@@ -20,21 +23,36 @@ cycle_router = APIRouter(prefix="/cycle", tags=["cycle"])
 
 
 @cycle_router.post("", response_model=CycleEntry)
-async def create_cycle_entry(entry: CycleEntryCreate):
-    entry_obj = CycleEntry(**entry.model_dump())
+async def create_cycle_entry(entry: CycleEntryCreate, user=Depends(get_current_user)):
+    if hasattr(user, 'device_id') and user.device_id != entry.device_id:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    data = entry.model_dump()
+    data["zone"] = encrypt_text(data["zone"])
+    entry_obj = CycleEntry(**data)
     await db_insert_one(db.cycle_entries, entry_obj.model_dump())
+    # Devuelve el campo descifrado para el frontend
+    entry_obj.zone = entry.zone
     return entry_obj
 
 
 @cycle_router.get("/{device_id}", response_model=List[CycleEntry])
-async def get_cycle_entries(device_id: str, limit: int = 12):
+async def get_cycle_entries(device_id: str, limit: int = 12, user=Depends(get_current_user)):
+    if hasattr(user, 'device_id') and user.device_id != device_id:
+        raise HTTPException(status_code=403, detail="No autorizado")
     entries = await db_find(
         db.cycle_entries,
         {"device_id": device_id},
         sort=("start_date", -1),
         limit=limit,
     )
-    return [CycleEntry(**e) for e in entries]
+    result = []
+    for e in entries:
+        try:
+            e["zone"] = decrypt_text(e["zone"])
+        except Exception:
+            e["zone"] = "[ERROR: No se pudo descifrar]"
+        result.append(CycleEntry(**e))
+    return result
 
 
 # ── Weather router ────────────────────────────────────────────────────────────
@@ -88,7 +106,9 @@ monthly_router = APIRouter(prefix="/monthly-record", tags=["monthly-record"])
 
 
 @monthly_router.get("/{device_id}")
-async def get_monthly_record(device_id: str):
+async def get_monthly_record(device_id: str, user=Depends(get_current_user)):
+    if hasattr(user, 'device_id') and user.device_id != device_id:
+        raise HTTPException(status_code=403, detail="No autorizado")
     record = await db.monthly_records.find_one({"device_id": device_id})
     if not record:
         return {
@@ -101,16 +121,21 @@ async def get_monthly_record(device_id: str):
 
 
 @monthly_router.post("/{device_id}")
-async def save_monthly_record(device_id: str, data: MonthlyPainRecordCreate):
+async def save_monthly_record(device_id: str, data: MonthlyPainRecordCreate, user=Depends(get_current_user)):
+    if hasattr(user, 'device_id') and user.device_id != device_id:
+        raise HTTPException(status_code=403, detail="No autorizado")
     cycle_start = datetime.fromisoformat(
         data.cycle_start_date.replace("Z", "+00:00").replace("+00:00", "")
     )
+    # Cifrar el campo records (como string JSON)
+    import json
+    encrypted_records = encrypt_text(json.dumps(data.records))
     await db.monthly_records.update_one(
         {"device_id": device_id},
         {
             "$set": {
                 "device_id":        device_id,
-                "records":          data.records,
+                "records":          encrypted_records,
                 "cycle_start_date": cycle_start,
                 "updated_at":       datetime.utcnow(),
             },
@@ -126,19 +151,25 @@ async def save_monthly_record(device_id: str, data: MonthlyPainRecordCreate):
     }
 
 
-@monthly_router.delete("/{device_id}")
-async def delete_monthly_record(device_id: str):
-    await db_delete_one(db.monthly_records, {"device_id": device_id})
-    return {"message": "Record deleted", "device_id": device_id}
-
-
-def _serialize_record(record: dict) -> dict:
-    def _iso(v):
-        return v.isoformat() if isinstance(v, datetime) else v
-
-    return {
-        "device_id":        record["device_id"],
-        "records":          record.get("records", []),
+@monthly_router.get("/{device_id}")
+async def get_monthly_record(device_id: str, user=Depends(get_current_user)):
+    if hasattr(user, 'device_id') and user.device_id != device_id:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    import json
+    record = await db.monthly_records.find_one({"device_id": device_id})
+    if not record:
+        return {
+            "device_id":        device_id,
+            "records":          [],
+            "cycle_start_date": datetime.utcnow().isoformat(),
+            "created_at":       datetime.utcnow().isoformat(),
+        }
+    # Descifrar el campo records
+    try:
+        record["records"] = json.loads(decrypt_text(record["records"]))
+    except Exception:
+        record["records"] = []
+    return _serialize_record(record)
         "cycle_start_date": _iso(record.get("cycle_start_date")),
         "created_at":       _iso(record.get("created_at")),
     }

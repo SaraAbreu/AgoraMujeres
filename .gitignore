@@ -103,3 +103,6 @@ android-sdk/ -e
 # Environment files
 *.env
 *.env.*
+
+# Claves y archivos sensibles
+backend/firebase_key.json

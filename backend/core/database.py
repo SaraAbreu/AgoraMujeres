@@ -8,6 +8,7 @@ All endpoints must use these helpers — never call Motor methods directly.
 import asyncio
 import logging
 import os
+import mongomock
 from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -37,8 +38,13 @@ async def connect() -> None:
         logger.info("✅ Connected to MongoDB")
         await _ensure_indexes()
     except Exception as e:
-        import mongomock
-        logger.warning(f"⚠️  MongoDB unavailable ({e}). Using mongomock.")
+        # Si estamos en producción, nunca usar mongomock
+        if os.environ.get("ENV", "development").lower() == "production":
+            logger.error(f"❌ MongoDB no disponible en producción: {e}")
+            raise RuntimeError("MongoDB no disponible en producción. Abortando arranque.")
+        
+        
+        logger.warning(f"⚠️  MongoDB unavailable ({e}). Using mongomock (solo desarrollo/test).")
         client = mongomock.MongoClient()
         db = client[db_name]
         using_mongomock = True
@@ -73,6 +79,7 @@ async def _ensure_indexes() -> None:
         (db.crisis_logs,        [("device_id", 1), ("created_at", -1)]),
         (db.monthly_records,    [("device_id", 1)]),
         (db.resources,          [("language", 1), ("category", 1), ("is_featured", -1)]),
+        (db.sintomas_cronico, [("device_id", 1), ("created_at", -1)]), # <--- AÑADE ESTA LÍNEA
     ]
     for collection, index_spec in indexes:
         try:

@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { 
   StyleSheet, Text, TextInput, TouchableOpacity, View, 
-  KeyboardAvoidingView, Platform, Alert, Dimensions, ScrollView 
+  KeyboardAvoidingView, Platform, Alert, Dimensions, ScrollView,
+  ActivityIndicator 
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,48 +11,23 @@ import Animated, {
   withSequence, FadeInDown, withSpring 
 } from 'react-native-reanimated'; 
 import { useRouter } from 'expo-router';
-// IMPORTS DE AUTENTICACIÓN
-import api, { saveToken } from '../services/api';
+import api from '../services/api';
 import { useUserStore } from '../store/userStore';
 import { signInWithGoogle } from '../services/firebaseConfig';
+
 const { width } = Dimensions.get('window');
 
 export default function LoginScreen() {
-  // Acceso directo a las funciones del store
-  const setUser = useUserStore.getState().setUser;
-  const setToken = useUserStore.getState().setToken;
+  const setUser = useUserStore((state) => state.setUser);
+  const setToken = useUserStore((state) => state.setToken);
   const router = useRouter();
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-
-  // --- LOGIN CON GOOGLE/FIREBASE ---
-  const handleGoogleLogin = async () => {
-    try {
-      const { token, user } = await signInWithGoogle();
-      if (token) {
-        const res = await api.post('/api/auth/google', { token });
-        if (res.data.status === "success") {
-          if (res.data.token) {
-            await setToken(res.data.token);
-            await saveToken(res.data.token); // Opcional: compatibilidad
-          }
-          if (res.data.user) setUser(res.data.user);
-          setTimeout(() => {
-            router.replace('/home');
-          }, 150);
-        } else {
-          Alert.alert('Error', res.data.error || 'No se pudo iniciar sesión');
-        }
-      }
-    } catch (error) {
-      Alert.alert('Error', 'No se pudo iniciar sesión con Google');
-    }
-  };
-
-  // --- ANIMACIONES ---
   const scale = useSharedValue(1);
   const orbPress = useSharedValue(1);
 
@@ -60,24 +36,81 @@ export default function LoginScreen() {
       withSequence(withTiming(1.08, { duration: 2000 }), withTiming(1, { duration: 2000 })), 
       -1, true
     );
-  }, [scale]); 
+  }, []); 
 
   const animatedOrbStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value * orbPress.value }],
   }));
 
+  const handleGoogleLogin = async () => {
+  // 1. Define aquí los correos que tienen permiso para entrar a la app
+  const EMAILS_AUTORIZADOS = [
+    'syntexia.ai@gmail.com', // Tú (Desarrollador)
+    'saraabreu2c1997@gmail.com', // Alguien a quien quieras dejar entrar
+  ];
+
+  try {
+    setLoading(true);
+    const result = await signInWithGoogle();
+    
+    if (result.token) {
+      const response = await api.post('/api/auth/google', { token: result.token });
+      
+      if (response.data.status === 'success') {
+        const { token, user } = response.data;
+
+        // 2. VALIDACIÓN DE ACCESO
+        // Comprobamos si el email del usuario está en nuestra "lista blanca"
+        const emailUsuario = user.email.toLowerCase();
+        const estaAutorizado = EMAILS_AUTORIZADOS.includes(emailUsuario);
+
+        if (!estaAutorizado) {
+          // Si no está en la lista, no guardamos nada y lanzamos aviso
+          Alert.alert(
+            "Acceso Privado",
+            "Lo sentimos, esta versión de Ágora es restringida. Tu correo no tiene permiso de acceso todavía.",
+            [{ text: "Entendido" }]
+          );
+          return; // Detenemos la ejecución aquí, no llega al router.replace
+        }
+
+        // 3. SI ESTÁ AUTORIZADO, PROCEDEMOS
+        await setToken(token);
+        await setUser(user);
+
+        // Activación automática del modo desarrollador (solo para ti)
+        if (emailUsuario === 'syntexia.ai@gmail.com') {
+          await useUserStore.getState().setDevMode(true);
+        } else {
+          await useUserStore.getState().setDevMode(false);
+        }
+
+        router.replace('/(tabs)/home');
+      }
+    }
+  } catch (error) {
+    console.error("[LOGIN ERROR]", error);
+    Alert.alert("Error", "No se pudo conectar con el santuario.");
+  } finally {
+    setLoading(false);
+  }
+};
+
   const handleAuth = async () => {
+    if (!email || !password) {
+      return Alert.alert("Campos incompletos", "Por favor, llena tus credenciales.");
+    }
+    setLoading(true);
     try {
       const endpoint = isRegistering ? '/api/auth/register' : '/api/auth/login';
       const res = await api.post(endpoint, { email, password });
-      if (res.data.token) {
-        await setToken(res.data.token);
-        await saveToken(res.data.token); // Opcional: compatibilidad
-      }
-      if (res.data.user) setUser(res.data.user);
-      router.replace('/home');
+      if (res.data.token) await setToken(res.data.token);
+      if (res.data.user) await setUser(res.data.user);
+      router.replace('/(tabs)/home');
     } catch (error) {
-      Alert.alert("Error", "Acceso denegado. Revisa tus credenciales.");
+      Alert.alert("Error", "Credenciales incorrectas.");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -127,9 +160,14 @@ export default function LoginScreen() {
               onPressIn={() => { orbPress.value = withSpring(0.9) }}
               onPressOut={() => { orbPress.value = withSpring(1) }}
               activeOpacity={1}
+              disabled={loading}
             >
               <Animated.View style={[styles.loginOrbe, animatedOrbStyle]}>
-                <Ionicons name={isRegistering ? 'person-add-outline' : 'finger-print-outline'} size={38} color="#C5A059" />
+                {loading ? (
+                  <ActivityIndicator color="#C5A059" />
+                ) : (
+                  <Ionicons name={isRegistering ? 'person-add-outline' : 'finger-print-outline'} size={38} color="#C5A059" />
+                )}
               </Animated.View>
             </TouchableOpacity>
             <Text style={styles.portalText}>{isRegistering ? 'Registrar' : 'Entrar'}</Text>
@@ -139,10 +177,7 @@ export default function LoginScreen() {
             <View style={styles.dividerRow}>
                <View style={styles.line} /><Text style={styles.orText}>O</Text><View style={styles.line} />
             </View>
-            <TouchableOpacity 
-              style={styles.googleBtn} 
-              onPress={handleGoogleLogin}
-            >
+            <TouchableOpacity style={styles.googleBtn} onPress={handleGoogleLogin}>
               <Ionicons name="logo-google" size={18} color="#8B5A2B" />
               <Text style={styles.googleBtnText}>GOOGLE</Text>
             </TouchableOpacity>

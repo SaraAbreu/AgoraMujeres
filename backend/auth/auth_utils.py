@@ -1,7 +1,9 @@
+
+import os
 from jose import jwt
 from datetime import datetime, timedelta
 
-SECRET_KEY = "CAMBIA_ESTO_EN_PRODUCCION"
+SECRET_KEY = os.environ.get('JWT_SECRET', 'CAMBIA_ESTO_EN_PRODUCCION')
 ALGORITHM = "HS256"
 
 def create_access_token(data: dict):

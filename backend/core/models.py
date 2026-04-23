@@ -49,3 +49,18 @@ class BodyMapEntry(BaseModel):
     zone: str           # ej: "lumbar", "cervical", "rodillas"
     intensity: int      # Escala 1-10
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class GlucosaRegistro(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: str
+    valor: float
+    fecha: datetime
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class SintomaCronicoRegistro(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    device_id: str
+    sintomas: list[str]  # claves de síntomas
+    zona: str           # zona seleccionada
+    notas: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

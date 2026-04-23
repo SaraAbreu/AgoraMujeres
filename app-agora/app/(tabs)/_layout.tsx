@@ -13,6 +13,7 @@ export default function TabLayout() {
       tabBarStyle: styles.tabBar,
     }}>
       
+      {/* 1. PESTAÑAS VISIBLES (Deben ir primero o ser las únicas con href válido) */}
       <Tabs.Screen
         name="home"
         options={{
@@ -55,15 +56,15 @@ export default function TabLayout() {
         }}
       />
 
-      {/* OCULTAR CUALQUIER OTRA PESTAÑA AUTOMÁTICA */}
-      <Tabs.Screen
-        name="two" 
-        options={{ href: null }}
-      />
-      <Tabs.Screen
-        name="index" // Por si acaso tienes un index.tsx aparte
-        options={{ href: null }}
-      />
+      {/* 2. PANTALLAS OCULTAS (Usamos href: null para que no ocupen espacio físico) */}
+      {/* CORRECCIÓN: Quitamos el tabBarButton para evitar el error anterior y dejamos solo href: null */}
+      <Tabs.Screen name="sintomas-cronico" options={{ href: null }} />
+      <Tabs.Screen name="historial-clinico" options={{ href: null }} />
+      <Tabs.Screen name="identificacion-biometria" options={{ href: null }} />
+      <Tabs.Screen name="recordatorios-salud" options={{ href: null }} />
+      <Tabs.Screen name="two" options={{ href: null }} />
+      <Tabs.Screen name="index" options={{ href: null }} />
+
     </Tabs>
   );
 }
@@ -84,11 +85,14 @@ const styles = StyleSheet.create({
     shadowRadius: 15,
     paddingBottom: Platform.OS === 'ios' ? 25 : 12,
     paddingTop: 12,
+    // Aseguramos que el contenido se distribuya uniformemente
+    justifyContent: 'center', 
   },
   label: {
     fontSize: 9,
     fontWeight: '700',
     letterSpacing: 1,
+    marginBottom: 5,
   },
   chatIcon: { padding: 5 },
   activeChatIcon: {

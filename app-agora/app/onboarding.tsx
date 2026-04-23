@@ -4,13 +4,18 @@ import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeIn, FadeInDown, SlideInDown } from 'react-native-reanimated';
+import { useUserStore } from '../store/userStore';
 
 const { width, height } = Dimensions.get('window');
 const isWeb = Platform.OS === 'web';
 
 export default function EditorialOnboarding() {
   const router = useRouter();
+  const userStore = useUserStore();
 
+  const setOnboardingDone = useUserStore((state) => state.setOnboardingDone);
+  // ... al presionar el botón:
+  setOnboardingDone(true);
   return (
     <View style={styles.container}>
       {/* 1. FONDO ORGÁNICO DE LA LANDING */}
@@ -55,7 +60,10 @@ export default function EditorialOnboarding() {
         <Animated.View entering={SlideInDown.delay(1200)} style={styles.footer}>
           <TouchableOpacity 
             style={styles.glassButton} 
-            onPress={() => router.replace('/home')}
+            onPress={async () => {
+              await setOnboardingDone(true);
+              router.replace('/home');
+            }}
             activeOpacity={0.8}
           >
             {/* Efecto Glass sutil */}
@@ -69,6 +77,10 @@ export default function EditorialOnboarding() {
           </TouchableOpacity>
         </Animated.View>
 
+        {/* 7. MARCAR ONBOARDING COMPLETADO */}
+        <View style={styles.onboardingDone}>
+          <Text style={styles.onboardingDoneText}>Onboarding completado</Text>
+        </View>
       </View>
     </View>
   );
@@ -138,5 +150,17 @@ const styles = StyleSheet.create({
   buttonText: { color: '#8B5A2B', fontWeight: 'bold', letterSpacing: 3, fontSize: 11 },
 
   planLink: { marginTop: 30 },
-  planText: { fontSize: 10, letterSpacing: 3, color: '#C5A059', fontWeight: 'bold' }
+  planText: { fontSize: 10, letterSpacing: 3, color: '#C5A059', fontWeight: 'bold' },
+
+  onboardingDone: {
+    position: 'absolute',
+    top: height * 0.1,
+    right: width * 0.1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    color: 'white',
+    padding: 10,
+    borderRadius: 10,
+    opacity: 0,
+  },
+  onboardingDoneText: { color: 'white', fontWeight: 'bold' }
 });

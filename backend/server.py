@@ -2,10 +2,8 @@ import jwt
 from fastapi import Depends, FastAPI, HTTPException, Body, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import JSONResponse
-from starlette.middleware.cors import CORSMiddleware
+from fastapi.middleware.cors import CORSMiddleware
 import os
-import uuid
-import bcrypt
 import logging
 import sys
 from datetime import datetime, timezone
@@ -14,31 +12,30 @@ import firebase_admin
 from firebase_admin import auth as firebase_auth, credentials, initialize_app
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, EmailStr, Field
+from starlette.middleware.base import BaseHTTPMiddleware
 
-# Import local
-from auth.auth_utils import create_access_token
-
-# --- CONFIGURACIÓN DE SEGURIDAD Y RUTAS ---
+# --- CONFIGURACIÓN DE SEGURIDAD Y LOGGING ---
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("SyntexiaSecurity")
 
-# Obtener la ruta base para encontrar archivos (como firebase_key.json)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-# Añadir BASE_DIR al path para que los imports internos (auth, routers) funcionen siempre
 if BASE_DIR not in sys.path:
     sys.path.append(BASE_DIR)
 
+# Import local (Asegúrate de que este archivo existe)
+from auth.auth_utils import create_access_token
+
 # --- INICIALIZACIÓN DE FIREBASE ADMIN ---
 if not len(firebase_admin._apps):
-    # CORRECCIÓN DE RUTA: Busca el archivo en la misma carpeta que server.py
     key_path = os.path.join(BASE_DIR, "firebase_key.json")
-    if not os.path.exists(key_path):
-        logger.error(f"❌ No se encontró el archivo Firebase en: {key_path}")
-    else:
+    if os.path.exists(key_path):
         cred = credentials.Certificate(key_path)
         initialize_app(cred)
         logger.info("🔥 Firebase Admin Inicializado")
+    else:
+        logger.error("❌ No se encontró firebase_key.json")
 
+# --- MODELOS DE DATOS ---
 class UserRegister(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=6)
@@ -47,7 +44,7 @@ class UserLogin(BaseModel):
     email: EmailStr
     password: str
 
-# --- PERSISTENCIA SEGURA ---
+# --- PERSISTENCIA (MONGODB) ---
 client = None
 db = None
 
@@ -61,8 +58,10 @@ async def lifespan(app: FastAPI):
     yield
     if client: client.close()
 
+# --- INICIALIZACIÓN DE APP (UNA SOLA VEZ) ---
 app = FastAPI(title="Ágora Security Engine", lifespan=lifespan)
 
+# --- MIDDLEWARES ---
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -70,6 +69,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    # Esto soluciona el aviso de COOP en Chrome
+    response.headers["Cross-Origin-Opener-Policy"] = "same-origin-allow-popups"
+    response.headers["Cross-Origin-Embedder-Policy"] = "unsafe-none"
+    return response
 
 # --- SEGURIDAD JWT ---
 security = HTTPBearer()
@@ -80,141 +87,178 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         token = credentials.credentials
         payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
         email = payload.get('email')
-        if not email:
-            raise HTTPException(status_code=401, detail="Token inválido")
-        
         user_db = await db.users.find_one({"email": email})
-        if not user_db:
+        if not user_db: 
             raise HTTPException(status_code=404, detail="Usuario no encontrado")
-        
-        return {
-            "id": str(user_db.get('_id', '')),
-            "email": user_db.get('email', ''),
-            "name": user_db.get('profile', {}).get('name', ''),
-            "plan": user_db.get('plan', 'free')
-        }
+        return {"id": str(user_db['_id']), "email": email, "profile": user_db.get('profile', {})}
     except Exception:
         raise HTTPException(status_code=401, detail="Token inválido")
 
-# --- ENDPOINTS ---
+# --- ENDPOINTS DE AUTENTICACIÓN ---
+# --- BUSCA Y SUSTITUYE ESTA PARTE EN SERVER.PY ---
 
-@app.get("/api/health")
-async def health():
-    return {"status": "shield_active", "engine": "Syntexia 2.0"}
+@app.post("/api/auth/google") # Asegúrate de que NO haya una barra al final
+async def google_auth(data: dict = Body(...)):
+    logger.info("📩 Petición detectada físicamente en /api/auth/google")
+    token = data.get("token")
+    if not token:
+        raise HTTPException(status_code=400, detail="Token no recibido")
 
-@app.get("/api/me")
-async def get_me(user=Depends(get_current_user)):
-    return {"user": user}
-
-@app.post("/api/auth/register", status_code=201)
-async def register(user: UserRegister):
-    existing = await db.users.find_one({"email": user.email})
-    if existing:
-        raise HTTPException(status_code=400, detail="Identidad ya protegida.")
-    
-    salt = bcrypt.gensalt(rounds=12)
-    hashed = bcrypt.hashpw(user.password.encode('utf-8'), salt)
-    
-    await db.users.insert_one({
-        "email": user.email,
-        "password": hashed.decode('utf-8'),
-        "created_at": datetime.now(timezone.utc),
-        "profile": {"name": "", "intention": ""}
-    })
-    return {"status": "success"}
-
-@app.post("/api/auth/login")
-async def login(user: UserLogin):
-    user_db = await db.users.find_one({"email": user.email})
-    if not user_db or not bcrypt.checkpw(user.password.encode('utf-8'), user_db["password"].encode('utf-8')):
-        raise HTTPException(status_code=401, detail="Credenciales no válidas.")
-    
-    payload = {"uid": str(user_db['_id']), "email": user.email}
-    token = create_access_token(payload)
-    return {"status": "success", "token": token, "email": user.email}
-
-@app.post("/api/auth/google")
-async def google_login(data: dict = Body(...)):
-    id_token = data.get('token')
-    if not id_token:
-        return JSONResponse(status_code=422, content={"error": "Falta el token de Google"})
     try:
-        decoded_token = firebase_auth.verify_id_token(id_token)
+        # Validar con Firebase Admin
+        decoded_token = firebase_auth.verify_id_token(token)
         email = decoded_token['email']
         name = decoded_token.get('name', 'Usuaria Ágora')
-        
+
+        # Persistencia en MongoDB
         user_db = await db.users.find_one({"email": email})
         if not user_db:
-            await db.users.insert_one({
+            new_user = {
                 "email": email,
-                "password": None,
+                "name": name,
                 "created_at": datetime.now(timezone.utc),
-                "profile": {"name": name, "intention": ""}
-            })
-            user_db = await db.users.find_one({"email": email})
+                "profile": {"menopausia": False}
+            }
+            result = await db.users.insert_one(new_user)
+            user_id = str(result.inserted_id)
+        else:
+            user_id = str(user_db["_id"])
 
-        payload = {"uid": str(user_db['_id']), "email": email}
-        token = create_access_token(payload)
+        # Generar token JWT para la sesión de la App
+        access_token = create_access_token(data={"sub": user_id, "email": email})
+        
         return {
             "status": "success",
-            "token": token,
+            "token": access_token,
             "user": {"email": email, "name": name}
         }
     except Exception as e:
-        logger.error(f"Google login error: {e}")
-        return JSONResponse(status_code=401, content={"error": str(e)})
+        logger.error(f"❌ Error en Firebase: {e}")
+        raise HTTPException(status_code=401, detail="Token inválido")
 
-@app.post("/api/user/update-profile")
-async def update_profile(data: dict = Body(...)):
-    email = data.get("email")
-    name = data.get("name")
-    await db.users.update_one({"email": email}, {"$set": {"profile.name": name}})
-    return {"status": "success"}
-# --- ENDPOINT COMUNIDAD (Para que desaparezca el error 404) ---
-@app.get("/chat/community/count")
-async def get_community_count():
-    return {
-        "community_size": 161, 
-        "message_es": "161 mujeres están cultivando su bienestar hoy"
-    }
-# --- INCLUSIÓN DE ROUTERS ---
-# Modifica la inclusión de los routers para que usen el prefijo /api
-try:
-    from routers.glucosa import router as glucosa_router
-    from routers.sintomas_cronico import router as sintomas_cronico_router
-    
-    # Añadimos el prefijo /api para que coincida con lo que busca el frontend
-    app.include_router(glucosa_router, prefix="/api")
-    app.include_router(sintomas_cronico_router, prefix="/api")
-    
-    logger.info("✅ Routers cargados con prefijo /api")
-except ImportError as e:
-    logger.warning(f"⚠️ No se pudo cargar algún router: {e}")
-# En server.py o routers/glucosa.py
+# --- ENDPOINTS DE SALUD Y ESTADÍSTICAS ---
+
 @app.get("/api/user/stats")
 async def get_user_stats(user=Depends(get_current_user)):
-    # Buscamos el último registro de glucosa del usuario en MongoDB
-    ultima_glucosa = await db.glucosa.find_one(
-        {"email": user["email"]}, 
-        sort=[("fecha", -1)]
-    )
+    email = user["email"]
+    glucosa = await db.glucosa.find_one({"email": email}, sort=[("fecha", -1)])
+    ciclo = await db.ciclos.find_one({"email": email}, sort=[("fecha_registro", -1)])
     
-    # Buscamos el último ciclo
-    ultimo_ciclo = await db.ciclos.find_one(
-        {"email": user["email"]}, 
-        sort=[("fecha_registro", -1)]
-    )
+    dia_actual, fase, color = 0, "Sin datos", "#E6D5B8"
     
+    if ciclo and ciclo.get("inicio"):
+        try:
+            inicio_dt = datetime.fromisoformat(ciclo["inicio"].replace('Z', '+00:00'))
+            if inicio_dt.tzinfo is None:
+                inicio_dt = inicio_dt.replace(tzinfo=timezone.utc)
+                
+            hoy = datetime.now(timezone.utc)
+            dias_transcurridos = (hoy - inicio_dt).days
+            duracion = ciclo.get("duracion", 28)
+            
+            dia_actual = (dias_transcurridos % duracion) + 1
+            
+            if ciclo.get("menopausia"):
+                fase, color = "PLENITUD", "#8B5A2B"
+            elif 1 <= dia_actual <= 5:
+                fase, color = "MENSTRUAL", "#C5A059"
+            elif 6 <= dia_actual <= 12:
+                fase, color = "FOLICULAR", "#D1C4B2"
+            elif 13 <= dia_actual <= 16:
+                fase, color = "OVULATORIA", "#E6D5B8"
+            else:
+                fase, color = "LÚTEA", "#8B5A2B"
+        except Exception as e:
+            logger.error(f"Error calculando ciclo: {e}")
+
     return {
-        "glucosa": {
-            "valor": ultima_glucosa["valor"] if ultima_glucosa else 0,
-            "fecha": ultima_glucosa["fecha"] if ultima_glucosa else None
-        },
-        "ciclo": {
-            "duracion": ultimo_ciclo["duracion"] if ultimo_ciclo else 0,
-            "inicio": ultimo_ciclo["inicio"] if ultimo_ciclo else None
-        }
+    "glucosa": {"valor": glucosa["valor"] if glucosa else 0},
+    "ciclo": {
+        "dia_actual": dia_actual,
+        "fase": fase,
+        "color": color,
+        "duracion": ciclo.get("duracion", 0) if ciclo else 0  # ← añadir
     }
+}
+
+@app.post("/api/ciclo")
+async def save_ciclo(data: dict = Body(...), user=Depends(get_current_user)):
+    try:
+        nuevo_ciclo = {
+            "email": user["email"],
+            "duracion": int(data.get("duracion", 0)),
+            "inicio": data.get("inicio"), 
+            "sintomas": data.get("sintomas", []),
+            "menopausia": data.get("menopausia", False),
+            "notas": data.get("notas", ""),
+            "fecha_registro": datetime.now(timezone.utc)
+        }
+        await db.ciclos.insert_one(nuevo_ciclo)
+        return {"status": "success", "message": "Ciclo registrado"}
+    except Exception as e:
+        logger.error(f"Error guardando ciclo: {e}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+# --- ENDPOINTS DE DIARIO ---
+
+@app.post("/api/diario")
+async def save_diario(data: dict = Body(...), user=Depends(get_current_user)):
+    entry = {
+        "email": user["email"], 
+        "texto": data.get("texto"), 
+        "fecha": datetime.now(timezone.utc)
+    }
+    await db.diario.insert_one(entry)
+    return {"status": "success"}
+
+@app.get("/api/diario")
+async def get_diario(user=Depends(get_current_user)):
+    cursor = db.diario.find({"email": user["email"]}).sort("fecha", -1)
+    entries = await cursor.to_list(length=10)
+    return [{"id": str(e["_id"]), "date": e["fecha"].strftime("%d %b"), "text": e["texto"]} for e in entries]
+
+# --- REPORTE MÉDICO ---
+
+@app.get("/api/user/medical-report")
+async def get_medical_report(user=Depends(get_current_user)):
+    email = user["email"]
+    glucosa_logs = await db.glucosa.find({"email": email}).sort("fecha", -1).to_list(50)
+    ciclo_logs = await db.ciclos.find({"email": email}).sort("fecha_registro", -1).to_list(50)
+    diario_logs = await db.diario.find({"email": email}).sort("fecha", -1).to_list(50)
+    
+    reporte = []
+    for g in glucosa_logs:
+        reporte.append({"tipo": "GLUCOSA", "valor": f"{g['valor']} mg/dL", "fecha": g["fecha"], "info": "Nivel de azúcar"})
+        
+    for c in ciclo_logs:
+        sints = ", ".join(c.get("sintomas", [])) if c.get("sintomas") else "Sin síntomas"
+        reporte.append({
+            "tipo": "CICLO", 
+            "valor": f"Ciclo de {c['duracion']} días", 
+            "fecha": c["fecha_registro"], 
+            "info": f"Inicio: {c['inicio'][:10]} | Síntomas: {sints}"
+        })
+        
+    for d in diario_logs:
+        reporte.append({"tipo": "DIARIO", "valor": "Reflexión", "fecha": d["fecha"], "info": d["texto"]})
+
+    reporte.sort(key=lambda x: x['fecha'] if isinstance(x['fecha'], datetime) else datetime.fromisoformat(x['fecha'].replace('Z', '+00:00')), reverse=True)
+    return reporte
+
+# --- COMUNIDAD ---
+
+@app.get("/api/chat/community/count")
+async def get_community_count():
+    return {"community_size": 161, "message_es": "161 mujeres cultivando bienestar"}
+
+# --- INCLUSIÓN DE ROUTERS EXTERNOS ---
+try:
+    from routers.glucosa import router as glucosa_router
+    app.include_router(glucosa_router, prefix="/api")
+except ImportError:
+    logger.warning("Router de glucosa no encontrado, saltando...")
+
 if __name__ == "__main__":
     import uvicorn
+    # 0.0.0.0 permite que otros dispositivos (como un móvil Android) se conecten
     uvicorn.run(app, host="0.0.0.0", port=8001)

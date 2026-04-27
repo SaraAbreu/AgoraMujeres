@@ -13,24 +13,30 @@ import Animated, {
 import { useRouter } from 'expo-router';
 import api from '../services/api';
 import { useUserStore } from '../store/userStore';
-import { signInWithGoogle } from '../services/firebaseConfig';
+import { signInWithGoogle, getGoogleRedirectResult } from '../services/firebaseConfig';
 
 const { width } = Dimensions.get('window');
 
+const EMAILS_AUTORIZADOS = [
+  'syntexia.ai@gmail.com', 
+  'saraabreu2c1997@gmail.com',
+];
+
 export default function LoginScreen() {
-  const setUser = useUserStore((state) => state.setUser);
+  const setUser  = useUserStore((state) => state.setUser);
   const setToken = useUserStore((state) => state.setToken);
-  const router = useRouter();
+  const router   = useRouter();
 
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail]             = useState('');
+  const [password, setPassword]       = useState('');
   const [isRegistering, setIsRegistering] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword]   = useState(false);
+  const [loading, setLoading]         = useState(false);
 
-  const scale = useSharedValue(1);
+  const scale    = useSharedValue(1);
   const orbPress = useSharedValue(1);
 
+  // Animación del orbe
   useEffect(() => {
     scale.value = withRepeat(
       withSequence(withTiming(1.08, { duration: 2000 }), withTiming(1, { duration: 2000 })), 
@@ -38,81 +44,99 @@ export default function LoginScreen() {
     );
   }, []); 
 
+  // Recoge el resultado del redirect de Google al volver a la página
+  useEffect(() => {
+    const checkRedirect = async () => {
+      try {
+        const result = await getGoogleRedirectResult();
+        if (!result) return; // No hay redirect pendiente
+
+        setLoading(true);
+        const response = await api.post('/api/auth/google', { token: result.token });
+
+        if (response.data.status === 'success') {
+          const { token: appToken, user: userBackend } = response.data;
+          const emailUsuario = userBackend.email.toLowerCase();
+
+          if (!EMAILS_AUTORIZADOS.includes(emailUsuario)) {
+            Alert.alert("Acceso Restringido", "Este correo aún no ha sido invitado al santuario.");
+            return;
+          }
+
+          await setToken(appToken);
+          await setUser(userBackend);
+          useUserStore.getState().setDevMode(emailUsuario === 'syntexia.ai@gmail.com');
+          router.replace('/(tabs)/home');
+        }
+      } catch (error: any) {
+        if (error.response?.status === 404) {
+          Alert.alert("Error de Conexión", "El servidor no reconoce la ruta de acceso.");
+        } else {
+          console.error("[REDIRECT ERROR]", error);
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    checkRedirect();
+  }, []);
+
   const animatedOrbStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value * orbPress.value }],
   }));
 
-  const handleGoogleLogin = async () => {
-  // 1. Define aquí los correos que tienen permiso para entrar a la app
-  const EMAILS_AUTORIZADOS = [
-    'syntexia.ai@gmail.com', // Tú (Desarrollador)
-    'saraabreu2c1997@gmail.com', // Alguien a quien quieras dejar entrar
-  ];
-
-  try {
-    setLoading(true);
-    const result = await signInWithGoogle();
-    
-    if (result.token) {
-      const response = await api.post('/api/auth/google', { token: result.token });
-      
-      if (response.data.status === 'success') {
-        const { token, user } = response.data;
-
-        // 2. VALIDACIÓN DE ACCESO
-        // Comprobamos si el email del usuario está en nuestra "lista blanca"
-        const emailUsuario = user.email.toLowerCase();
-        const estaAutorizado = EMAILS_AUTORIZADOS.includes(emailUsuario);
-
-        if (!estaAutorizado) {
-          // Si no está en la lista, no guardamos nada y lanzamos aviso
-          Alert.alert(
-            "Acceso Privado",
-            "Lo sentimos, esta versión de Ágora es restringida. Tu correo no tiene permiso de acceso todavía.",
-            [{ text: "Entendido" }]
-          );
-          return; // Detenemos la ejecución aquí, no llega al router.replace
-        }
-
-        // 3. SI ESTÁ AUTORIZADO, PROCEDEMOS
-        await setToken(token);
-        await setUser(user);
-
-        // Activación automática del modo desarrollador (solo para ti)
-        if (emailUsuario === 'syntexia.ai@gmail.com') {
-          await useUserStore.getState().setDevMode(true);
-        } else {
-          await useUserStore.getState().setDevMode(false);
-        }
-
-        router.replace('/(tabs)/home');
-      }
-    }
-  } catch (error) {
-    console.error("[LOGIN ERROR]", error);
-    Alert.alert("Error", "No se pudo conectar con el santuario.");
-  } finally {
-    setLoading(false);
-  }
-};
-
+  // Login con email y contraseña — lo que dispara el ORBE
   const handleAuth = async () => {
     if (!email || !password) {
       return Alert.alert("Campos incompletos", "Por favor, llena tus credenciales.");
     }
     setLoading(true);
     try {
-      const endpoint = isRegistering ? '/api/auth/register' : '/api/auth/login';
+      const endpoint = isRegistering ? '/auth/register' : '/auth/login';
       const res = await api.post(endpoint, { email, password });
-      if (res.data.token) await setToken(res.data.token);
-      if (res.data.user) await setUser(res.data.user);
-      router.replace('/(tabs)/home');
+      if (res.data.token) {
+        await setToken(res.data.token);
+        if (res.data.user) await setUser(res.data.user);
+        router.replace('/(tabs)/home');
+      }
     } catch (error) {
-      Alert.alert("Error", "Credenciales incorrectas.");
+      Alert.alert("Error", "Credenciales incorrectas o problema de conexión.");
     } finally {
       setLoading(false);
     }
   };
+
+  // Login con Google — solo lanza el redirect, el useEffect recoge el resultado
+  const handleGoogleLogin = async () => {
+  try {
+    setLoading(true);
+    const result = await signInWithGoogle(); // ← devuelve { token, user }
+    
+    const response = await api.post('/api/auth/google', { token: result.token });
+
+    if (response.data.status === 'success') {
+      const { token: appToken, user: userBackend } = response.data;
+      const emailUsuario = userBackend.email.toLowerCase();
+
+      if (!EMAILS_AUTORIZADOS.includes(emailUsuario)) {
+        Alert.alert("Acceso Restringido", "Este correo aún no ha sido invitado al santuario.");
+        return;
+      }
+
+      await setToken(appToken);
+      await setUser(userBackend);
+      useUserStore.getState().setDevMode(emailUsuario === 'syntexia.ai@gmail.com');
+      router.replace('/(tabs)/home');
+    }
+  } catch (error: any) {
+    if (error.code === 'auth/popup-closed-by-user') return; // usuario cerró el popup, ignorar
+    console.error("[GOOGLE LOGIN ERROR]", error);
+    Alert.alert("Error", "No se pudo conectar con Google.");
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <LinearGradient colors={['#FDFCFB', '#F5F0E8', '#E6D5B8']} style={styles.container}>
@@ -135,6 +159,7 @@ export default function LoginScreen() {
                 value={email}
                 onChangeText={setEmail}
                 autoCapitalize="none"
+                keyboardType="email-address"
               />
             </View>
 
@@ -154,9 +179,10 @@ export default function LoginScreen() {
             </View>
           </View>
 
+          {/* ORBE — dispara login con EMAIL/CONTRASEÑA */}
           <View style={styles.portalContainer}>
             <TouchableOpacity 
-              onPress={handleAuth} 
+              onPress={handleAuth}                                      
               onPressIn={() => { orbPress.value = withSpring(0.9) }}
               onPressOut={() => { orbPress.value = withSpring(1) }}
               activeOpacity={1}
@@ -173,13 +199,18 @@ export default function LoginScreen() {
             <Text style={styles.portalText}>{isRegistering ? 'Registrar' : 'Entrar'}</Text>
           </View>
 
+          {/* BOTÓN GOOGLE — dispara redirect */}
           <View style={styles.socialSection}>
             <View style={styles.dividerRow}>
-               <View style={styles.line} /><Text style={styles.orText}>O</Text><View style={styles.line} />
+              <View style={styles.line} /><Text style={styles.orText}>O</Text><View style={styles.line} />
             </View>
-            <TouchableOpacity style={styles.googleBtn} onPress={handleGoogleLogin}>
+            <TouchableOpacity 
+              style={styles.googleBtn} 
+              onPress={handleGoogleLogin}
+              disabled={loading}
+            >
               <Ionicons name="logo-google" size={18} color="#8B5A2B" />
-              <Text style={styles.googleBtnText}>GOOGLE</Text>
+              <Text style={styles.googleBtnText}>CONTINUAR CON GOOGLE</Text>
             </TouchableOpacity>
           </View>
 
@@ -228,7 +259,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 35, paddingVertical: 14, borderRadius: 35, gap: 12,
     borderWidth: 1, borderColor: 'rgba(139, 90, 43, 0.1)',
   },
-  googleBtnText: { color: '#8B5A2B', fontSize: 10, fontWeight: 'bold' },
+  googleBtnText: { color: '#8B5A2B', fontSize: 10, fontWeight: 'bold', letterSpacing: 1 },
   footer: { marginTop: 20 },
   footerText: { color: '#8B5A2B', opacity: 0.5 },
   signUpText: { color: '#C5A059', fontWeight: 'bold' },

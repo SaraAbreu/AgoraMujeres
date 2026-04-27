@@ -19,18 +19,18 @@ interface UserState {
   token: string | null;
   devMode: boolean;
   onboardingDone: boolean;
-  // NUEVOS CAMPOS PARA LA HOME
   lastGlucosa: any | null;
   lastCiclo: any | null;
+  hasCicloData: boolean;
   setUser: (user: User) => Promise<void>;
   setToken: (token: string) => Promise<void>;
   clearSession: () => Promise<void>;
   loadSession: () => Promise<void>;
   setDevMode: (active: boolean) => Promise<void>;
   setOnboardingDone: (done: boolean) => Promise<void>;
-  // NUEVAS FUNCIONES
   setLastGlucosa: (data: any) => void;
   setLastCiclo: (data: any) => void;
+  setHasCicloData: (value: boolean) => void;
 }
 
 export const useUserStore = create<UserState>((set) => ({
@@ -40,9 +40,11 @@ export const useUserStore = create<UserState>((set) => ({
   onboardingDone: false,
   lastGlucosa: null,
   lastCiclo: null,
+  hasCicloData: false,
 
   setLastGlucosa: (data) => set({ lastGlucosa: data }),
   setLastCiclo: (data) => set({ lastCiclo: data }),
+  setHasCicloData: (value) => set({ hasCicloData: value }),
 
   setDevMode: async (active) => {
     const value = active ? '1' : '0';
@@ -55,7 +57,10 @@ export const useUserStore = create<UserState>((set) => ({
     const userStr = JSON.stringify(user);
     if (Platform.OS === 'web') localStorage.setItem(USER_KEY, userStr);
     else await SecureStore.setItemAsync(USER_KEY, userStr);
-    set({ user });
+    
+    // Verificación de DevMode al setear usuario
+    const isDev = user.email === 'syntexia.ai@gmail.com';
+    set({ user, devMode: isDev });
   },
 
   setToken: async (token) => {
@@ -76,13 +81,20 @@ export const useUserStore = create<UserState>((set) => ({
       await SecureStore.deleteItemAsync(ONBOARDING_KEY);
       await SecureStore.deleteItemAsync(DEV_KEY);
     }
-    set({ user: null, token: null, onboardingDone: false, devMode: false, lastGlucosa: null, lastCiclo: null });
+    // Limpiamos TODO el estado, incluyendo devMode y datos de salud
+    set({ 
+      user: null, 
+      token: null, 
+      onboardingDone: false, 
+      devMode: false, 
+      lastGlucosa: null, 
+      lastCiclo: null 
+    });
   },
 
   loadSession: async () => {
     let token = null;
     let user = null;
-    let devMode = false;
     let onboardingDone = false;
 
     try {
@@ -101,20 +113,27 @@ export const useUserStore = create<UserState>((set) => ({
       console.error("Error al cargar la sesión:", error);
     }
 
-    if (user && user.email === 'syntexia.ai@gmail.com') devMode = true;
-    set({ token, user, devMode, onboardingDone });
+    // El modo dev se activa SOLO si hay un usuario cargado y es el admin
+    const isDev = user && user.email === 'syntexia.ai@gmail.com';
+    set({ token, user, devMode: isDev, onboardingDone });
 
+    // Si tenemos token pero no datos de usuario, intentamos recuperarlos
     if (token && !user) {
       try {
-        const profile = await import('../services/api').then(m => m.getUserProfile());
-        if (profile) {
-          const isDev = profile.email === 'syntexia.ai@gmail.com';
-          set({ user: profile, devMode: isDev });
+        const api = await import('../services/api').then(m => m.default);
+        const response = await api.get('/me');
+        if (response.data.user) {
+          const profile = response.data.user;
+          const isDevProfile = profile.email === 'syntexia.ai@gmail.com';
+          set({ user: profile, devMode: isDevProfile });
+          
           const userStr = JSON.stringify(profile);
           if (Platform.OS === 'web') localStorage.setItem(USER_KEY, userStr);
           else await SecureStore.setItemAsync(USER_KEY, userStr);
         }
-      } catch (e) { console.error(e); }
+      } catch (e) { 
+        console.log("Sesión expirada o error de red");
+      }
     }
   },
 

@@ -11,17 +11,21 @@ interface DatosSintomas {
     notas: string;
 }
 
-// 2. Configuración de la URL y creación de la instancia
+// 2. Configuración de la URL base
+// Mantenemos el /api al final para que coincida con tu server.py
 const API_URL = Platform.OS === 'android' 
     ? 'http://10.0.2.2:8001' 
     : 'http://127.0.0.1:8001';
 
 const api = axios.create({
     baseURL: API_URL,
+    headers: {
+        'Content-Type': 'application/json',
+    }
 });
 
 // 3. Funciones de utilidad para el Token
-const getStoredToken = async () => {
+export const getStoredToken = async () => {
     if (Platform.OS === 'web') {
         return localStorage.getItem(TOKEN_KEY);
     }
@@ -44,16 +48,18 @@ export const removeToken = async () => {
     }
 };
 
-// 4. Interceptor (Añade el token automáticamente a TODAS las peticiones)
+// 4. Interceptor: Añade el token automáticamente a TODAS las peticiones
 api.interceptors.request.use(async (config) => {
     const token = await getStoredToken();
     if (token) {
         config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
+}, (error) => {
+    return Promise.reject(error);
 });
 
-// 5. Funciones de la API
+// 5. Funciones de los Endpoints
 export const getCommunityCount = async () => {
     try {
         const response = await api.get('/chat/community/count');
@@ -64,12 +70,12 @@ export const getCommunityCount = async () => {
     }
 };
 
-export const getUserProfile = async () => {
+export const getUserStats = async () => {
     try {
-        const response = await api.get('/api/me');
+        const response = await api.get('/user/stats');
         return response.data;
     } catch (error) {
-        console.error('Error al obtener perfil de usuario:', error);
+        console.error('Error al obtener stats:', error);
         return null;
     }
 };
@@ -84,17 +90,6 @@ export const checkBackendHealth = async () => {
     }
 };
 
-export const getDailyCard = async () => {
-    try {
-        const response = await api.get('/daily-card');
-        return response.data;
-    } catch (error) {
-        console.error("Error al obtener tarjeta diaria:", error);
-        return null;
-    }
-};
-
-// Registrar síntomas crónicos (Se eliminan headers manuales y se añade tipado)
 export const registrarSintomasCronico = async ({ device_id, sintomas, zona, notas }: DatosSintomas) => {
     try {
         const response = await api.post('/sintomas-cronico', { device_id, sintomas, zona, notas });
@@ -105,7 +100,6 @@ export const registrarSintomasCronico = async ({ device_id, sintomas, zona, nota
     }
 };
 
-// Obtener síntomas crónicos (Se elimina header manual y se añade tipado string)
 export const obtenerSintomasCronico = async (device_id: string) => {
     try {
         const response = await api.get(`/sintomas-cronico/${device_id}`);
@@ -116,4 +110,5 @@ export const obtenerSintomasCronico = async (device_id: string) => {
     }
 };
 
+// Exportamos la instancia por defecto al final
 export default api;

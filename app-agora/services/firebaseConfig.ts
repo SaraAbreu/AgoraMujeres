@@ -15,14 +15,14 @@ const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const provider = new GoogleAuthProvider();
 
-// Función para iniciar sesión con Google y obtener el id_token
-export async function signInWithGoogle() {
-  try {
-    const result = await signInWithPopup(auth, provider);
-    const user = result.user;
-    const token = await user.getIdToken(); // Token de Firebase, válido para el backend
-    return { token, user };
-  } catch (error) {
-    throw error;
-  }
+// Tipo explícito — TypeScript sabe que siempre devuelve { token, user }
+export async function signInWithGoogle(): Promise<{ token: string; user: any }> {
+  const result = await signInWithPopup(auth, provider);
+  const token = await result.user.getIdToken();
+  return { token, user: result.user };
+}
+
+// Stub para no romper importaciones en login.tsx
+export async function getGoogleRedirectResult(): Promise<{ token: string; user: any } | null> {
+  return null;
 }

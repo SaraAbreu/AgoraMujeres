@@ -8,7 +8,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import jwt
 import os
 
-router = APIRouter(prefix="/api/glucosa", tags=["glucosa"])
+router = APIRouter(prefix="/glucosa", tags=["glucosa"])
 
 security = HTTPBearer()
 JWT_SECRET = os.environ.get('JWT_SECRET', 'CAMBIA_ESTO_EN_PRODUCCION')

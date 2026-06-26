@@ -28,8 +28,8 @@
       "bundler": "metro",
       "output": "static",
       "favicon": "./assets/images/icon-pwa.png",
-      "name": "Ágora Mujeres",
-      "shortName": "Ágora",
+      "name": "Agora Mujeres",
+      "shortName": "Agora",
       "description": "El santuario digital para tu salud y bienestar",
       "themeColor": "#0C0A0E",
       "backgroundColor": "#0C0A0E",
@@ -39,7 +39,6 @@
     "plugins": [
       "expo-router",
       "expo-secure-store"
-      
     ],
     "experiments": {
       "typedRoutes": true

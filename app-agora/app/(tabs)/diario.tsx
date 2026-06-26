@@ -22,7 +22,7 @@ export default function DiarioScreen() {
 
   const fetchHistory = async () => {
     try {
-      const res = await api.get('/api/diario');
+      const res = await api.get('/diario');
       setHistory(res.data);
     } catch (e) { console.error(e); }
   };
@@ -31,7 +31,7 @@ export default function DiarioScreen() {
     if (!entry.trim()) return;
     setLoading(true);
     try {
-      await api.post('/api/diario', { texto: entry });
+      await api.post('/diario', { texto: entry });
       setEntry('');
       await fetchHistory();
       Alert.alert("Guardado", "Tu reflexión está en la bóveda.");

@@ -1,5 +1,8 @@
 import { initializeApp } from "firebase/app";
-import { getAuth, GoogleAuthProvider, signInWithPopup } from "firebase/auth";
+import { 
+  getAuth, GoogleAuthProvider, signInWithPopup, 
+  signInWithRedirect, getRedirectResult 
+} from "firebase/auth";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBMKRBscuqSx1nSXZPmrPr1qXXNkuoYl4Y",
@@ -15,14 +18,16 @@ const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const provider = new GoogleAuthProvider();
 
-// Tipo explícito — TypeScript sabe que siempre devuelve { token, user }
 export async function signInWithGoogle(): Promise<{ token: string; user: any }> {
   const result = await signInWithPopup(auth, provider);
   const token = await result.user.getIdToken();
   return { token, user: result.user };
 }
 
-// Stub para no romper importaciones en login.tsx
+// Recoge el resultado del redirect al volver a la página (fallback cuando popup bloqueado)
 export async function getGoogleRedirectResult(): Promise<{ token: string; user: any } | null> {
-  return null;
+  const result = await getRedirectResult(auth); // deja que el error suba al caller
+  if (!result) return null;
+  const token = await result.user.getIdToken();
+  return { token, user: result.user };
 }

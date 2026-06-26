@@ -5,7 +5,7 @@ Previously duplicated word-for-word inside /chat and /diary/patterns.
 Now lives in one place — both routers import from here.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 
 from .database import db, db_find
@@ -21,7 +21,7 @@ async def get_patterns_for_device(
 
     Returns None if there are no entries in the requested window.
     """
-    start_date = datetime.utcnow() - timedelta(days=days)
+    start_date = datetime.now(timezone.utc) - timedelta(days=days)
     entries = await db_find(
         db.diary_entries,
         {"device_id": device_id, "created_at": {"$gte": start_date}},

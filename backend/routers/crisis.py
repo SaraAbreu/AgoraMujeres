@@ -3,14 +3,14 @@ Crisis router — instant support, bypasses OpenAI for speed.
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from auth.dependencies import get_current_user
 
-from ..core.database import db, db_insert_one
-from ..core.models import CrisisRequest
-from ..core.crypto_utils import encrypt_text, decrypt_text
+from core.database import db, db_insert_one
+from core.models import CrisisRequest
+from core.crypto_utils import encrypt_text, decrypt_text
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/crisis", tags=["crisis"])
@@ -130,7 +130,7 @@ async def crisis_support(request: CrisisRequest, user=Depends(get_current_user))
         "pain_level":       request.pain_level,
         "symptoms":         encrypt_text(json.dumps(request.symptoms or [])),
         "technique_offered": encrypt_text(technique_key),
-        "created_at":       datetime.utcnow(),
+        "created_at":       datetime.now(timezone.utc),
     })
 
     return {

@@ -1,140 +1,141 @@
-
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Dimensions, AccessibilityRole } from 'react-native';
+import {
+  View, Text, StyleSheet, TouchableOpacity,
+  Dimensions, ScrollView, AccessibilityRole
+} from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useRouter } from 'expo-router';
+import { useUserStore } from '../../store/userStore';
 
-const { width } = Dimensions.get('window');
-const colorText = '#8B5A2B';
+const { width }   = Dimensions.get('window');
+const colorText   = '#5C3A1E';
 const colorAccent = '#C5A059';
+const colorSoft   = '#8B5A2B';
+const colorMuted  = 'rgba(92,58,30,0.4)';
+
 export default function HistorialClinicoScreen() {
-  const router = useRouter();
-  // Aquí podrías cargar el historial real desde la API o el store
-  const historial = [];
+  const router   = useRouter();
+  const historial = useUserStore((s) => s.historial ?? []);
   const [pressed, setPressed] = useState(false);
 
   return (
-    <View style={styles.container}>
-      <LinearGradient colors={['#FDFCFB', '#F5F0E8', '#E6D5B8']} style={StyleSheet.absoluteFill} />
-      <Animated.View entering={FadeInDown.duration(600)} style={styles.card}>
-        <View style={styles.headerRow}>
-          <View style={styles.headerIconCircle}>
-            <Ionicons name="medkit-outline" size={38} color={colorAccent} accessibilityLabel="Icono historial clínico" />
-          </View>
-          <Text style={styles.title}>Historial Clínico</Text>
-        </View>
-        {historial.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Ionicons name="document-text-outline" size={60} color={colorAccent} style={{ marginBottom: 12 }} accessibilityLabel="Sin registros" />
-            <Text style={styles.emptyText}>No tienes registros clínicos guardados.</Text>
-            <Text style={styles.emptySubText}>Cuando añadas información médica, aparecerá aquí de forma segura y privada.</Text>
-          </View>
-        ) : (
-          <>
-            {/* Aquí puedes mapear los registros reales */}
-            <View><Text>Registros clínicos...</Text></View>
-          </>
-        )}
+    <View style={s.container}>
+      <LinearGradient colors={['#FBF8F4', '#F2EBE0', '#E8D9C4']} style={StyleSheet.absoluteFill} />
+
+      {/* TOPBAR */}
+      <View style={s.topbar}>
         <TouchableOpacity
-          style={[styles.backBtn, pressed && styles.backBtnPressed]}
-          onPress={() => router.replace('/ajustes')}
-          accessibilityLabel="Volver a ajustes"
-          accessibilityRole={"button" as AccessibilityRole}
-          activeOpacity={0.7}
+          style={[s.backBtn, pressed && s.backBtnPressed]}
+          onPress={() => router.replace('/(tabs)/home')}
           onPressIn={() => setPressed(true)}
           onPressOut={() => setPressed(false)}
+          accessibilityRole={"button" as AccessibilityRole}
+          activeOpacity={0.7}
         >
-          <Ionicons name="arrow-back" size={22} color={colorText} />
-          <Text style={styles.backText}>Volver</Text>
+          <Ionicons name="arrow-back" size={18} color={colorSoft} />
+          <Text style={s.backText}>INICIO</Text>
         </TouchableOpacity>
-      </Animated.View>
+      </View>
+
+      <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
+
+        {/* HEADER */}
+        <Animated.View entering={FadeInDown.duration(500)} style={s.header}>
+          <View style={s.headerIconCircle}>
+            <Ionicons name="medkit-outline" size={26} color={colorAccent} />
+          </View>
+          <View>
+            <Text style={s.sectionLabel}>TU SALUD</Text>
+            <Text style={s.title}>Historial Clínico</Text>
+          </View>
+        </Animated.View>
+
+        {/* LISTA */}
+        {historial.length === 0 ? (
+          <Animated.View entering={FadeInDown.delay(150)} style={s.emptyCard}>
+            <Ionicons name="document-text-outline" size={48} color={colorAccent} style={{ opacity: 0.4, marginBottom: 14 }} />
+            <Text style={s.emptyTitle}>Sin registros aún</Text>
+            <Text style={s.emptyDesc}>Cuando guardes glucosa u otros datos médicos, aparecerán aquí de forma segura y privada.</Text>
+          </Animated.View>
+        ) : (
+          historial.map((entry: any, index: number) => (
+            <Animated.View key={index} entering={FadeInDown.delay(100 + index * 60)} style={s.entryCard}>
+              <View style={[s.entryIcon, { backgroundColor: colorAccent + '1A' }]}>
+                <MaterialCommunityIcons
+                  name={entry.tipo === 'glucosa' ? 'water-outline' : 'heart-pulse'}
+                  size={20} color={colorAccent}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={s.entryTipo}>{entry.tipo.toUpperCase()}</Text>
+                <Text style={s.entryFecha}>{new Date(entry.fecha).toLocaleString()}</Text>
+              </View>
+              <View style={s.entryValueBox}>
+                <Text style={s.entryValue}>{entry.valor}</Text>
+                <Text style={s.entryUnit}>{entry.unidad}</Text>
+              </View>
+            </Animated.View>
+          ))
+        )}
+
+      </ScrollView>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  card: {
-    width: width > 500 ? 420 : width * 0.92,
-    backgroundColor: 'rgba(255,255,255,0.97)',
-    borderRadius: 30,
-    padding: 32,
-    alignItems: 'center',
-    shadowColor: colorAccent,
-    shadowOpacity: 0.12,
-    shadowRadius: 20,
-    elevation: 8,
+const s = StyleSheet.create({
+  container: { flex: 1 },
+  scroll: { paddingHorizontal: 20, paddingBottom: 60 },
+
+  topbar: { paddingHorizontal: 20, paddingTop: 58, paddingBottom: 12 },
+  backBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: 'rgba(255,255,255,0.7)',
+    paddingHorizontal: 14, paddingVertical: 8,
+    borderRadius: 16, borderWidth: 1,
+    borderColor: 'rgba(139,90,43,0.1)',
+    alignSelf: 'flex-start',
   },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-    marginBottom: 18,
-    justifyContent: 'center',
+  backBtnPressed: { backgroundColor: '#F5F0E8', borderColor: colorAccent },
+  backText: { fontSize: 10, color: colorSoft, fontWeight: '700', letterSpacing: 2 },
+
+  header: {
+    flexDirection: 'row', alignItems: 'center', gap: 14,
+    marginBottom: 24, marginTop: 8,
   },
   headerIconCircle: {
-    backgroundColor: '#F5F0E8',
-    borderRadius: 32,
-    padding: 6,
-    shadowColor: colorAccent,
-    shadowOpacity: 0.10,
-    shadowRadius: 8,
-    marginRight: 2,
+    width: 48, height: 48, borderRadius: 16,
+    backgroundColor: colorAccent + '1A',
+    alignItems: 'center', justifyContent: 'center',
   },
-  title: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: colorText,
-    letterSpacing: 1,
-    textAlign: 'center',
-  },
-  emptyState: {
+  sectionLabel: { fontSize: 8.5, color: colorMuted, letterSpacing: 4, fontWeight: '500', textTransform: 'uppercase' },
+  title: { fontSize: 22, fontWeight: '200', color: colorSoft, letterSpacing: 3, textTransform: 'uppercase' },
+
+  emptyCard: {
+    backgroundColor: 'rgba(255,255,255,0.72)',
+    borderRadius: 32, padding: 36,
     alignItems: 'center',
-    marginTop: 24,
-    backgroundColor: 'rgba(245,240,232,0.45)',
-    borderRadius: 18,
-    padding: 18,
-    width: '100%',
-    shadowColor: colorAccent,
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.8)',
+    shadowColor: colorSoft, shadowOpacity: 0.05,
+    shadowRadius: 15, elevation: 2,
   },
-  emptyText: {
-    fontSize: 16,
-    color: colorText,
-    fontWeight: 'bold',
-    marginBottom: 6,
-    textAlign: 'center',
+  emptyTitle: { fontSize: 16, fontWeight: '300', color: colorSoft, letterSpacing: 2, marginBottom: 10 },
+  emptyDesc: { fontSize: 12, color: colorMuted, textAlign: 'center', lineHeight: 19, maxWidth: 260 },
+
+  entryCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 14,
+    backgroundColor: 'rgba(255,255,255,0.72)',
+    borderRadius: 24, padding: 18, marginBottom: 12,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.8)',
+    shadowColor: colorSoft, shadowOpacity: 0.04,
+    shadowRadius: 12, elevation: 2,
   },
-  emptySubText: {
-    fontSize: 13,
-    color: '#BBAA8A',
-    fontWeight: '400',
-    textAlign: 'center',
-    maxWidth: 280,
-    marginBottom: 2,
-  },
-  backBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 36,
-    gap: 8,
-    backgroundColor: 'transparent',
-    borderRadius: 20,
-    paddingHorizontal: 18,
-    paddingVertical: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(197,160,89,0.13)',
-    shadowColor: colorAccent,
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-  },
-  backBtnPressed: {
-    backgroundColor: '#F5F0E8',
-    borderColor: colorAccent,
-    shadowOpacity: 0.18,
-  },
-  backText: { color: colorText, fontSize: 15, fontWeight: 'bold', marginLeft: 2 },
+  entryIcon: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  entryTipo: { fontSize: 10, fontWeight: '700', color: colorSoft, letterSpacing: 2 },
+  entryFecha: { fontSize: 11, color: colorMuted, marginTop: 3 },
+  entryValueBox: { alignItems: 'flex-end' },
+  entryValue: { fontSize: 24, fontWeight: '200', color: colorSoft, letterSpacing: -1 },
+  entryUnit: { fontSize: 8, color: colorMuted, fontWeight: '700', letterSpacing: 2 },
 });

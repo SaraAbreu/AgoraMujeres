@@ -12,8 +12,8 @@ export default function TabLayout() {
       tabBarLabelStyle: styles.label,
       tabBarStyle: styles.tabBar,
     }}>
-      
-      {/* 1. PESTAÑAS VISIBLES (Deben ir primero o ser las únicas con href válido) */}
+
+      {/* 1. PESTAÑAS VISIBLES */}
       <Tabs.Screen
         name="home"
         options={{
@@ -40,7 +40,7 @@ export default function TabLayout() {
           title: 'ÁGORA',
           tabBarIcon: ({ color, focused }) => (
             <View style={focused ? styles.activeChatIcon : styles.chatIcon}>
-               <Ionicons name="mic" size={22} color={focused ? 'white' : color} />
+              <Ionicons name={focused ? 'leaf' : 'leaf-outline'} size={22} color={focused ? 'white' : color} />
             </View>
           ),
         }}
@@ -56,14 +56,13 @@ export default function TabLayout() {
         }}
       />
 
-      {/* 2. PANTALLAS OCULTAS (Usamos href: null para que no ocupen espacio físico) */}
-      {/* CORRECCIÓN: Quitamos el tabBarButton para evitar el error anterior y dejamos solo href: null */}
+      {/* 2. PANTALLAS OCULTAS */}
+      <Tabs.Screen name="historial-chat" options={{ href: null }} />
       <Tabs.Screen name="sintomas-cronico" options={{ href: null }} />
       <Tabs.Screen name="historial-clinico" options={{ href: null }} />
       <Tabs.Screen name="identificacion-biometria" options={{ href: null }} />
       <Tabs.Screen name="recordatorios-salud" options={{ href: null }} />
-      <Tabs.Screen name="two" options={{ href: null }} />
-      <Tabs.Screen name="index" options={{ href: null }} />
+
 
     </Tabs>
   );
@@ -85,8 +84,7 @@ const styles = StyleSheet.create({
     shadowRadius: 15,
     paddingBottom: Platform.OS === 'ios' ? 25 : 12,
     paddingTop: 12,
-    // Aseguramos que el contenido se distribuya uniformemente
-    justifyContent: 'center', 
+    justifyContent: 'center',
   },
   label: {
     fontSize: 9,
@@ -100,5 +98,5 @@ const styles = StyleSheet.create({
     padding: 8,
     borderRadius: 15,
     marginTop: -5,
-  }
+  },
 });

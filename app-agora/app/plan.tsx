@@ -7,11 +7,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useUserStore } from '../store/userStore';
-
-// ─── CONFIGURA AQUÍ tu endpoint de backend ───────────────────────────────────
-// Tu backend debe crear una Stripe Checkout Session y devolver { url: string }
-const STRIPE_CHECKOUT_ENDPOINT = 'https://tu-backend.com/api/stripe/create-checkout';
-// ─────────────────────────────────────────────────────────────────────────────
+import api, { getDeviceIdFromToken } from '../services/api';
 
 const { width } = Dimensions.get('window');
 const colorText   = '#8B5A2B';
@@ -69,7 +65,7 @@ const PLANS: Plan[] = [
   {
     id: 'diamante',
     name: 'Plan Diamante',
-    price: '24,99 €',
+    price: '69,99 €',
     period: '/ mes',
     priceId: 'price_XXXX_diamante', // ← reemplaza con tu Price ID de Stripe
     highlight: false,
@@ -91,38 +87,39 @@ export default function PlanScreen() {
   const user     = useUserStore((state) => state.user);
   const [loading, setLoading] = useState<PlanId | null>(null);
 
+  const showError = (msg: string) => {
+    if (Platform.OS === 'web') { window.alert(msg); return; }
+    Alert.alert('Error al procesar el pago', msg, [{ text: 'Entendido' }]);
+  };
+
   const handleSubscribe = async (plan: Plan) => {
-    if (!plan.priceId) return; // Plan gratuito, no hace nada
+    if (plan.id === 'libre') return;
+
+    const deviceId = await getDeviceIdFromToken();
+    if (!deviceId) {
+      showError('Debes iniciar sesión primero.');
+      return;
+    }
 
     setLoading(plan.id);
     try {
-      const response = await fetch(STRIPE_CHECKOUT_ENDPOINT, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          priceId:    plan.priceId,
-          userId:     user?.id,
-          userEmail:  user?.email,
-          successUrl: 'agora://plan-success',  // deep link de retorno
-          cancelUrl:  'agora://plan-cancel',
-        }),
-      });
-
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-      const data = await response.json();
-
-      if (data?.url) {
-        await Linking.openURL(data.url);
+      const planParam = plan.id === 'diamante' ? 'yearly' : 'monthly';
+      const response = await api.post(
+        `/subscription/create-checkout-session?device_id=${deviceId}&plan=${planParam}`
+      );
+      const { url } = response.data;
+      if (url) {
+        if (Platform.OS === 'web') {
+          window.open(url, '_blank');
+        } else {
+          await Linking.openURL(url);
+        }
       } else {
         throw new Error('No se recibió URL de checkout');
       }
-    } catch (error) {
-      Alert.alert(
-        'Error al procesar el pago',
-        'No pudimos conectar con el servidor. Inténtalo de nuevo en unos momentos.',
-        [{ text: 'Entendido' }]
-      );
+    } catch (error: any) {
+      const detail = error?.response?.data?.detail || 'No pudimos conectar con el servidor. Inténtalo de nuevo.';
+      showError(detail);
     } finally {
       setLoading(null);
     }

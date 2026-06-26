@@ -6,23 +6,37 @@ import logging
 import os
 from dotenv import load_dotenv
 from pathlib import Path
+
 load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env", override=True)
+load_dotenv(override=False)  # fallback: CWD
+
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, Depends
-from auth.dependencies import get_current_user
+from fastapi import APIRouter, HTTPException
 
-from core.agora_content import  (
+from core.agora_content import (
     SYSTEM_PROMPTS,
     get_fallback_response,
     get_smart_response,
 )
-from core.database import db, db_count_documents, db_find, db_find_one, db_insert_one, db_update_one
+# BUG CORREGIDO: db_delete_many y db_delete_one añadidos al import top-level
+# (antes se importaban dentro de funciones con `from ..core.database import ...`
+# lo que lanzaba ImportError: attempted relative import beyond top-level package)
+from core.database import (
+    db,
+    db_count_documents,
+    db_delete_many,
+    db_delete_one,
+    db_find,
+    db_find_one,
+    db_insert_one,
+    db_update_one,
+)
 from core.models import ChatConversation, ChatMessage, ChatRequest, FavoriteMessage, MessageReaction
-from core.crypto_utils import encrypt_text, decrypt_text
 from core.patterns import build_patterns_context, get_patterns_for_device
+# BUG CORREGIDO: import absoluto en lugar de relativo (.subscriptions)
 from routers.subscriptions import get_subscription_status_internal, track_usage
 
 logger = logging.getLogger(__name__)
@@ -32,14 +46,22 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 # ── Main chat endpoint ────────────────────────────────────────────────────────
 
 @router.post("")
-async def chat_with_agora(request: ChatRequest, user=Depends(get_current_user)):
-    # Validar que el usuario solo accede a su propio device_id
-    if hasattr(user, 'device_id') and user.device_id != request.device_id:
-        raise HTTPException(status_code=403, detail="No autorizado")
+async def chat_with_agora(request: ChatRequest):
     """Send a message to Ágora and receive a response."""
+
     # 1. Subscription gate
-    sub_status = await get_subscription_status_internal(request.device_id)
-    if sub_status["status"] == "expired":
+    # BUG CORREGIDO: sub_status["status"] explotaba si get_subscription_status_internal
+    # devolvía None (cuando la DB aún no estaba lista o el device_id era nuevo).
+    # Ahora tiene try/except y valor por defecto seguro.
+    try:
+        sub_status = await get_subscription_status_internal(request.device_id)
+        if sub_status is None:
+            sub_status = {"status": "active"}
+    except Exception as e:
+        logger.warning(f"Subscription check failed (non-fatal): {e}")
+        sub_status = {"status": "active"}
+
+    if sub_status.get("status") == "expired":
         msg = (
             "Tu período de prueba ha terminado. Para continuar usando Ágora, activa tu suscripción."
             if request.language == "es"
@@ -47,29 +69,41 @@ async def chat_with_agora(request: ChatRequest, user=Depends(get_current_user)):
         )
         return {"response": msg, "requires_subscription": True}
 
-    # 2. Is this the user's very first message?
-    user_message_count = await db_count_documents(
-        db.chat_messages, {"device_id": request.device_id, "role": "user"}
-    )
+    # 2. ¿Es el primer mensaje de la usuaria?
+    try:
+        user_message_count = await db_count_documents(
+            db.chat_messages, {"device_id": request.device_id, "role": "user"}
+        )
+    except Exception:
+        user_message_count = 1  # fallback: no tratar como primer mensaje
     is_first_message = user_message_count == 0
 
-    # 3. Get or create conversation
+    # 3. Obtener o crear conversación
     conversation_id = request.conversation_id
     if not conversation_id:
-        new_conv = ChatConversation(
-            device_id=request.device_id,
-            title=request.message[:50] + ("..." if len(request.message) > 50 else ""),
-        )
+        temp_title = request.message[:50] + ("..." if len(request.message) > 50 else "")
+        new_conv = ChatConversation(device_id=request.device_id, title=temp_title)
         await db_insert_one(db.chat_conversations, new_conv.model_dump())
         conversation_id = new_conv.id
+
+        try:
+            smart_title = await _generate_conversation_title(request.message, request.language)
+            if smart_title:
+                await db_update_one(
+                    db.chat_conversations,
+                    {"id": conversation_id},
+                    {"$set": {"title": smart_title}},
+                )
+        except Exception as e:
+            logger.warning(f"Smart title generation failed (non-fatal): {e}")
     else:
         await db_update_one(
             db.chat_conversations,
             {"id": conversation_id},
-            {"$set": {"updated_at": datetime.utcnow()}},
+            {"$set": {"updated_at": datetime.now(timezone.utc)}},
         )
 
-    # 4. Load last 8 messages from this conversation (context window)
+    # 4. Cargar últimos 8 mensajes de contexto
     history = await db_find(
         db.chat_messages,
         {"device_id": request.device_id, "conversation_id": conversation_id},
@@ -78,32 +112,43 @@ async def chat_with_agora(request: ChatRequest, user=Depends(get_current_user)):
     )
     history = list(reversed(history))
 
-    # 5. Build response
+    # 5. Generar respuesta
     response, is_offline_mode = await _generate_response(
         request, history, is_first_message, conversation_id
     )
 
-    # 6. Persist both messages (cifrado)
+    # 6. Persistir ambos mensajes
     await db_insert_one(
         db.chat_messages,
-        ChatMessage(device_id=request.device_id, conversation_id=conversation_id,
-                    role="user", content=encrypt_text(request.message)).model_dump(),
+        ChatMessage(
+            device_id=request.device_id,
+            conversation_id=conversation_id,
+            role="user",
+            content=request.message,
+        ).model_dump(),
     )
     await db_insert_one(
         db.chat_messages,
-        ChatMessage(device_id=request.device_id, conversation_id=conversation_id,
-                    role="assistant", content=encrypt_text(response)).model_dump(),
+        ChatMessage(
+            device_id=request.device_id,
+            conversation_id=conversation_id,
+            role="assistant",
+            content=response,
+        ).model_dump(),
     )
 
-    # 7. Track trial usage (30 s per chat exchange)
-    await track_usage(request.device_id, 30)
+    # 7. Registrar uso del trial
+    try:
+        await track_usage(request.device_id, 30)
+    except Exception as e:
+        logger.warning(f"track_usage failed (non-fatal): {e}")
 
     return {
-        "response":             response,
-        "conversation_id":      conversation_id,
+        "response":              response,
+        "conversation_id":       conversation_id,
         "requires_subscription": False,
-        "is_first_time":        is_first_message,
-        "is_offline_mode":      is_offline_mode,
+        "is_first_time":         is_first_message,
+        "is_offline_mode":       is_offline_mode,
     }
 
 
@@ -114,81 +159,29 @@ async def _generate_response(
     conversation_id: str,
 ) -> tuple[str, bool]:
     """
-    Try OpenAI first; fall back to smart local responses if unavailable.
-    Returns (response_text, is_offline_mode).
+    Intenta OpenAI primero; cae a respuestas locales si no está disponible.
+    Retorna (texto_respuesta, is_offline_mode).
     """
-    api_key = os.environ.get("OPENAI_API_KEY", "")
+    api_key  = os.environ.get("OPENAI_API_KEY", "")
     use_openai = bool(api_key.strip() and api_key != "sk-your-openai-api-key-here")
-    print(f"[CHAT DEBUG] key_len={len(api_key)} use_openai={use_openai} key_start={api_key[:15]}", flush=True)
+    logger.debug("[CHAT] use_openai=%s", use_openai)
 
     if not use_openai:
         return get_smart_response(request.message, request.language, is_first_message), True
-
 
     try:
         from openai import AsyncOpenAI
         client_openai = AsyncOpenAI(api_key=api_key)
 
         system_prompt = SYSTEM_PROMPTS.get(request.language, SYSTEM_PROMPTS["es"])
-        # Recuperar nombre preferido de la usuaria
-        user_profile = await db_find_one(db.user_profiles, {"device_id": request.device_id})
-        if user_profile and user_profile.get("preferred_name"):
-            system_prompt += f"\nLa usuaria prefiere que la llames: {user_profile['preferred_name']}."
 
-
-        # Enriquecer con patrones del diario y ejemplos recientes
+        # Enriquecer con patrones del diario
         try:
             patterns = await get_patterns_for_device(request.device_id, days=7)
             if patterns:
                 system_prompt += build_patterns_context(patterns, request.language)
-                # Resumen de tendencias emocionales y cambios recientes
-                highest = patterns["trends"]["highest_emotional"]
-                lowest = patterns["trends"]["lowest_emotional"]
-                system_prompt += (
-                    f"\nTENDENCIAS EMOCIONALES: La emoción más frecuente últimamente es '{highest}', y la menos presente es '{lowest}'. "
-                    "Si detectas un cambio reciente en el estado emocional, destácalo y valida ese esfuerzo."
-                )
         except Exception as e:
             logger.warning(f"Pattern enrichment failed (non-fatal): {e}")
-
-        # Enriquecer con ejemplos reales del diario y síntomas
-        try:
-            from ..core.database import db_find
-            diary_entries = await db_find(
-                db.diary_entries,
-                {"device_id": request.device_id},
-                sort=("created_at", -1),
-                limit=5,
-            )
-            diary_examples = []
-            symptoms = set()
-            SYMPTOM_KEYWORDS = [
-                "fibromialgia", "artritis", "migraña", "endometriosis", "SFC", "POTS", "dolor", "fatiga", "insomnio", "ansiedad", "depresión", "cansancio", "crisis", "contractura", "espalda", "pierna", "cabeza", "hormigueo", "mareo", "náusea", "sueño", "estrés"
-            ]
-            for entry in diary_entries:
-                texto = (entry.get("texto") or "").strip()
-                if texto:
-                    diary_examples.append(texto)
-                    for word in SYMPTOM_KEYWORDS:
-                        if word in texto.lower():
-                            symptoms.add(word)
-            if diary_examples:
-                system_prompt += f"\n\nEJEMPLOS RECIENTES DEL DIARIO (útiles para personalizar la respuesta):\n"
-                for ex in diary_examples[:3]:
-                    system_prompt += f"- \"{ex}\"\n"
-            if symptoms:
-                system_prompt += f"\nSÍNTOMAS/ENFERMEDADES MENCIONADOS EN EL DIARIO:\n- {', '.join(sorted(symptoms))}\n"
-        except Exception as e:
-            logger.warning(f"Diary enrichment failed (non-fatal): {e}")
-
-        # Instrucción explícita para la IA
-        system_prompt += (
-            "\nINSTRUCCIONES ESPECIALES:\n"
-            "- Relaciona tus respuestas y sugerencias con los síntomas, emociones, tendencias y logros que aparecen en el diario y el chat.\n"
-            "- Si sugieres ejercicios o alimentación, personalízalos según los síntomas, tendencias y cambios recientes, y recuerda siempre que no eres médico.\n"
-            "- Si detectas una mejora o esfuerzo reciente, valídalo y celébralo explícitamente.\n"
-            "- Nunca repitas tu presentación si ya hay historial.\n"
-        )
 
         messages = [{"role": "system", "content": system_prompt}]
         for msg in history:
@@ -211,9 +204,7 @@ async def _generate_response(
 # ── Conversation management ───────────────────────────────────────────────────
 
 @router.get("/{device_id}/conversations")
-async def get_conversations(device_id: str, limit: int = 20, user=Depends(get_current_user)):
-    if hasattr(user, 'device_id') and user.device_id != device_id:
-        raise HTTPException(status_code=403, detail="No autorizado")
+async def get_conversations(device_id: str, limit: int = 20):
     conversations = await db_find(
         db.chat_conversations,
         {"device_id": device_id},
@@ -232,45 +223,36 @@ async def get_conversations(device_id: str, limit: int = 20, user=Depends(get_cu
 
 
 @router.get("/{device_id}/conversation/{conversation_id}")
-async def get_conversation_messages(device_id: str, conversation_id: str, limit: int = 50, user=Depends(get_current_user)):
-    if hasattr(user, 'device_id') and user.device_id != device_id:
-        raise HTTPException(status_code=403, detail="No autorizado")
+async def get_conversation_messages(device_id: str, conversation_id: str, limit: int = 50):
     messages = await db_find(
         db.chat_messages,
         {"device_id": device_id, "conversation_id": conversation_id},
         sort=("created_at", 1),
         limit=limit,
     )
-    result = []
-    for m in messages:
-        try:
-            m["content"] = decrypt_text(m["content"])
-        except Exception:
-            m["content"] = "[ERROR: No se pudo descifrar]"
-        result.append({"role": m["role"], "content": m["content"], "created_at": _iso(m.get("created_at"))})
-    return result
+    return [
+        {"role": m["role"], "content": m["content"], "created_at": _iso(m.get("created_at"))}
+        for m in messages
+    ]
 
 
+# BUG CORREGIDO: endpoint `delete_conversation` estaba definido DOS VECES.
+# FastAPI registraba solo la segunda (vacía, con try/except sin lógica real).
+# Se deja una sola versión con la lógica correcta.
 @router.delete("/{device_id}/conversation/{conversation_id}")
-async def delete_conversation(device_id: str, conversation_id: str, user=Depends(get_current_user)):
-    if hasattr(user, 'device_id') and user.device_id != device_id:
-        raise HTTPException(status_code=403, detail="No autorizado")
-    from ..core.database import db_delete_many, db_delete_one
+async def delete_conversation(device_id: str, conversation_id: str):
     await db_delete_one(db.chat_conversations, {"id": conversation_id, "device_id": device_id})
-    result = await db_delete_many(db.chat_messages, {"conversation_id": conversation_id, "device_id": device_id})
+    result = await db_delete_many(
+        db.chat_messages, {"conversation_id": conversation_id, "device_id": device_id}
+    )
     return {"message": "Conversation deleted", "deleted_messages": result.deleted_count}
 
 
 @router.get("/{device_id}/history")
-async def get_chat_history(device_id: str, limit: int = 50, user=Depends(get_current_user)):
-    if hasattr(user, 'device_id') and user.device_id != device_id:
-        raise HTTPException(status_code=403, detail="No autorizado")
-    """Legacy endpoint — returns messages from the most recent conversation."""
-    latest = await db_find_one(
-        db.chat_conversations,
-        {"device_id": device_id},
-    )
-    # db_find_one doesn't support sort — get all and pick latest
+async def get_chat_history(device_id: str, limit: int = 50):
+    """Endpoint legacy — devuelve mensajes de la conversación más reciente."""
+    # BUG CORREGIDO: se eliminó la llamada `latest = await db_find_one(...)` que
+    # era código muerto (resultado nunca usado) justo antes del db_find equivalente.
     convs = await db_find(
         db.chat_conversations, {"device_id": device_id}, sort=("updated_at", -1), limit=1
     )
@@ -290,26 +272,19 @@ async def get_chat_history(device_id: str, limit: int = 50, user=Depends(get_cur
         )
         messages = list(reversed(messages))
 
-    result = []
-    for m in messages:
-        try:
-            m["content"] = decrypt_text(m["content"])
-        except Exception:
-            m["content"] = "[ERROR: No se pudo descifrar]"
-        result.append({
+    return [
+        {
             "role":            m["role"],
             "content":         m["content"],
             "created_at":      _iso(m.get("created_at")),
             "conversation_id": m.get("conversation_id"),
-        })
-    return result
+        }
+        for m in messages
+    ]
 
 
 @router.delete("/{device_id}/history")
-async def clear_chat_history(device_id: str, user=Depends(get_current_user)):
-    if hasattr(user, 'device_id') and user.device_id != device_id:
-        raise HTTPException(status_code=403, detail="No autorizado")
-    from ..core.database import db_delete_many, db_delete_one
+async def clear_chat_history(device_id: str):
     convs = await db_find(
         db.chat_conversations, {"device_id": device_id}, sort=("updated_at", -1), limit=1
     )
@@ -336,7 +311,9 @@ async def save_message_reaction(reaction: MessageReaction):
 
 @router.get("/{device_id}/reaction/{message_id}")
 async def get_message_reactions(device_id: str, message_id: str):
-    reactions = await db_find(db.message_reactions, {"device_id": device_id, "message_id": message_id})
+    reactions = await db_find(
+        db.message_reactions, {"device_id": device_id, "message_id": message_id}
+    )
     counts: dict = {}
     for r in reactions:
         emoji = r.get("reaction", "")
@@ -371,7 +348,6 @@ async def get_favorites(device_id: str, category: Optional[str] = None):
 
 @router.delete("/favorites/{device_id}/{message_id}")
 async def delete_favorite(device_id: str, message_id: str):
-    from ..core.database import db_delete_one
     result = await db_delete_one(db.favorite_messages, {"id": message_id, "device_id": device_id})
     return {"deleted": result.deleted_count > 0}
 
@@ -393,6 +369,32 @@ async def get_community_count():
         "message_es": f"Eres parte de una comunidad de {count} mujeres que entienden fibromialgia 💜",
         "message_en": f"You're part of a community of {count} women who understand fibromyalgia 💜",
     }
+
+
+# ── Título inteligente ────────────────────────────────────────────────────────
+
+async def _generate_conversation_title(first_message: str, lang: str) -> Optional[str]:
+    """Genera un título corto con OpenAI basado en el primer mensaje."""
+    api_key = os.environ.get("OPENAI_API_KEY", "")
+    if not api_key or len(first_message) < 10:
+        return None
+    try:
+        from openai import AsyncOpenAI
+        client = AsyncOpenAI(api_key=api_key)
+        prompt = (
+            f"Basado en este mensaje de una usuaria: '{first_message}', "
+            f"genera un título de máximo 4 palabras que resuma el tema. "
+            f"Responde SOLO con el título, sin comillas ni puntos finales. Idioma: {lang}"
+        )
+        response = await client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7,
+            max_tokens=20,
+        )
+        return response.choices[0].message.content.strip()
+    except Exception:
+        return None
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

@@ -4,13 +4,26 @@ import {
   KeyboardAvoidingView, Platform, Alert, Dimensions, ScrollView,
   ActivityIndicator 
 } from 'react-native';
+
+// Wrapper que en web usa <form> (evita el warning "Password field not in a form")
+// y en nativo usa View
+const FormWrapper = Platform.OS === 'web'
+  ? ({ children, onSubmit }: { children: React.ReactNode; onSubmit: () => void }) => (
+      <form
+        onSubmit={(e) => { e.preventDefault(); onSubmit(); }}
+        style={{ display: 'contents' }}
+      >
+        {children}
+      </form>
+    )
+  : ({ children }: { children: React.ReactNode; onSubmit: () => void }) => <>{children}</>;
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { 
   useSharedValue, useAnimatedStyle, withRepeat, withTiming, 
   withSequence, FadeInDown, withSpring 
 } from 'react-native-reanimated'; 
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import api from '../services/api';
 import { useUserStore } from '../store/userStore';
 import { signInWithGoogle, getGoogleRedirectResult } from '../services/firebaseConfig';
@@ -26,6 +39,8 @@ export default function LoginScreen() {
   const setUser  = useUserStore((state) => state.setUser);
   const setToken = useUserStore((state) => state.setToken);
   const router   = useRouter();
+  const { intent } = useLocalSearchParams<{ intent?: string }>();
+  const postAuthRoute = intent === 'aurea' ? '/plan' : '/(tabs)/home';
 
   const [email, setEmail]             = useState('');
   const [password, setPassword]       = useState('');
@@ -47,12 +62,22 @@ export default function LoginScreen() {
   // Recoge el resultado del redirect de Google al volver a la página
   useEffect(() => {
     const checkRedirect = async () => {
+      const pendingGoogle = Platform.OS === 'web' ? localStorage.getItem('pendingGoogleAuth') : null;
       try {
         const result = await getGoogleRedirectResult();
-        if (!result) return; // No hay redirect pendiente
+console.log("[REDIRECT RESULT]", result, "pending:", pendingGoogle);
+        if (!result) {
+          if (pendingGoogle) {
+            // Vinimos de un redirect de Google pero no hay resultado → error visible
+            localStorage.removeItem('pendingGoogleAuth');
+            Alert.alert("Error de autenticación", "Google no devolvió credenciales. Intenta de nuevo o usa email/contraseña.");
+          }
+          return;
+        }
 
+        localStorage.removeItem('pendingGoogleAuth');
         setLoading(true);
-        const response = await api.post('/api/auth/google', { token: result.token });
+        const response = await api.post('/auth/google', { token: result.token });
 
         if (response.data.status === 'success') {
           const { token: appToken, user: userBackend } = response.data;
@@ -66,14 +91,13 @@ export default function LoginScreen() {
           await setToken(appToken);
           await setUser(userBackend);
           useUserStore.getState().setDevMode(emailUsuario === 'syntexia.ai@gmail.com');
-          router.replace('/(tabs)/home');
+          router.replace(postAuthRoute as any);
+        } else {
+          Alert.alert("Error", response.data.message ?? "No se pudo autenticar con Google.");
         }
       } catch (error: any) {
-        if (error.response?.status === 404) {
-          Alert.alert("Error de Conexión", "El servidor no reconoce la ruta de acceso.");
-        } else {
-          console.error("[REDIRECT ERROR]", error);
-        }
+        console.error("[REDIRECT ERROR]", error?.code, error?.message, error?.response?.status);
+        Alert.alert("Error de conexión", `Código: ${error?.code ?? error?.response?.status ?? 'desconocido'} — ${error?.message ?? ''}`);
       } finally {
         setLoading(false);
       }
@@ -98,7 +122,7 @@ export default function LoginScreen() {
       if (res.data.token) {
         await setToken(res.data.token);
         if (res.data.user) await setUser(res.data.user);
-        router.replace('/(tabs)/home');
+        router.replace(postAuthRoute as any);
       }
     } catch (error) {
       Alert.alert("Error", "Credenciales incorrectas o problema de conexión.");
@@ -107,36 +131,40 @@ export default function LoginScreen() {
     }
   };
 
-  // Login con Google — solo lanza el redirect, el useEffect recoge el resultado
+  // Login con Google — usa popup (funciona en móvil con tap), con fallback a redirect
   const handleGoogleLogin = async () => {
-  try {
-    setLoading(true);
-    const result = await signInWithGoogle(); // ← devuelve { token, user }
-    
-    const response = await api.post('/api/auth/google', { token: result.token });
+    try {
+      setLoading(true);
+      const result = await signInWithGoogle();
 
-    if (response.data.status === 'success') {
-      const { token: appToken, user: userBackend } = response.data;
-      const emailUsuario = userBackend.email.toLowerCase();
+      // Si token está vacío significa que se disparó el redirect (popup bloqueado)
+      // El resultado se procesará en el useEffect checkRedirect cuando la página recargue
+      if (!result.token) return;
 
-      if (!EMAILS_AUTORIZADOS.includes(emailUsuario)) {
-        Alert.alert("Acceso Restringido", "Este correo aún no ha sido invitado al santuario.");
-        return;
+      const response = await api.post('/auth/google', { token: result.token });
+
+      if (response.data.status === 'success') {
+        const { token: appToken, user: userBackend } = response.data;
+        const emailUsuario = userBackend.email.toLowerCase();
+
+        if (!EMAILS_AUTORIZADOS.includes(emailUsuario)) {
+          Alert.alert("Acceso Restringido", "Este correo aún no ha sido invitado al santuario.");
+          return;
+        }
+
+        await setToken(appToken);
+        await setUser(userBackend);
+        useUserStore.getState().setDevMode(emailUsuario === 'syntexia.ai@gmail.com');
+        router.replace(postAuthRoute as any);
       }
-
-      await setToken(appToken);
-      await setUser(userBackend);
-      useUserStore.getState().setDevMode(emailUsuario === 'syntexia.ai@gmail.com');
-      router.replace('/(tabs)/home');
+    } catch (error: any) {
+      if (error.code === 'auth/popup-closed-by-user') return;
+      console.error("[GOOGLE LOGIN ERROR]", error);
+      Alert.alert("Error", "No se pudo conectar con Google. Código: " + (error.code ?? 'desconocido'));
+    } finally {
+      setLoading(false);
     }
-  } catch (error: any) {
-    if (error.code === 'auth/popup-closed-by-user') return; // usuario cerró el popup, ignorar
-    console.error("[GOOGLE LOGIN ERROR]", error);
-    Alert.alert("Error", "No se pudo conectar con Google.");
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
   return (
     <LinearGradient colors={['#FDFCFB', '#F5F0E8', '#E6D5B8']} style={styles.container}>
@@ -149,35 +177,37 @@ export default function LoginScreen() {
             <Text style={styles.subLogo}>{isRegistering ? 'CREAR IDENTIDAD' : 'EL SANTUARIO DIGITAL'}</Text>
           </Animated.View>
 
-          <View style={styles.formContainer}>
-            <View style={styles.inputWrapper}>
-              <Ionicons name="mail-outline" size={18} color="#8B5A2B" style={styles.icon} />
-              <TextInput
-                style={styles.input}
-                placeholder="Correo electrónico"
-                placeholderTextColor="rgba(139, 90, 43, 0.3)"
-                value={email}
-                onChangeText={setEmail}
-                autoCapitalize="none"
-                keyboardType="email-address"
-              />
-            </View>
+          <FormWrapper onSubmit={handleAuth}>
+            <View style={styles.formContainer}>
+              <View style={styles.inputWrapper}>
+                <Ionicons name="mail-outline" size={18} color="#8B5A2B" style={styles.icon} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Correo electrónico"
+                  placeholderTextColor="rgba(139, 90, 43, 0.3)"
+                  value={email}
+                  onChangeText={setEmail}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                />
+              </View>
 
-            <View style={styles.inputWrapper}>
-              <Ionicons name="lock-closed-outline" size={18} color="#8B5A2B" style={styles.icon} />
-              <TextInput
-                style={styles.input}
-                placeholder="Contraseña"
-                placeholderTextColor="rgba(139, 90, 43, 0.3)"
-                secureTextEntry={!showPassword}
-                value={password}
-                onChangeText={setPassword}
-              />
-              <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
-                <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={18} color="#C5A059" />
-              </TouchableOpacity>
+              <View style={styles.inputWrapper}>
+                <Ionicons name="lock-closed-outline" size={18} color="#8B5A2B" style={styles.icon} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Contraseña"
+                  placeholderTextColor="rgba(139, 90, 43, 0.3)"
+                  secureTextEntry={!showPassword}
+                  value={password}
+                  onChangeText={setPassword}
+                />
+                <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+                  <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={18} color="#C5A059" />
+                </TouchableOpacity>
+              </View>
             </View>
-          </View>
+          </FormWrapper>
 
           {/* ORBE — dispara login con EMAIL/CONTRASEÑA */}
           <View style={styles.portalContainer}>

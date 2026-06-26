@@ -8,7 +8,7 @@ The old /activate endpoint is kept for backward compatibility but is hardened.
 
 import logging
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import stripe
@@ -27,7 +27,7 @@ ADMIN_CODE = os.environ.get("ADMIN_CODE", "AGORA2025ADMIN")
 stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 
-TRIAL_SECONDS = 5400  # 1.5 hours
+TRIAL_DAYS = 30
 
 
 # ── Internal helpers (imported by other routers) ──────────────────────────────
@@ -38,9 +38,10 @@ async def get_subscription_status_internal(device_id: str) -> dict:
     if not sub:
         new_sub = SubscriptionStatus(device_id=device_id)
         await db_insert_one(db.subscriptions, new_sub.model_dump())
+        remaining = int(timedelta(days=TRIAL_DAYS).total_seconds())
         return {
             "status":                  "trial",
-            "trial_remaining_seconds": TRIAL_SECONDS,
+            "trial_remaining_seconds": remaining,
             "trial_end":               new_sub.trial_end.isoformat(),
             "is_admin":                False,
         }
@@ -51,8 +52,26 @@ async def get_subscription_status_internal(device_id: str) -> dict:
     if sub.get("status") == "active":
         return {"status": "active", "is_admin": False}
 
-    usage = sub.get("usage_seconds", 0)
-    if usage >= TRIAL_SECONDS:
+    # Trial basado en fecha: comparamos now() con trial_end
+    trial_end = sub.get("trial_end")
+    if not trial_end:
+        # Documento antiguo sin trial_end — le damos 30 días desde ahora
+        trial_end = datetime.now(timezone.utc) + timedelta(days=TRIAL_DAYS)
+        await db_update_one(
+            db.subscriptions,
+            {"device_id": device_id},
+            {"$set": {"trial_end": trial_end}},
+        )
+
+    if isinstance(trial_end, str):
+        trial_end = datetime.fromisoformat(trial_end)
+    if trial_end.tzinfo is None:
+        trial_end = trial_end.replace(tzinfo=timezone.utc)
+
+    now = datetime.now(timezone.utc)
+    remaining = int((trial_end - now).total_seconds())
+
+    if remaining <= 0:
         await db_update_one(
             db.subscriptions,
             {"device_id": device_id},
@@ -60,12 +79,10 @@ async def get_subscription_status_internal(device_id: str) -> dict:
         )
         return {"status": "expired", "trial_remaining_seconds": 0, "is_admin": False}
 
-    trial_end = sub.get("trial_end")
     return {
         "status":                  "trial",
-        "trial_remaining_seconds": TRIAL_SECONDS - usage,
-        "trial_end":               trial_end.isoformat() if isinstance(trial_end, datetime) else trial_end,
-        "usage_seconds":           usage,
+        "trial_remaining_seconds": remaining,
+        "trial_end":               trial_end.isoformat(),
         "is_admin":                False,
     }
 
@@ -167,6 +184,30 @@ async def create_checkout_session(device_id: str, plan: str = "monthly", user=De
         logger.error(f"Stripe checkout error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.post("/customer-portal")
+async def create_customer_portal(device_id: str, user=Depends(get_current_user)):
+    """
+    Crea una sesión del Stripe Billing Portal para que el usuario gestione
+    su suscripción (cancelar, cambiar método de pago, ver facturas).
+    """
+    if hasattr(user, 'device_id') and user.device_id != device_id:
+        raise HTTPException(status_code=403, detail="No autorizado")
+
+    sub = await db_find_one(db.subscriptions, {"device_id": device_id})
+    if not sub or not sub.get("stripe_customer_id"):
+        raise HTTPException(status_code=400, detail="No hay una suscripción activa con Stripe.")
+
+    try:
+        session = stripe.billing_portal.Session.create(
+            customer=sub["stripe_customer_id"],
+            return_url="https://agoramujeres.syntexia-solutions.es/home",
+        )
+        return {"url": session.url}
+    except stripe.error.StripeError as e:
+        logger.error(f"Stripe customer portal error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/stripe-webhook")
 async def stripe_webhook(request: Request, stripe_signature: str = Header(None)):
     """
@@ -264,7 +305,7 @@ async def verify_admin_code(request: AdminCodeRequest):
 async def _activate(device_id: str, payment_intent_id: str, customer_id: Optional[str]) -> None:
     update: dict = {
         "status":             "active",
-        "activated_at":       datetime.utcnow(),
+        "activated_at":       datetime.now(timezone.utc),
         "payment_intent_id":  payment_intent_id,
     }
     if customer_id:

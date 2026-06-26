@@ -3,7 +3,7 @@ Misc routers — cycle tracking, weather, monthly pain records.
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 
 import httpx
@@ -114,8 +114,8 @@ async def get_monthly_record(device_id: str, user=Depends(get_current_user)):
         return {
             "device_id":        device_id,
             "records":          [],
-            "cycle_start_date": datetime.utcnow().isoformat(),
-            "created_at":       datetime.utcnow().isoformat(),
+            "cycle_start_date": datetime.now(timezone.utc).isoformat(),
+            "created_at":       datetime.now(timezone.utc).isoformat(),
         }
     return _serialize_record(record)
 
@@ -137,9 +137,9 @@ async def save_monthly_record(device_id: str, data: MonthlyPainRecordCreate, use
                 "device_id":        device_id,
                 "records":          encrypted_records,
                 "cycle_start_date": cycle_start,
-                "updated_at":       datetime.utcnow(),
+                "updated_at":       datetime.now(timezone.utc),
             },
-            "$setOnInsert": {"created_at": datetime.utcnow()},
+            "$setOnInsert": {"created_at": datetime.now(timezone.utc)},
         },
         upsert=True,
     )
@@ -161,8 +161,8 @@ async def get_monthly_record(device_id: str, user=Depends(get_current_user)):
         return {
             "device_id":        device_id,
             "records":          [],
-            "cycle_start_date": datetime.utcnow().isoformat(),
-            "created_at":       datetime.utcnow().isoformat(),
+            "cycle_start_date": datetime.now(timezone.utc).isoformat(),
+            "created_at":       datetime.now(timezone.utc).isoformat(),
         }
     # Descifrar el campo records
     try:

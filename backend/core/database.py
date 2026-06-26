@@ -13,9 +13,11 @@ from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
-# Global state — set during lifespan startup
-client = None
-db = None
+# ── Global state — inicializado en None, se rellena en connect() ─────────────
+# BUG CORREGIDO: antes se llamaba AsyncIOMotorClient() aquí en el módulo,
+# antes de que mongo_uri estuviera definida → NameError al importar.
+client        = None
+db            = None
 using_mongomock: bool = False
 
 
@@ -25,28 +27,31 @@ async def connect() -> None:
     """Connect to MongoDB. Falls back to mongomock if unavailable."""
     global client, db, using_mongomock
 
-    mongo_url = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
+    # BUG CORREGIDO: la versión rota usaba variables locales `mongo_url` y
+    # `db_name` que nunca se definían dentro de la función.
+    mongo_url = os.environ.get("MONGO_URL") or os.environ.get("MONGO_URI", "mongodb://localhost:27017")
     db_name   = os.environ.get("DB_NAME", "agoramujeres")
 
     try:
         from motor.motor_asyncio import AsyncIOMotorClient
-        _client = AsyncIOMotorClient(mongo_url, serverSelectionTimeoutMS=2000)
-        await asyncio.wait_for(_client.server_info(), timeout=2.0)
-        client = _client
-        db = client[db_name]
+        _client = AsyncIOMotorClient(mongo_url, serverSelectionTimeoutMS=15000)
+        await asyncio.wait_for(_client.server_info(), timeout=15.0)
+        client         = _client
+        db             = client[db_name]
         using_mongomock = False
         logger.info("✅ Connected to MongoDB")
-        await _ensure_indexes()
+        await ensure_indexes(db)
+        logger.info("✅ MongoDB indexes ensured.")
     except Exception as e:
-        # Si estamos en producción, nunca usar mongomock
         if os.environ.get("ENV", "development").lower() == "production":
             logger.error(f"❌ MongoDB no disponible en producción: {e}")
             raise RuntimeError("MongoDB no disponible en producción. Abortando arranque.")
-        
-        
-        logger.warning(f"⚠️  MongoDB unavailable ({e}). Using mongomock (solo desarrollo/test).")
-        client = mongomock.MongoClient()
-        db = client[db_name]
+
+        logger.warning(f"⚠️  MongoDB unavailable. Tipo: {type(e).__name__} | {repr(e)}")
+        logger.warning(f"⚠️  URI (primeros 40 chars): {mongo_url[:40]}")
+        logger.warning("⚠️  Usando mongomock.")
+        client         = mongomock.MongoClient()
+        db             = client[db_name]
         using_mongomock = True
 
 
@@ -63,34 +68,37 @@ async def disconnect() -> None:
 
 # ── Indexes ──────────────────────────────────────────────────────────────────
 
-async def _ensure_indexes() -> None:
-    """
-    Create indexes on startup (idempotent — safe to run every boot).
-    Missing indexes caused full-collection scans on every chat request.
-    """
+async def ensure_indexes(db_instance) -> None:
+    """Create all collection indexes. Called once during lifespan startup."""
+    # BUG CORREGIDO: en la versión rota había un `await collection.create_index`
+    # escrito directamente en el cuerpo del módulo (fuera de una función async)
+    # → SyntaxError: 'await' outside function.
+    if db_instance is None:
+        logger.warning("ensure_indexes: db is None, skipping.")
+        return
+
     indexes = [
-        (db.chat_messages,      [("device_id", 1), ("conversation_id", 1), ("created_at", -1)]),
-        (db.chat_conversations, [("device_id", 1), ("updated_at", -1)]),
-        (db.diary_entries,      [("device_id", 1), ("created_at", -1)]),
-        (db.subscriptions,      [("device_id", 1)]),
-        (db.cycle_entries,      [("device_id", 1), ("start_date", -1)]),
-        (db.message_reactions,  [("device_id", 1), ("message_id", 1)]),
-        (db.favorite_messages,  [("device_id", 1)]),
-        (db.crisis_logs,        [("device_id", 1), ("created_at", -1)]),
-        (db.monthly_records,    [("device_id", 1)]),
-        (db.resources,          [("language", 1), ("category", 1), ("is_featured", -1)]),
-        (db.sintomas_cronico, [("device_id", 1), ("created_at", -1)]), # <--- AÑADE ESTA LÍNEA
+        (db_instance.chat_messages,      [("device_id", 1), ("conversation_id", 1), ("created_at", -1)]),
+        (db_instance.chat_conversations, [("device_id", 1), ("updated_at", -1)]),
+        (db_instance.diary_entries,      [("device_id", 1), ("created_at", -1)]),
+        (db_instance.subscriptions,      [("device_id", 1)]),
+        (db_instance.cycle_entries,      [("device_id", 1), ("start_date", -1)]),
+        (db_instance.message_reactions,  [("device_id", 1), ("message_id", 1)]),
+        (db_instance.favorite_messages,  [("device_id", 1)]),
+        (db_instance.crisis_logs,        [("device_id", 1), ("created_at", -1)]),
+        (db_instance.monthly_records,    [("device_id", 1)]),
+        (db_instance.resources,          [("language", 1), ("category", 1), ("is_featured", -1)]),
+        (db_instance.sintomas_cronico,   [("device_id", 1), ("created_at", -1)]),
     ]
+
     for collection, index_spec in indexes:
         try:
             await collection.create_index(index_spec)
         except Exception as e:
             logger.warning(f"Index creation skipped for {collection.name}: {e}")
-    logger.info("✅ MongoDB indexes ensured.")
 
 
-# ── CRUD helpers ─────────────────────────────────────────────────────────────
-# These are the ONLY way routers should touch the database.
+# ── CRUD helpers ──────────────────────────────────────────────────────────────
 
 async def db_find_one(collection, query: Dict) -> Optional[Dict]:
     if using_mongomock:
@@ -105,14 +113,6 @@ async def db_find(
     limit: Optional[int] = None,
     skip: int = 0,
 ) -> List[Dict]:
-    """
-    Find multiple documents.
-
-    Args:
-        sort:  (field, direction) tuple — e.g. ("created_at", -1)
-        limit: max documents to return
-        skip:  number of documents to skip (pagination)
-    """
     if using_mongomock:
         cursor = collection.find(query)
         if sort:

@@ -3,7 +3,7 @@ Resources router — articles, videos, and categories about fibromyalgia.
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Depends
@@ -138,7 +138,7 @@ def _demo_resources(language: str) -> list:
 
 def _seed_data() -> list:
     import uuid as _uuid
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     return [
         {"id": str(_uuid.uuid4()), "category": "breathing",   "type": "video",  "title": "Respiración diafragmática para el dolor",    "description": "Técnica de respiración profunda que calma el sistema nervioso.", "video_url": "https://www.youtube.com/watch?v=YRPh_GaiL8s", "thumbnail_url": "https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=400", "author": "Fisioterapia Online", "author_credentials": "Fisioterapeutas especializados", "duration": "5:42", "language": "es", "is_featured": True,  "order": 1, "created_at": now},
         {"id": str(_uuid.uuid4()), "category": "stretching",  "type": "video",  "title": "Estiramientos suaves para fibromialgia",      "description": "Rutina diseñada específicamente para personas con fibromialgia.",  "video_url": "https://www.youtube.com/watch?v=4pKly2JojMw", "thumbnail_url": "https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=400", "author": "Fibromialgia Noticias", "author_credentials": "Especialistas en fibromialgia",  "duration": "15:30","language": "es", "is_featured": True,  "order": 2, "created_at": now},

@@ -14,6 +14,13 @@ export interface User {
   plan?: string;
 }
 
+export interface HistorialEntry {
+  tipo: string;
+  valor: number;
+  fecha: string;
+  unidad: string;
+}
+
 interface UserState {
   user: User | null;
   token: string | null;
@@ -22,6 +29,7 @@ interface UserState {
   lastGlucosa: any | null;
   lastCiclo: any | null;
   hasCicloData: boolean;
+  historial: HistorialEntry[];
   setUser: (user: User) => Promise<void>;
   setToken: (token: string) => Promise<void>;
   clearSession: () => Promise<void>;
@@ -31,6 +39,7 @@ interface UserState {
   setLastGlucosa: (data: any) => void;
   setLastCiclo: (data: any) => void;
   setHasCicloData: (value: boolean) => void;
+  addHistorialEntry: (entry: HistorialEntry) => void;
 }
 
 export const useUserStore = create<UserState>((set) => ({
@@ -41,10 +50,14 @@ export const useUserStore = create<UserState>((set) => ({
   lastGlucosa: null,
   lastCiclo: null,
   hasCicloData: false,
+  historial: [],
 
   setLastGlucosa: (data) => set({ lastGlucosa: data }),
   setLastCiclo: (data) => set({ lastCiclo: data }),
   setHasCicloData: (value) => set({ hasCicloData: value }),
+  addHistorialEntry: (entry) => set((state) => ({
+    historial: [entry, ...state.historial],
+  })),
 
   setDevMode: async (active) => {
     const value = active ? '1' : '0';
@@ -57,8 +70,6 @@ export const useUserStore = create<UserState>((set) => ({
     const userStr = JSON.stringify(user);
     if (Platform.OS === 'web') localStorage.setItem(USER_KEY, userStr);
     else await SecureStore.setItemAsync(USER_KEY, userStr);
-    
-    // Verificación de DevMode al setear usuario
     const isDev = user.email === 'syntexia.ai@gmail.com';
     set({ user, devMode: isDev });
   },
@@ -81,14 +92,14 @@ export const useUserStore = create<UserState>((set) => ({
       await SecureStore.deleteItemAsync(ONBOARDING_KEY);
       await SecureStore.deleteItemAsync(DEV_KEY);
     }
-    // Limpiamos TODO el estado, incluyendo devMode y datos de salud
-    set({ 
-      user: null, 
-      token: null, 
-      onboardingDone: false, 
-      devMode: false, 
-      lastGlucosa: null, 
-      lastCiclo: null 
+    set({
+      user: null,
+      token: null,
+      onboardingDone: false,
+      devMode: false,
+      lastGlucosa: null,
+      lastCiclo: null,
+      historial: [],
     });
   },
 
@@ -96,6 +107,7 @@ export const useUserStore = create<UserState>((set) => ({
     let token = null;
     let user = null;
     let onboardingDone = false;
+    let savedDevMode = false;
 
     try {
       if (Platform.OS === 'web') {
@@ -103,21 +115,21 @@ export const useUserStore = create<UserState>((set) => ({
         const userStr = localStorage.getItem(USER_KEY);
         if (userStr) user = JSON.parse(userStr);
         onboardingDone = localStorage.getItem(ONBOARDING_KEY) === '1';
+        savedDevMode = localStorage.getItem(DEV_KEY) === '1';
       } else {
         token = await SecureStore.getItemAsync(TOKEN_KEY);
         const userStr = await SecureStore.getItemAsync(USER_KEY);
         if (userStr) user = JSON.parse(userStr);
         onboardingDone = (await SecureStore.getItemAsync(ONBOARDING_KEY)) === '1';
+        savedDevMode = (await SecureStore.getItemAsync(DEV_KEY)) === '1';
       }
     } catch (error) {
       console.error("Error al cargar la sesión:", error);
     }
 
-    // El modo dev se activa SOLO si hay un usuario cargado y es el admin
-    const isDev = user && user.email === 'syntexia.ai@gmail.com';
+    const isDev = savedDevMode || (user && user.email === 'syntexia.ai@gmail.com');
     set({ token, user, devMode: isDev, onboardingDone });
 
-    // Si tenemos token pero no datos de usuario, intentamos recuperarlos
     if (token && !user) {
       try {
         const api = await import('../services/api').then(m => m.default);
@@ -126,12 +138,11 @@ export const useUserStore = create<UserState>((set) => ({
           const profile = response.data.user;
           const isDevProfile = profile.email === 'syntexia.ai@gmail.com';
           set({ user: profile, devMode: isDevProfile });
-          
           const userStr = JSON.stringify(profile);
           if (Platform.OS === 'web') localStorage.setItem(USER_KEY, userStr);
           else await SecureStore.setItemAsync(USER_KEY, userStr);
         }
-      } catch (e) { 
+      } catch (e) {
         console.log("Sesión expirada o error de red");
       }
     }

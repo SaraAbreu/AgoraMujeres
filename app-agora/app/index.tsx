@@ -677,7 +677,7 @@ export default function AgoraFinalLanding() {
                   shadowRadius: 16,
                   elevation: 8,
                 }}
-                onPress={() => router.push({ pathname: '/onboarding', params: { intent: 'promo' } })}
+                onPress={() => router.push({ pathname: '/bienvenida' as any })}
                 activeOpacity={0.85}
               >
                 <Text style={{ color: 'white', fontWeight: 'bold', letterSpacing: 2, fontSize: D ? 13 : 12 }}>
@@ -722,7 +722,7 @@ export default function AgoraFinalLanding() {
             {/* ÁUREA */}
             <TouchableOpacity
               style={s.actionDoorPremium}
-              onPress={() => router.push({ pathname: '/onboarding', params: { intent: 'aurea' } })}
+              onPress={() => router.push({ pathname: '/bienvenida' as any })}
               activeOpacity={0.85}
             >
               <LinearGradient

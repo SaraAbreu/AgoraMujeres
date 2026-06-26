@@ -30,10 +30,7 @@ import { signInWithGoogle, getGoogleRedirectResult } from '../services/firebaseC
 
 const { width } = Dimensions.get('window');
 
-const EMAILS_AUTORIZADOS = [
-  'syntexia.ai@gmail.com', 
-  'saraabreu2c1997@gmail.com',
-];
+const DEV_EMAIL = 'syntexia.ai@gmail.com';
 
 export default function LoginScreen() {
   const setUser  = useUserStore((state) => state.setUser);
@@ -83,14 +80,9 @@ console.log("[REDIRECT RESULT]", result, "pending:", pendingGoogle);
           const { token: appToken, user: userBackend } = response.data;
           const emailUsuario = userBackend.email.toLowerCase();
 
-          if (!EMAILS_AUTORIZADOS.includes(emailUsuario)) {
-            Alert.alert("Acceso Restringido", "Este correo aún no ha sido invitado al santuario.");
-            return;
-          }
-
           await setToken(appToken);
           await setUser(userBackend);
-          useUserStore.getState().setDevMode(emailUsuario === 'syntexia.ai@gmail.com');
+          useUserStore.getState().setDevMode(emailUsuario === DEV_EMAIL);
           router.replace(postAuthRoute as any);
         } else {
           Alert.alert("Error", response.data.message ?? "No se pudo autenticar con Google.");
@@ -147,14 +139,9 @@ console.log("[REDIRECT RESULT]", result, "pending:", pendingGoogle);
         const { token: appToken, user: userBackend } = response.data;
         const emailUsuario = userBackend.email.toLowerCase();
 
-        if (!EMAILS_AUTORIZADOS.includes(emailUsuario)) {
-          Alert.alert("Acceso Restringido", "Este correo aún no ha sido invitado al santuario.");
-          return;
-        }
-
         await setToken(appToken);
         await setUser(userBackend);
-        useUserStore.getState().setDevMode(emailUsuario === 'syntexia.ai@gmail.com');
+        useUserStore.getState().setDevMode(emailUsuario === DEV_EMAIL);
         router.replace(postAuthRoute as any);
       }
     } catch (error: any) {

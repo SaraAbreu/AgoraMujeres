@@ -27,7 +27,14 @@
     "web": {
       "bundler": "metro",
       "output": "static",
-      "favicon": "./assets/images/logo2.png"
+      "favicon": "./assets/images/icon-pwa.png",
+      "name": "Ágora Mujeres",
+      "shortName": "Ágora",
+      "description": "El santuario digital para tu salud y bienestar",
+      "themeColor": "#0C0A0E",
+      "backgroundColor": "#0C0A0E",
+      "display": "standalone",
+      "icon": "./assets/images/icon-pwa.png"
     },
     "plugins": [
       "expo-router",

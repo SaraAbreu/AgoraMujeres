@@ -135,6 +135,69 @@ async def google_auth(data: dict = Body(...)):
         logger.error(f"❌ Error en Firebase: {e}")
         raise HTTPException(status_code=401, detail="Token inválido")
 
+# --- EMAIL/PASSWORD AUTH ---
+
+@app.post("/api/auth/register")
+async def register(data: dict = Body(...)):
+    import hashlib, secrets
+    from core.database import db
+    email    = (data.get("email") or "").strip().lower()
+    password = data.get("password") or ""
+    name     = data.get("name") or email.split("@")[0]
+
+    if not email or not password:
+        raise HTTPException(status_code=400, detail="Email y contraseña requeridos")
+    if len(password) < 6:
+        raise HTTPException(status_code=400, detail="La contraseña debe tener al menos 6 caracteres")
+
+    existing = await db.users.find_one({"email": email})
+    if existing:
+        raise HTTPException(status_code=409, detail="Este correo ya está registrado")
+
+    salt   = secrets.token_hex(32)
+    hashed = hashlib.sha256(f"{salt}{password}".encode()).hexdigest()
+
+    result = await db.users.insert_one({
+        "email":      email,
+        "name":       name,
+        "password":   f"{salt}:{hashed}",
+        "created_at": datetime.now(timezone.utc),
+        "profile":    {"menopausia": False},
+    })
+    user_id     = str(result.inserted_id)
+    token       = create_access_token(data={"sub": user_id, "email": email})
+    return {"status": "success", "token": token, "user": {"email": email, "name": name}}
+
+
+@app.post("/api/auth/login")
+async def login(data: dict = Body(...)):
+    import hashlib
+    from core.database import db
+    email    = (data.get("email") or "").strip().lower()
+    password = data.get("password") or ""
+
+    if not email or not password:
+        raise HTTPException(status_code=400, detail="Email y contraseña requeridos")
+
+    user_db = await db.users.find_one({"email": email})
+    if not user_db:
+        raise HTTPException(status_code=401, detail="Correo o contraseña incorrectos")
+
+    stored = user_db.get("password")
+    if not stored:
+        raise HTTPException(status_code=401, detail="Esta cuenta usa inicio de sesión con Google")
+
+    salt, stored_hash = stored.split(":", 1)
+    check = hashlib.sha256(f"{salt}{password}".encode()).hexdigest()
+    if check != stored_hash:
+        raise HTTPException(status_code=401, detail="Correo o contraseña incorrectos")
+
+    user_id = str(user_db["_id"])
+    name    = user_db.get("name", email.split("@")[0])
+    token   = create_access_token(data={"sub": user_id, "email": email})
+    return {"status": "success", "token": token, "user": {"email": email, "name": name}}
+
+
 # --- HEALTH ---
 
 @app.get("/api/health")

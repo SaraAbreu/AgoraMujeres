@@ -10,10 +10,10 @@ import httpx
 from fastapi import APIRouter, HTTPException, Depends
 from auth.dependencies import get_current_user
 
-from ..core.database import db, db_delete_one, db_find, db_insert_one, db_update_one
-from ..core.models import CycleEntry, CycleEntryCreate, MonthlyPainRecordCreate
-from ..core.crypto_utils import encrypt_text, decrypt_text
-from ..core.crypto_utils import encrypt_text, decrypt_text
+import core.database as core_db
+from core.database import db_delete_one, db_find, db_insert_one, db_update_one
+from core.models import CycleEntry, CycleEntryCreate, MonthlyPainRecordCreate
+from core.crypto_utils import encrypt_text, decrypt_text
 
 logger = logging.getLogger(__name__)
 
@@ -24,12 +24,12 @@ cycle_router = APIRouter(prefix="/cycle", tags=["cycle"])
 
 @cycle_router.post("", response_model=CycleEntry)
 async def create_cycle_entry(entry: CycleEntryCreate, user=Depends(get_current_user)):
-    if hasattr(user, 'device_id') and user.device_id != entry.device_id:
+    if user.get('device_id') != entry.device_id:
         raise HTTPException(status_code=403, detail="No autorizado")
     data = entry.model_dump()
     data["zone"] = encrypt_text(data["zone"])
     entry_obj = CycleEntry(**data)
-    await db_insert_one(db.cycle_entries, entry_obj.model_dump())
+    await db_insert_one(core_db.db.cycle_entries, entry_obj.model_dump())
     # Devuelve el campo descifrado para el frontend
     entry_obj.zone = entry.zone
     return entry_obj
@@ -37,10 +37,10 @@ async def create_cycle_entry(entry: CycleEntryCreate, user=Depends(get_current_u
 
 @cycle_router.get("/{device_id}", response_model=List[CycleEntry])
 async def get_cycle_entries(device_id: str, limit: int = 12, user=Depends(get_current_user)):
-    if hasattr(user, 'device_id') and user.device_id != device_id:
+    if user.get('device_id') != device_id:
         raise HTTPException(status_code=403, detail="No autorizado")
     entries = await db_find(
-        db.cycle_entries,
+        core_db.db.cycle_entries,
         {"device_id": device_id},
         sort=("start_date", -1),
         limit=limit,
@@ -105,24 +105,9 @@ async def get_weather(lat: float, lon: float):
 monthly_router = APIRouter(prefix="/monthly-record", tags=["monthly-record"])
 
 
-@monthly_router.get("/{device_id}")
-async def get_monthly_record(device_id: str, user=Depends(get_current_user)):
-    if hasattr(user, 'device_id') and user.device_id != device_id:
-        raise HTTPException(status_code=403, detail="No autorizado")
-    record = await db.monthly_records.find_one({"device_id": device_id})
-    if not record:
-        return {
-            "device_id":        device_id,
-            "records":          [],
-            "cycle_start_date": datetime.now(timezone.utc).isoformat(),
-            "created_at":       datetime.now(timezone.utc).isoformat(),
-        }
-    return _serialize_record(record)
-
-
 @monthly_router.post("/{device_id}")
 async def save_monthly_record(device_id: str, data: MonthlyPainRecordCreate, user=Depends(get_current_user)):
-    if hasattr(user, 'device_id') and user.device_id != device_id:
+    if user.get('device_id') != device_id:
         raise HTTPException(status_code=403, detail="No autorizado")
     cycle_start = datetime.fromisoformat(
         data.cycle_start_date.replace("Z", "+00:00").replace("+00:00", "")
@@ -130,7 +115,7 @@ async def save_monthly_record(device_id: str, data: MonthlyPainRecordCreate, use
     # Cifrar el campo records (como string JSON)
     import json
     encrypted_records = encrypt_text(json.dumps(data.records))
-    await db.monthly_records.update_one(
+    await core_db.db.monthly_records.update_one(
         {"device_id": device_id},
         {
             "$set": {
@@ -153,10 +138,10 @@ async def save_monthly_record(device_id: str, data: MonthlyPainRecordCreate, use
 
 @monthly_router.get("/{device_id}")
 async def get_monthly_record(device_id: str, user=Depends(get_current_user)):
-    if hasattr(user, 'device_id') and user.device_id != device_id:
+    if user.get('device_id') != device_id:
         raise HTTPException(status_code=403, detail="No autorizado")
     import json
-    record = await db.monthly_records.find_one({"device_id": device_id})
+    record = await core_db.db.monthly_records.find_one({"device_id": device_id})
     if not record:
         return {
             "device_id":        device_id,
@@ -170,6 +155,20 @@ async def get_monthly_record(device_id: str, user=Depends(get_current_user)):
     except Exception:
         record["records"] = []
     return _serialize_record(record)
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _iso(value):
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return value
+
+
+def _serialize_record(record: dict) -> dict:
+    return {
+        "device_id":        record.get("device_id"),
+        "records":          record.get("records", []),
         "cycle_start_date": _iso(record.get("cycle_start_date")),
         "created_at":       _iso(record.get("created_at")),
     }

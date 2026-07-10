@@ -8,7 +8,8 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from auth.dependencies import get_current_user
 
-from core.database import db, db_insert_one
+import core.database as core_db
+from core.database import db_insert_one
 from core.models import CrisisRequest
 from core.crypto_utils import encrypt_text, decrypt_text
 
@@ -108,7 +109,7 @@ EMERGENCY_CONTACTS = {
 
 @router.post("")
 async def crisis_support(request: CrisisRequest, user=Depends(get_current_user)):
-    if hasattr(user, 'device_id') and user.device_id != request.device_id:
+    if user.get('device_id') != request.device_id:
         raise HTTPException(status_code=403, detail="No autorizado")
     """
     Instant crisis support — bypasses OpenAI for ultra-fast response.
@@ -125,7 +126,7 @@ async def crisis_support(request: CrisisRequest, user=Depends(get_current_user))
     immediate  = CRISIS_RESPONSES[lang].get("immediate")
 
     import json
-    await db_insert_one(db.crisis_logs, {
+    await db_insert_one(core_db.db.crisis_logs, {
         "device_id":        request.device_id,
         "pain_level":       request.pain_level,
         "symptoms":         encrypt_text(json.dumps(request.symptoms or [])),

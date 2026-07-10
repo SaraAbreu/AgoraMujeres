@@ -1,3 +1,24 @@
+# Expo Router (output: "static") genera un .html físico por ruta
+# (login.html, ciclo.html, etc.). Sin esto, pedir /login o refrescar
+# /home devuelve 404 de Apache en vez de servir el .html correspondiente.
+RewriteEngine On
+
+# Si la ruta pedida coincide con un archivo real (assets, imágenes...), servirlo tal cual.
+RewriteCond %{REQUEST_FILENAME} -f [OR]
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]
+
+# Si existe un .html con ese nombre, servirlo sin cambiar la URL visible.
+RewriteCond %{REQUEST_FILENAME}.html -f
+RewriteRule ^(.*)$ $1.html [L]
+
+# Fallback: cualquier otra ruta desconocida (rutas dinámicas, deep links
+# no generados como archivo propio) cae en index.html para que el router
+# de la app decida qué mostrar (incluida su propia pantalla "no existe").
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^ index.html [L]
+
 <FilesMatch "\.html$">
     Header always set Cache-Control "no-cache, no-store, must-revalidate"
     Header always set Pragma "no-cache"
@@ -13,4 +34,14 @@
 # Los assets con hash en el nombre se pueden cachear largo tiempo
 <FilesMatch "\.(js|css|png|ttf|woff2?)$">
     Header always set Cache-Control "public, max-age=31536000, immutable"
+</FilesMatch>
+
+# manifest.json y los iconos de la PWA tienen nombre FIJO (no hash) y se
+# sobreescriben en cada build — cachearlos 1 año como el resto de .png rompe
+# que una app instalada vea un icono nuevo o un start_url nuevo del manifest.
+# Esta regla va después para que gane sobre la de arriba (mismo header, último valor manda).
+<FilesMatch "^(manifest\.json|icon-192\.png|icon-512\.png)$">
+    Header always set Cache-Control "no-cache, no-store, must-revalidate"
+    Header always set Pragma "no-cache"
+    Header always set Expires "0"
 </FilesMatch>

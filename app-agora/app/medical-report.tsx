@@ -1,16 +1,19 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, Redirect } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import api from '../services/api';
+import { useUserStore } from '../store/userStore';
 
 export default function MedicalReportScreen() {
     const router = useRouter();
+    const token = useUserStore((state) => state.token);
     const [loading, setLoading] = useState(true);
     const [reportData, setReportData] = useState<any[]>([]);
 
     useEffect(() => {
+        if (!token) return;
         const fetchReport = async () => {
             try {
                 const response = await api.get('/user/medical-report');
@@ -23,6 +26,12 @@ export default function MedicalReportScreen() {
         };
         fetchReport();
     }, []);
+
+    // Guardia de rutas: sin sesión iniciada no se puede ver esta pantalla.
+    // <Redirect> en vez de router.replace() en useEffect: en cargas directas
+    // (deep link / refresh) el Root Layout aún no ha montado y router.replace()
+    // falla silenciosamente ("Attempted to navigate before mounting...").
+    if (!token) return <Redirect href="/login" />;
 
     return (
         <View style={s.container}>

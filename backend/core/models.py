@@ -79,6 +79,7 @@ class MessageReaction(BaseModel):
 
 
 class AdminCodeRequest(BaseModel):
+    device_id: str
     code: str
 
 class CustomerCreate(BaseModel):

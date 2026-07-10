@@ -29,12 +29,20 @@ export default function RootLayout() {
   useEffect(() => {
     if (!appIsReady) return;
 
-    // Detectar PWA instalada en modo standalone
+    // Detectar PWA instalada en modo standalone.
+    // display-mode:standalone a veces no se reporta bien justo en el primer
+    // lanzamiento tras una instalación nueva (visto en vivo: tras desinstalar
+    // y reinstalar, la primera apertura mostraba la landing en vez de saltar
+    // a bienvenida). Como respaldo, manifest.json ahora tiene
+    // start_url: "/?pwa=1" — el sistema operativo siempre añade ese parámetro
+    // al abrir la app desde su icono, así que comprobarlo es más fiable que
+    // depender solo de la media query.
     const isStandalonePWA =
       Platform.OS === 'web' &&
       typeof window !== 'undefined' &&
       (window.matchMedia?.('(display-mode: standalone)').matches ||
-        (window.navigator as any).standalone === true);
+        (window.navigator as any).standalone === true ||
+        new URLSearchParams(window.location.search).get('pwa') === '1');
 
     if (Platform.OS === 'web' && !isStandalonePWA) {
       // Navegador web normal: la landing (index.tsx) es la ruta raíz.
@@ -57,7 +65,6 @@ export default function RootLayout() {
       <Stack.Screen name="index"      />
       <Stack.Screen name="bienvenida" />
       <Stack.Screen name="login"      />
-      <Stack.Screen name="onboarding" />
       <Stack.Screen name="(tabs)"     />
     </Stack>
   );

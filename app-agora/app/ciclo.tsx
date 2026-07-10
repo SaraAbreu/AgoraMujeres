@@ -6,8 +6,8 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Calendar, LocaleConfig } from 'react-native-calendars';
 import { useUserStore } from '../store/userStore';
-import { useRouter } from 'expo-router';
-import api from '../services/api'; 
+import { useRouter, Redirect } from 'expo-router';
+import api from '../services/api';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 
 // Configuración de idioma para el calendario
@@ -27,14 +27,21 @@ const colorMuted = 'rgba(92,58,30,0.4)';
 
 export default function CicloScreen() {
   const router = useRouter();
+  const token = useUserStore((state) => state.token);
   const { setLastCiclo, setHasCicloData } = useUserStore();
-  
+
   // ESTADOS
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [duracion, setDuracion] = useState('28');
   const [flujo, setFlujo] = useState('Medio');
   const [menopausia, setMenopausia] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  // Guardia de rutas: sin sesión iniciada no se puede ver esta pantalla.
+  // <Redirect> en vez de router.replace() en useEffect: en cargas directas
+  // (deep link / refresh) el Root Layout aún no ha montado y router.replace()
+  // falla silenciosamente ("Attempted to navigate before mounting...").
+  if (!token) return <Redirect href="/login" />;
 
   const goHome = () => router.replace('/(tabs)/home');
 

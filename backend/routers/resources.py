@@ -9,8 +9,9 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Depends
 from auth.dependencies import get_current_user
 
-from ..core.database import db, db_aggregate, db_delete_many, db_find, db_insert_many, db_insert_one
-from ..core.models import Resource
+import core.database as core_db
+from core.database import db_aggregate, db_delete_many, db_find, db_insert_many, db_insert_one
+from core.models import Resource
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/resources", tags=["resources"])
@@ -32,7 +33,7 @@ async def get_resources(category: Optional[str] = None, language: str = "es", li
         query["category"] = category
 
     resources = await db_find(
-        db.resources,
+        core_db.db.resources,
         query,
         sort=("is_featured", -1),
         limit=limit,
@@ -54,7 +55,7 @@ async def get_resource_categories(language: str = "es"):
         {"$group": {"_id": "$category", "count": {"$sum": 1}}},
         {"$sort": {"count": -1}},
     ]
-    result = await db_aggregate(db.resources, pipeline)
+    result = await db_aggregate(core_db.db.resources, pipeline)
 
     if not result:
         # Fallback when DB is empty
@@ -80,17 +81,17 @@ async def get_resource_categories(language: str = "es"):
 
 
 @router.post("")
-async def create_resource(resource: Resource):
-    await db_insert_one(db.resources, resource.model_dump())
+async def create_resource(resource: Resource, user=Depends(get_current_user)):
+    await db_insert_one(core_db.db.resources, resource.model_dump())
     return {"success": True, "id": resource.id}
 
 
 @router.post("/seed")
-async def seed_resources():
+async def seed_resources(user=Depends(get_current_user)):
     """Seed initial resources (deletes existing ones first)."""
-    await db_delete_many(db.resources, {})
+    await db_delete_many(core_db.db.resources, {})
     resources = _seed_data()
-    await db_insert_many(db.resources, resources)
+    await db_insert_many(core_db.db.resources, resources)
     return {"message": "Resources seeded", "count": len(resources)}
 
 

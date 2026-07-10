@@ -16,6 +16,8 @@ from firebase_admin import auth as firebase_auth, credentials, initialize_app
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, EmailStr, Field
 from starlette.middleware.base import BaseHTTPMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 # --- CONFIGURACIÓN DE LOGGING ---
 logging.basicConfig(level=logging.INFO)
@@ -26,6 +28,7 @@ if BASE_DIR not in sys.path:
     sys.path.append(BASE_DIR)
 
 from auth.auth_utils import create_access_token
+from core.rate_limit import limiter
 
 # --- FIREBASE ADMIN ---
 if not len(firebase_admin._apps):
@@ -65,6 +68,13 @@ async def lifespan(app: FastAPI):
 
 # --- APP ---
 app = FastAPI(title="Ágora Security Engine", lifespan=lifespan)
+
+# --- RATE LIMITING (slowapi) ---
+# Protege endpoints sensibles a fuerza bruta (login/registro/admin).
+# El resto de endpoints queda sin límite explícito: no se toca comportamiento
+# existente fuera de los puntos marcados con @limiter.limit(...).
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # --- MIDDLEWARES ---
 _allowed_origins_env = os.environ.get("ALLOWED_ORIGINS", "")
@@ -107,7 +117,8 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
 # --- ENDPOINTS DE AUTENTICACIÓN ---
 
 @app.post("/api/auth/google")
-async def google_auth(data: dict = Body(...)):
+@limiter.limit("10/minute")
+async def google_auth(request: Request, data: dict = Body(...)):
     from core.database import db
     token = data.get("token")
     if not token:
@@ -138,7 +149,8 @@ async def google_auth(data: dict = Body(...)):
 # --- EMAIL/PASSWORD AUTH ---
 
 @app.post("/api/auth/register")
-async def register(data: dict = Body(...)):
+@limiter.limit("5/minute")
+async def register(request: Request, data: dict = Body(...)):
     import hashlib, secrets
     from core.database import db
     email    = (data.get("email") or "").strip().lower()
@@ -170,7 +182,8 @@ async def register(data: dict = Body(...)):
 
 
 @app.post("/api/auth/login")
-async def login(data: dict = Body(...)):
+@limiter.limit("5/minute")
+async def login(request: Request, data: dict = Body(...)):
     import hashlib
     from core.database import db
     email    = (data.get("email") or "").strip().lower()
@@ -322,22 +335,22 @@ try:
     from routers.glucosa import router as glucosa_router
     app.include_router(glucosa_router, prefix="/api")
     logger.info("✅ Router de glucosa activo")
-except ImportError:
-    logger.warning("Router de glucosa no encontrado, saltando...")
+except Exception as e:
+    logger.warning(f"Router de glucosa no encontrado, saltando...: {e}")
 
 try:
     from routers.checkin import router as checkin_router
     app.include_router(checkin_router, prefix="/api")
     logger.info("✅ Router de check-in activo")
-except ImportError:
-    logger.warning("Router de check-in no encontrado, saltando...")
+except Exception as e:
+    logger.warning(f"Router de check-in no encontrado, saltando...: {e}")
 
 # Chat (Ágora)
 try:
     from routers.chat import router as chat_router
     app.include_router(chat_router, prefix="/api")
     logger.info("✅ Router de chat Ágora activo en /api/chat")
-except ImportError as e:
+except Exception as e:
     logger.warning(f"Router de chat no encontrado: {e}")
 
 # Suscripciones (Stripe)
@@ -345,7 +358,7 @@ try:
     from routers.subscriptions import router as subscriptions_router
     app.include_router(subscriptions_router, prefix="/api")
     logger.info("✅ Router de suscripciones activo en /api/subscription")
-except ImportError as e:
+except Exception as e:
     logger.warning(f"Router de suscripciones no encontrado: {e}")
 
 # Síntomas crónicos
@@ -353,8 +366,42 @@ try:
     from routers.sintomas_cronico import router as sintomas_router
     app.include_router(sintomas_router, prefix="/api")
     logger.info("✅ Router de síntomas crónicos activo")
-except ImportError as e:
+except Exception as e:
     logger.warning(f"Router de síntomas no encontrado: {e}")
+
+# Diario cifrado (device_id) — no confundir con /api/diario (arriba, email-based)
+try:
+    from routers.diary import router as diary_router
+    app.include_router(diary_router, prefix="/api")
+    logger.info("✅ Router de diary activo en /api/diary")
+except Exception as e:
+    logger.warning(f"Router de diary no encontrado: {e}")
+
+# Soporte en crisis
+try:
+    from routers.crisis import router as crisis_router
+    app.include_router(crisis_router, prefix="/api")
+    logger.info("✅ Router de crisis activo")
+except Exception as e:
+    logger.warning(f"Router de crisis no encontrado: {e}")
+
+# Recursos (artículos, vídeos sobre fibromialgia)
+try:
+    from routers.resources import router as resources_router
+    app.include_router(resources_router, prefix="/api")
+    logger.info("✅ Router de resources activo")
+except Exception as e:
+    logger.warning(f"Router de resources no encontrado: {e}")
+
+# Misc: ciclo (device_id-based), clima, registro mensual de dolor
+try:
+    from routers.misc import cycle_router, weather_router, monthly_router
+    app.include_router(cycle_router, prefix="/api")
+    app.include_router(weather_router, prefix="/api")
+    app.include_router(monthly_router, prefix="/api")
+    logger.info("✅ Routers de misc (cycle/weather/monthly-record) activos")
+except Exception as e:
+    logger.warning(f"Routers de misc no encontrados: {e}")
 
 # --- ARRANQUE ---
 if __name__ == "__main__":

@@ -6,16 +6,17 @@ import Animated, {
   withTiming, withDelay, withRepeat, withSequence,
   Easing,
 } from 'react-native-reanimated';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
 const { width, height } = Dimensions.get('window');
 const LOGO_W = Math.min(width * 0.72, 340);
 const LOGO_H = LOGO_W * 1.24; // proporción 928×1152
-const LOGO   = require('../assets/images/logo.png');
+const LOGO   = require('../assets/images/logo-warm.png');
 
 export default function BienvenidaScreen() {
   const router = useRouter();
+  const { intent } = useLocalSearchParams<{ intent?: string }>();
 
   // ── Animaciones ────────────────────────────────────────────────────────────
   const logoOp     = useSharedValue(0);
@@ -90,16 +91,16 @@ export default function BienvenidaScreen() {
   return (
     <View style={s.container}>
 
-      {/* ── Fondo: oscuro con mancha cálida sutil en el centro ── */}
+      {/* ── Fondo: mismo tono claro que el resto de la app ── */}
       <LinearGradient
-        colors={['#08080C', '#111018', '#0E0C10']}
+        colors={['#FDFCFB', '#F5F0E8', '#E6D5B8']}
         style={StyleSheet.absoluteFill}
       />
 
-      {/* Viñeta inversa: punto de luz muy suave detrás del logo */}
+      {/* Viñeta: resplandor cálido muy suave detrás del logo */}
       <Animated.View style={[s.ambient, ambientStyle]} pointerEvents="none">
         <LinearGradient
-          colors={['rgba(190,175,210,0.09)', 'rgba(160,140,185,0.04)', 'transparent']}
+          colors={['rgba(197,160,89,0.16)', 'rgba(197,160,89,0.06)', 'transparent']}
           style={StyleSheet.absoluteFill}
           start={{ x: 0.5, y: 0.32 }}
           end={{ x: 0.5, y: 0.85 }}
@@ -117,7 +118,7 @@ export default function BienvenidaScreen() {
           <View style={s.shimmerClip} pointerEvents="none">
             <Animated.View style={[s.shimmerStrip, shimmerStyle]}>
               <LinearGradient
-                colors={['transparent', 'rgba(255,255,255,0.18)', 'transparent']}
+                colors={['transparent', 'rgba(255,255,255,0.55)', 'transparent']}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
                 style={s.shimmerGrad}
@@ -136,10 +137,14 @@ export default function BienvenidaScreen() {
 
       {/* ── Botón outline ── */}
       <Animated.View style={[s.btnWrap, btnStyle]}>
-        <TouchableOpacity style={s.btn} onPress={() => router.replace('/login')} activeOpacity={0.7}>
+        <TouchableOpacity
+          style={s.btn}
+          onPress={() => router.replace(intent ? { pathname: '/login', params: { intent } } as any : '/login')}
+          activeOpacity={0.7}
+        >
           <View style={s.btnInner}>
             <Text style={s.btnText}>ENTRAR AL SANTUARIO</Text>
-            <Ionicons name="arrow-forward" size={14} color="rgba(200,190,215,0.8)" />
+            <Ionicons name="arrow-forward" size={14} color="#8B5A2B" />
           </View>
         </TouchableOpacity>
         <Text style={s.btnHint}>Tu espacio seguro te espera</Text>
@@ -198,8 +203,8 @@ const s = StyleSheet.create({
 
   // Tagline
   taglineBlock: { alignItems: 'center', gap: 5 },
-  tagline:      { fontSize: 16, fontWeight: '200', color: 'rgba(215,210,225,0.8)', letterSpacing: 1.5 },
-  taglineLight: { fontSize: 12, fontWeight: '300', color: 'rgba(180,175,195,0.4)', letterSpacing: 0.5 },
+  tagline:      { fontSize: 16, fontWeight: '200', color: '#5C3A1E', letterSpacing: 1.5 },
+  taglineLight: { fontSize: 12, fontWeight: '300', color: '#8B5A2B', letterSpacing: 0.5, opacity: 0.7 },
 
   // Botón outline
   btnWrap: {
@@ -214,7 +219,7 @@ const s = StyleSheet.create({
     maxWidth: 300,
     borderRadius: 50,
     borderWidth: 1,
-    borderColor: 'rgba(190,180,210,0.35)',
+    borderColor: 'rgba(197,160,89,0.4)',
     overflow: 'hidden',
   },
   btnInner: {
@@ -223,21 +228,22 @@ const s = StyleSheet.create({
     justifyContent: 'center',
     gap: 10,
     paddingVertical: 15,
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    backgroundColor: 'rgba(255,255,255,0.5)',
   },
   btnText: {
-    color: 'rgba(200,190,215,0.85)',
+    color: '#8B5A2B',
     fontWeight: '400',
     fontSize: 11,
     letterSpacing: 3,
   },
-  btnHint: { fontSize: 10, color: 'rgba(180,175,195,0.25)', letterSpacing: 0.5 },
+  btnHint: { fontSize: 10, color: '#8B5A2B', opacity: 0.45, letterSpacing: 0.5 },
 
   brand: {
     position: 'absolute',
     bottom: 20,
     fontSize: 9,
-    color: 'rgba(255,255,255,0.1)',
+    color: '#8B5A2B',
+    opacity: 0.35,
     letterSpacing: 2,
     fontWeight: '300',
   },

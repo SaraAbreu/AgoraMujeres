@@ -24,8 +24,13 @@ from core.agora_content import (
 # BUG CORREGIDO: db_delete_many y db_delete_one añadidos al import top-level
 # (antes se importaban dentro de funciones con `from ..core.database import ...`
 # lo que lanzaba ImportError: attempted relative import beyond top-level package)
+#
+# BUG CORREGIDO (2): `db` NO se importa aquí con `from core.database import db`.
+# Ese import captura el valor de `db` en el momento del import (None, porque
+# connect() todavía no ha corrido) y nunca ve la reasignación posterior que
+# hace connect() con `global db`. Hay que leerlo en vivo vía `core_db.db`.
+import core.database as core_db
 from core.database import (
-    db,
     db_count_documents,
     db_delete_many,
     db_delete_one,
@@ -72,7 +77,7 @@ async def chat_with_agora(request: ChatRequest):
     # 2. ¿Es el primer mensaje de la usuaria?
     try:
         user_message_count = await db_count_documents(
-            db.chat_messages, {"device_id": request.device_id, "role": "user"}
+            core_db.db.chat_messages, {"device_id": request.device_id, "role": "user"}
         )
     except Exception:
         user_message_count = 1  # fallback: no tratar como primer mensaje
@@ -83,14 +88,14 @@ async def chat_with_agora(request: ChatRequest):
     if not conversation_id:
         temp_title = request.message[:50] + ("..." if len(request.message) > 50 else "")
         new_conv = ChatConversation(device_id=request.device_id, title=temp_title)
-        await db_insert_one(db.chat_conversations, new_conv.model_dump())
+        await db_insert_one(core_db.db.chat_conversations, new_conv.model_dump())
         conversation_id = new_conv.id
 
         try:
             smart_title = await _generate_conversation_title(request.message, request.language)
             if smart_title:
                 await db_update_one(
-                    db.chat_conversations,
+                    core_db.db.chat_conversations,
                     {"id": conversation_id},
                     {"$set": {"title": smart_title}},
                 )
@@ -98,14 +103,14 @@ async def chat_with_agora(request: ChatRequest):
             logger.warning(f"Smart title generation failed (non-fatal): {e}")
     else:
         await db_update_one(
-            db.chat_conversations,
+            core_db.db.chat_conversations,
             {"id": conversation_id},
             {"$set": {"updated_at": datetime.now(timezone.utc)}},
         )
 
     # 4. Cargar últimos 8 mensajes de contexto
     history = await db_find(
-        db.chat_messages,
+        core_db.db.chat_messages,
         {"device_id": request.device_id, "conversation_id": conversation_id},
         sort=("created_at", -1),
         limit=8,
@@ -119,7 +124,7 @@ async def chat_with_agora(request: ChatRequest):
 
     # 6. Persistir ambos mensajes
     await db_insert_one(
-        db.chat_messages,
+        core_db.db.chat_messages,
         ChatMessage(
             device_id=request.device_id,
             conversation_id=conversation_id,
@@ -128,7 +133,7 @@ async def chat_with_agora(request: ChatRequest):
         ).model_dump(),
     )
     await db_insert_one(
-        db.chat_messages,
+        core_db.db.chat_messages,
         ChatMessage(
             device_id=request.device_id,
             conversation_id=conversation_id,
@@ -206,7 +211,7 @@ async def _generate_response(
 @router.get("/{device_id}/conversations")
 async def get_conversations(device_id: str, limit: int = 20):
     conversations = await db_find(
-        db.chat_conversations,
+        core_db.db.chat_conversations,
         {"device_id": device_id},
         sort=("updated_at", -1),
         limit=limit,
@@ -225,7 +230,7 @@ async def get_conversations(device_id: str, limit: int = 20):
 @router.get("/{device_id}/conversation/{conversation_id}")
 async def get_conversation_messages(device_id: str, conversation_id: str, limit: int = 50):
     messages = await db_find(
-        db.chat_messages,
+        core_db.db.chat_messages,
         {"device_id": device_id, "conversation_id": conversation_id},
         sort=("created_at", 1),
         limit=limit,
@@ -241,9 +246,9 @@ async def get_conversation_messages(device_id: str, conversation_id: str, limit:
 # Se deja una sola versión con la lógica correcta.
 @router.delete("/{device_id}/conversation/{conversation_id}")
 async def delete_conversation(device_id: str, conversation_id: str):
-    await db_delete_one(db.chat_conversations, {"id": conversation_id, "device_id": device_id})
+    await db_delete_one(core_db.db.chat_conversations, {"id": conversation_id, "device_id": device_id})
     result = await db_delete_many(
-        db.chat_messages, {"conversation_id": conversation_id, "device_id": device_id}
+        core_db.db.chat_messages, {"conversation_id": conversation_id, "device_id": device_id}
     )
     return {"message": "Conversation deleted", "deleted_messages": result.deleted_count}
 
@@ -254,18 +259,18 @@ async def get_chat_history(device_id: str, limit: int = 50):
     # BUG CORREGIDO: se eliminó la llamada `latest = await db_find_one(...)` que
     # era código muerto (resultado nunca usado) justo antes del db_find equivalente.
     convs = await db_find(
-        db.chat_conversations, {"device_id": device_id}, sort=("updated_at", -1), limit=1
+        core_db.db.chat_conversations, {"device_id": device_id}, sort=("updated_at", -1), limit=1
     )
     if convs:
         messages = await db_find(
-            db.chat_messages,
+            core_db.db.chat_messages,
             {"device_id": device_id, "conversation_id": convs[0]["id"]},
             sort=("created_at", 1),
             limit=limit,
         )
     else:
         messages = await db_find(
-            db.chat_messages,
+            core_db.db.chat_messages,
             {"device_id": device_id},
             sort=("created_at", -1),
             limit=limit,
@@ -286,11 +291,11 @@ async def get_chat_history(device_id: str, limit: int = 50):
 @router.delete("/{device_id}/history")
 async def clear_chat_history(device_id: str):
     convs = await db_find(
-        db.chat_conversations, {"device_id": device_id}, sort=("updated_at", -1), limit=1
+        core_db.db.chat_conversations, {"device_id": device_id}, sort=("updated_at", -1), limit=1
     )
     if convs:
-        await db_delete_one(db.chat_conversations, {"id": convs[0]["id"]})
-        result = await db_delete_many(db.chat_messages, {"conversation_id": convs[0]["id"]})
+        await db_delete_one(core_db.db.chat_conversations, {"id": convs[0]["id"]})
+        result = await db_delete_many(core_db.db.chat_messages, {"conversation_id": convs[0]["id"]})
         return {"message": "Conversation cleared", "deleted_count": result.deleted_count}
     return {"message": "No conversation to clear", "deleted_count": 0}
 
@@ -299,20 +304,20 @@ async def clear_chat_history(device_id: str):
 
 @router.post("/reaction")
 async def save_message_reaction(reaction: MessageReaction):
-    existing = await db_find_one(db.message_reactions, {
+    existing = await db_find_one(core_db.db.message_reactions, {
         "device_id":  reaction.device_id,
         "message_id": reaction.message_id,
         "reaction":   reaction.reaction,
     })
     if not existing:
-        await db_insert_one(db.message_reactions, reaction.model_dump())
+        await db_insert_one(core_db.db.message_reactions, reaction.model_dump())
     return {"status": "saved", "reaction_id": reaction.id}
 
 
 @router.get("/{device_id}/reaction/{message_id}")
 async def get_message_reactions(device_id: str, message_id: str):
     reactions = await db_find(
-        db.message_reactions, {"device_id": device_id, "message_id": message_id}
+        core_db.db.message_reactions, {"device_id": device_id, "message_id": message_id}
     )
     counts: dict = {}
     for r in reactions:
@@ -325,7 +330,7 @@ async def get_message_reactions(device_id: str, message_id: str):
 
 @router.post("/favorites")
 async def save_favorite(msg: FavoriteMessage):
-    await db_insert_one(db.favorite_messages, msg.model_dump())
+    await db_insert_one(core_db.db.favorite_messages, msg.model_dump())
     return {"id": msg.id, "status": "saved"}
 
 
@@ -334,7 +339,7 @@ async def get_favorites(device_id: str, category: Optional[str] = None):
     query = {"device_id": device_id}
     if category:
         query["category"] = category
-    messages = await db_find(db.favorite_messages, query, sort=("created_at", -1))
+    messages = await db_find(core_db.db.favorite_messages, query, sort=("created_at", -1))
     return [
         {
             "id":         m["id"],
@@ -348,7 +353,7 @@ async def get_favorites(device_id: str, category: Optional[str] = None):
 
 @router.delete("/favorites/{device_id}/{message_id}")
 async def delete_favorite(device_id: str, message_id: str):
-    result = await db_delete_one(db.favorite_messages, {"id": message_id, "device_id": device_id})
+    result = await db_delete_one(core_db.db.favorite_messages, {"id": message_id, "device_id": device_id})
     return {"deleted": result.deleted_count > 0}
 
 
@@ -357,8 +362,8 @@ async def delete_favorite(device_id: str, message_id: str):
 @router.get("/community/count")
 async def get_community_count():
     try:
-        if hasattr(db.chat_messages, "distinct"):
-            unique = await db.chat_messages.distinct("device_id")
+        if hasattr(core_db.db.chat_messages, "distinct"):
+            unique = await core_db.db.chat_messages.distinct("device_id")
             count = len(unique)
         else:
             count = 0

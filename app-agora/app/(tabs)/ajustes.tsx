@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Dimensions, Platform, TextInput, Alert, Linking, ActivityIndicator } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Dimensions, Platform, Alert, Linking, ActivityIndicator } from 'react-native';
 import { useUserStore } from '../../store/userStore';
-import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { removeToken, getDeviceIdFromToken, getSubscriptionStatus, createCustomerPortalSession, SubscriptionStatus } from '../../services/api';
@@ -143,34 +142,22 @@ export default function AjustesScreen() {
   const user = useUserStore((state) => state.user);
   const clearSession = useUserStore((state) => state.clearSession);
   const devMode = useUserStore((state) => state.devMode);
-  const setDevMode = useUserStore((state) => state.setDevMode);
-  const [devCode, setDevCode] = useState('');
-  const [devMsg, setDevMsg] = useState('');
-  const [devSuccess, setDevSuccess] = useState(false);
   const [deviceId, setDeviceId] = useState<string | null>(null);
 
   useEffect(() => {
     getDeviceIdFromToken().then(id => setDeviceId(id));
   }, []);
 
-  const handleDevCode = () => {
-    if (devCode.trim() === 'AGORAADMIN26') {
-      setDevMode(true);
-      setDevSuccess(true);
-      setDevMsg('¡Modo desarrollador activado!');
-    } else {
-      setDevMode(false);
-      setDevSuccess(false);
-      setDevMsg('Código incorrecto. Inténtalo de nuevo.');
-      setDevCode('');
-    }
-  };
-
   const handleLogout = async () => {
     if (Platform.OS === 'web') {
       await removeToken();
       await clearSession();
-      window.location.href = '/login';
+      // Antes: window.location.href = '/login' — provocaba una recarga completa
+      // de página. Al recargar, la lógica de detección de PWA standalone en
+      // _layout.tsx raíz se re-ejecutaba y, sin token, redirigía a /bienvenida
+      // en vez de dejar a la usuaria en /login. router.replace() navega dentro
+      // de la SPA sin recargar, así que ese efecto no se vuelve a disparar.
+      router.replace('/login');
     } else {
       Alert.alert(
         'Cerrar sesión',
@@ -296,28 +283,6 @@ export default function AjustesScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* CÓDIGO DE DESARROLLADOR */}
-        <View style={styles.devSection}>
-          <Text style={styles.sectionLabel}>DESARROLLADOR</Text>
-          <BlurDevCodeInput
-            value={devCode}
-            onChangeText={(text) => {
-              setDevCode(text);
-              setDevMsg('');
-            }}
-            onPress={handleDevCode}
-            onDeactivate={() => {
-              setDevMode(false);
-              setDevCode('');
-              setDevMsg('');
-              setDevSuccess(false);
-            }}
-            devMsg={devMsg}
-            devSuccess={devSuccess}
-            devMode={devMode}
-          />
-        </View>
-
         {/* CERRAR SESIÓN */}
         <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.8}>
           <LinearGradient
@@ -383,191 +348,6 @@ const subStyles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.5)',
   },
   manageBtnText: { color: '#8B5A2B', fontWeight: '600', fontSize: 13 },
-});
-
-interface BlurDevCodeInputProps {
-  value: string;
-  onChangeText: (text: string) => void;
-  onPress: () => void;
-  onDeactivate: () => void;
-  devMsg: string;
-  devSuccess: boolean;
-  devMode: boolean;
-}
-
-function BlurDevCodeInput({ value, onChangeText, onPress, onDeactivate, devMsg, devSuccess, devMode }: BlurDevCodeInputProps) {
-  const [focused, setFocused] = useState(false);
-  const [hovered, setHovered] = useState(false);
-  const showClear = focused || hovered || devMode;
-  const isWeb = Platform.OS === 'web';
-
-  return (
-    <View style={devInputStyles.wrapper}>
-      <View style={devInputStyles.row}>
-        <View
-          style={devInputStyles.inputContainer}
-          {...(isWeb ? {
-            onMouseEnter: () => setHovered(true),
-            onMouseLeave: () => setHovered(false),
-          } : {})}
-        >
-          {!showClear && (
-            isWeb
-              ? <View style={[devInputStyles.blurOverlay, { filter: 'blur(6px)' } as any]} />
-              : <BlurView intensity={25} style={devInputStyles.blurOverlay} />
-          )}
-          <TextInput
-            value={value}
-            onChangeText={onChangeText}
-            placeholder="Introduce el código"
-            placeholderTextColor="#C5A059"
-            style={devInputStyles.input}
-            autoCapitalize="characters"
-            secureTextEntry={!showClear && !devMode}
-            onFocus={() => setFocused(true)}
-            onBlur={() => setFocused(false)}
-            onSubmitEditing={onPress}
-            returnKeyType="done"
-          />
-        </View>
-
-        <TouchableOpacity
-          onPress={onPress}
-          style={[devInputStyles.activateBtn, devMode && devInputStyles.activateBtnActive]}
-          activeOpacity={0.8}
-          disabled={devMode}
-        >
-          <Ionicons
-            name={devMode ? 'checkmark-circle' : 'key-outline'}
-            size={16}
-            color="white"
-          />
-          <Text style={devInputStyles.activateBtnText}>
-            {devMode ? 'Activo' : 'Activar'}
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {!!devMsg && (
-        <View style={[devInputStyles.msgContainer, devSuccess ? devInputStyles.msgSuccess : devInputStyles.msgError]}>
-          <Ionicons
-            name={devSuccess ? 'checkmark-circle-outline' : 'alert-circle-outline'}
-            size={14}
-            color={devSuccess ? '#2D7A4F' : '#A0331F'}
-          />
-          <Text style={[devInputStyles.msgText, devSuccess ? devInputStyles.msgTextSuccess : devInputStyles.msgTextError]}>
-            {devMsg}
-          </Text>
-        </View>
-      )}
-
-      {devMode && (
-        <View style={devInputStyles.activeRow}>
-          <View style={devInputStyles.activeBadge}>
-            <Ionicons name="code-slash-outline" size={12} color="#2D7A4F" />
-            <Text style={devInputStyles.activeBadgeText}>Modo desarrollador activo</Text>
-          </View>
-          <TouchableOpacity onPress={onDeactivate} style={devInputStyles.deactivateBtn} activeOpacity={0.75}>
-            <Ionicons name="close-circle-outline" size={13} color="#9B5A5A" />
-            <Text style={devInputStyles.deactivateBtnText}>Desactivar</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-    </View>
-  );
-}
-
-const devInputStyles = StyleSheet.create({
-  wrapper: { width: '100%', gap: 8 },
-  row: { flexDirection: 'row', gap: 8, alignItems: 'center' },
-  inputContainer: { flex: 1, position: 'relative' },
-  blurOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 2,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.3)',
-  },
-  input: {
-    borderWidth: 1.5,
-    borderColor: '#C5A059',
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    fontSize: 14,
-    backgroundColor: 'rgba(255,255,255,0.7)',
-    color: '#8B5A2B',
-    zIndex: 1,
-  },
-  activateBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#C5A059',
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-  },
-  activateBtnActive: { backgroundColor: '#2D7A4F' },
-  activateBtnText: { color: 'white', fontWeight: '600', fontSize: 14 },
-  msgContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-  },
-  msgSuccess: {
-    backgroundColor: 'rgba(45,122,79,0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(45,122,79,0.3)',
-  },
-  msgError: {
-    backgroundColor: 'rgba(160,51,31,0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(160,51,31,0.2)',
-  },
-  msgText: { fontSize: 13 },
-  msgTextSuccess: { color: '#2D7A4F', fontWeight: '500' },
-  msgTextError: { color: '#A0331F' },
-  activeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  activeBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    backgroundColor: 'rgba(45,122,79,0.1)',
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(45,122,79,0.25)',
-  },
-  activeBadgeText: {
-    fontSize: 11,
-    color: '#2D7A4F',
-    fontWeight: '600',
-    letterSpacing: 0.5,
-  },
-  deactivateBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(155,90,90,0.3)',
-    backgroundColor: 'rgba(155,90,90,0.07)',
-  },
-  deactivateBtnText: {
-    fontSize: 11,
-    color: '#9B5A5A',
-    fontWeight: '600',
-  },
 });
 
 const styles = StyleSheet.create({
@@ -637,16 +417,6 @@ const styles = StyleSheet.create({
   },
   rowLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   rowText: { fontSize: 15, color: '#8B5A2B', fontWeight: '300' },
-
-  // Sección dev con tarjeta
-  devSection: {
-    marginBottom: 30,
-    backgroundColor: 'rgba(255,255,255,0.3)',
-    borderRadius: 20,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.6)',
-  },
 
   // Botón de cerrar sesión — prominente con gradiente
   logoutBtn: {

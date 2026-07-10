@@ -7,15 +7,13 @@ import { LinearGradient } from 'expo-linear-gradient';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useUserStore } from '../store/userStore';
-import { useRouter } from 'expo-router';
-import { GLUCOSA_URL } from '../constants';
+import { useRouter, Redirect } from 'expo-router';
+import api from '../services/api';
 
 const colorText   = '#5C3A1E';
 const colorAccent = '#C5A059';
 const colorSoft   = '#8B5A2B';
 const colorMuted  = 'rgba(92,58,30,0.4)';
-
-const BACKEND_URL = 'https://127.0.0.1:8001/api/glucosa';
 
 export default function GlucosaScreen() {
   const router = useRouter();
@@ -25,6 +23,12 @@ export default function GlucosaScreen() {
   const [showPicker, setShowPicker] = useState(false);
   const [loading, setLoading]     = useState(false);
 
+  // Guardia de rutas: sin sesión iniciada no se puede ver esta pantalla.
+  // <Redirect> en vez de router.replace() en useEffect: en cargas directas
+  // (deep link / refresh) el Root Layout aún no ha montado y router.replace()
+  // falla silenciosamente ("Attempted to navigate before mounting...").
+  if (!token) return <Redirect href="/login" />;
+
   const handleSave = async () => {
     if (!value || isNaN(Number(value))) {
       Alert.alert('Dato inválido', 'Introduce un valor numérico de glucosa.');
@@ -32,19 +36,11 @@ export default function GlucosaScreen() {
     }
     setLoading(true);
     try {
-      const res = await fetch(BACKEND_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          valor: Number(value),
-          fecha: date.toISOString(),
-        }),
+      // Vía api.ts (interceptor añade el token automáticamente), nunca fetch() crudo.
+      await api.post('/glucosa/', {
+        valor: Number(value),
+        fecha: date.toISOString(),
       });
-
-      if (!res.ok) throw new Error('Error en el servidor');
 
       useUserStore.getState().setLastGlucosa({
         valor: Number(value),

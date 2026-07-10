@@ -8,7 +8,8 @@ Now lives in one place — both routers import from here.
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 
-from .database import db, db_find
+from . import database as core_db
+from .database import db_find
 
 
 # ── Public interface ──────────────────────────────────────────────────────────
@@ -23,7 +24,7 @@ async def get_patterns_for_device(
     """
     start_date = datetime.now(timezone.utc) - timedelta(days=days)
     entries = await db_find(
-        db.diary_entries,
+        core_db.db.diary_entries,
         {"device_id": device_id, "created_at": {"$gte": start_date}},
         limit=200,
     )

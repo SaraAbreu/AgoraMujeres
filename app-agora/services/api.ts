@@ -67,12 +67,39 @@ export const removeToken = async () => {
     else await SecureStore.deleteItemAsync(TOKEN_KEY);
 };
 
+/**
+ * Decodifica base64url (usado en el payload de un JWT) sin depender de atob/Buffer.
+ * atob() no está garantizado en Hermes/React Native nativo (solo existe en web/Node),
+ * lo que hacía que getDeviceIdFromToken() devolviera null en silencio en Android/iOS.
+ * Esta implementación es JS puro y funciona igual en web y en nativo.
+ */
+const base64UrlDecode = (input: string): string => {
+    const base64 = input.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+    let output = '';
+    let buffer = 0;
+    let bits = 0;
+    for (const char of padded) {
+        if (char === '=') break;
+        const value = chars.indexOf(char);
+        if (value === -1) continue;
+        buffer = (buffer << 6) | value;
+        bits += 6;
+        if (bits >= 8) {
+            bits -= 8;
+            output += String.fromCharCode((buffer >> bits) & 0xff);
+        }
+    }
+    return output;
+};
+
 /** Extrae el device_id (= sub del JWT) sin verificar firma. */
 export const getDeviceIdFromToken = async (): Promise<string | null> => {
     try {
         const token = await getStoredToken();
         if (!token) return null;
-        const payload = JSON.parse(atob(token.split('.')[1]));
+        const payload = JSON.parse(base64UrlDecode(token.split('.')[1]));
         return payload.sub ?? null;
     } catch {
         return null;

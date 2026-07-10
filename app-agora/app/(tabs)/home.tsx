@@ -388,6 +388,17 @@ export default function HomeSantuario() {
     }, 1200);
   };
 
+  // Limpieza: si la usuaria navega fuera de Home antes de que se cumpla el
+  // debounce de 1.2s, cancelamos el guardado pendiente. Sin esto, el callback
+  // de setTimeout se ejecutaba igual sobre un componente ya desmontado
+  // (setState tras unmount → warning, y riesgo de pisar datos si Home se
+  // remonta rápido).
+  useEffect(() => {
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
+  }, []);
+
   const handleDolorSelect = (i: number) => {
     setDolorLevel(i);
     scheduleAutoSave(i, zonasSelec, sintomasSelec);
@@ -559,7 +570,14 @@ export default function HomeSantuario() {
                 })}
               </View>
               {checkInGuardado && dolorLevel >= 3 && (
-                <TouchableOpacity style={s.crisisBtn} onPress={() => router.push('/crisis' as any)} activeOpacity={0.8}>
+                <TouchableOpacity
+                  style={s.crisisBtn}
+                  onPress={() => router.push({
+                    pathname: '/crisis',
+                    params: { pain_level: String(dolorLevel), symptoms: sintomasSelec.join(',') },
+                  } as any)}
+                  activeOpacity={0.8}
+                >
                   <Ionicons name="heart-outline" size={12} color="#9B5A5A" />
                   <Text style={s.crisisBtnText}>Necesito apoyo ahora</Text>
                   <Ionicons name="chevron-forward" size={10} color="#9B5A5A" />

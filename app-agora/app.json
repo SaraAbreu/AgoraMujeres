@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "app-agora",
+    "name": "Agora Mujeres",
     "slug": "app-agora",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -17,6 +17,7 @@
       "supportsTablet": true
     },
     "android": {
+      "package": "com.syntexiasolutions.agoramujeres",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/logo2.png",
         "backgroundColor": "#ffffff"

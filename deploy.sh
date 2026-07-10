@@ -4,23 +4,22 @@ set -e
 SERVER="root@217.154.186.186"
 APP_DIR="$HOME/AgoraMujeres/app-agora"
 BACKEND_DIR="$HOME/AgoraMujeres/backend"
+FRONTEND_DOCROOT="/var/www/vhosts/agoramujeres.syntexia-solutions.es/httpdocs"
 
 echo "🔨 Compilando frontend..."
 cd "$APP_DIR"
 npx expo export --platform web
 
-echo "🚀 Subiendo frontend al servidor..."
-rsync -avz --delete "$APP_DIR/dist/" "$SERVER:/var/www/agora-frontend/"
+echo "🚀 Subiendo frontend al servidor (docroot real de Apache)..."
+ssh "$SERVER" "rm -rf $FRONTEND_DOCROOT/*"
+tar -czf - -C "$APP_DIR/dist" . | ssh "$SERVER" "tar xzf - -C $FRONTEND_DOCROOT && chown -R www-data:www-data $FRONTEND_DOCROOT"
 
 echo "🔄 Subiendo backend al servidor..."
-rsync -avz "$BACKEND_DIR/" "$SERVER:/var/www/agora-backend/" \
-  --exclude venv \
-  --exclude __pycache__ \
-  --exclude .env \
-  --exclude "*.pyc"
+tar --exclude=venv --exclude=__pycache__ --exclude=.env --exclude="*.pyc" \
+  -czf - -C "$BACKEND_DIR" . | ssh "$SERVER" "tar xzf - -C /var/www/AgoraMujeres/backend"
 
-echo "♻️  Reiniciando backend..."
-ssh "$SERVER" "pkill -f uvicorn; sleep 2; cd /var/www/agora-backend && nohup /var/www/agora-backend/venv/bin/python3 -m uvicorn server:app --host 127.0.0.1 --port 8001 > /var/log/agora.log 2>&1 &"
+echo "♻️  Reiniciando backend (systemd)..."
+ssh "$SERVER" "systemctl restart agora-backend"
 
 echo ""
 echo "✅ Deploy completado — https://agoramujeres.syntexia-solutions.es"

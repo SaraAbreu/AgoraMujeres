@@ -15,8 +15,10 @@ import stripe
 from fastapi import APIRouter, Header, HTTPException, Request, Depends
 from auth.dependencies import get_current_user
 
-from core.database import db, db_find_one, db_insert_one, db_update_one
+import core.database as core_db
+from core.database import db_find_one, db_insert_one, db_update_one
 from core.models import AdminCodeRequest, CustomerCreate, SubscriptionStatus
+from core.rate_limit import limiter
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/subscription", tags=["subscriptions"])
@@ -33,11 +35,11 @@ TRIAL_DAYS = 30
 # ── Internal helpers (imported by other routers) ──────────────────────────────
 
 async def get_subscription_status_internal(device_id: str) -> dict:
-    sub = await db_find_one(db.subscriptions, {"device_id": device_id})
+    sub = await db_find_one(core_db.db.subscriptions, {"device_id": device_id})
 
     if not sub:
         new_sub = SubscriptionStatus(device_id=device_id)
-        await db_insert_one(db.subscriptions, new_sub.model_dump())
+        await db_insert_one(core_db.db.subscriptions, new_sub.model_dump())
         remaining = int(timedelta(days=TRIAL_DAYS).total_seconds())
         return {
             "status":                  "trial",
@@ -58,7 +60,7 @@ async def get_subscription_status_internal(device_id: str) -> dict:
         # Documento antiguo sin trial_end — le damos 30 días desde ahora
         trial_end = datetime.now(timezone.utc) + timedelta(days=TRIAL_DAYS)
         await db_update_one(
-            db.subscriptions,
+            core_db.db.subscriptions,
             {"device_id": device_id},
             {"$set": {"trial_end": trial_end}},
         )
@@ -73,7 +75,7 @@ async def get_subscription_status_internal(device_id: str) -> dict:
 
     if remaining <= 0:
         await db_update_one(
-            db.subscriptions,
+            core_db.db.subscriptions,
             {"device_id": device_id},
             {"$set": {"status": "expired"}},
         )
@@ -89,7 +91,7 @@ async def get_subscription_status_internal(device_id: str) -> dict:
 
 async def track_usage(device_id: str, seconds: int) -> None:
     await db_update_one(
-        db.subscriptions,
+        core_db.db.subscriptions,
         {"device_id": device_id},
         {"$inc": {"usage_seconds": seconds}},
         upsert=True,
@@ -100,14 +102,14 @@ async def track_usage(device_id: str, seconds: int) -> None:
 
 @router.get("/{device_id}")
 async def get_subscription_status(device_id: str, user=Depends(get_current_user)):
-    if hasattr(user, 'device_id') and user.device_id != device_id:
+    if user.get('device_id') != device_id:
         raise HTTPException(status_code=403, detail="No autorizado")
     return await get_subscription_status_internal(device_id)
 
 
 @router.post("/create-customer")
 async def create_customer(request: CustomerCreate, user=Depends(get_current_user)):
-    if hasattr(user, 'device_id') and user.device_id != request.device_id:
+    if user.get('device_id') != request.device_id:
         raise HTTPException(status_code=403, detail="No autorizado")
     try:
         customer = stripe.Customer.create(
@@ -116,7 +118,7 @@ async def create_customer(request: CustomerCreate, user=Depends(get_current_user
             metadata={"device_id": request.device_id},
         )
         await db_update_one(
-            db.subscriptions,
+            core_db.db.subscriptions,
             {"device_id": request.device_id},
             {"$set": {"stripe_customer_id": customer.id, "email": request.email}},
             upsert=True,
@@ -129,9 +131,9 @@ async def create_customer(request: CustomerCreate, user=Depends(get_current_user
 
 @router.post("/create-payment-intent")
 async def create_payment_intent(device_id: str, user=Depends(get_current_user)):
-    if hasattr(user, 'device_id') and user.device_id != device_id:
+    if user.get('device_id') != device_id:
         raise HTTPException(status_code=403, detail="No autorizado")
-    sub = await db_find_one(db.subscriptions, {"device_id": device_id})
+    sub = await db_find_one(core_db.db.subscriptions, {"device_id": device_id})
     if not sub or not sub.get("stripe_customer_id"):
         raise HTTPException(status_code=400, detail="Customer not found. Call /create-customer first.")
 
@@ -151,7 +153,7 @@ async def create_payment_intent(device_id: str, user=Depends(get_current_user)):
 
 @router.post("/create-checkout-session")
 async def create_checkout_session(device_id: str, plan: str = "monthly", user=Depends(get_current_user)):
-    if hasattr(user, 'device_id') and user.device_id != device_id:
+    if user.get('device_id') != device_id:
         raise HTTPException(status_code=403, detail="No autorizado")
     price_id = os.environ.get(
         "STRIPE_PRICE_YEARLY" if plan == "yearly" else "STRIPE_PRICE_MONTHLY"
@@ -159,7 +161,7 @@ async def create_checkout_session(device_id: str, plan: str = "monthly", user=De
     if not price_id:
         raise HTTPException(status_code=500, detail="Price ID not configured.")
 
-    sub = await db_find_one(db.subscriptions, {"device_id": device_id})
+    sub = await db_find_one(core_db.db.subscriptions, {"device_id": device_id})
     customer_id = sub.get("stripe_customer_id") if sub else None
 
     try:
@@ -190,10 +192,10 @@ async def create_customer_portal(device_id: str, user=Depends(get_current_user))
     Crea una sesión del Stripe Billing Portal para que el usuario gestione
     su suscripción (cancelar, cambiar método de pago, ver facturas).
     """
-    if hasattr(user, 'device_id') and user.device_id != device_id:
+    if user.get('device_id') != device_id:
         raise HTTPException(status_code=403, detail="No autorizado")
 
-    sub = await db_find_one(db.subscriptions, {"device_id": device_id})
+    sub = await db_find_one(core_db.db.subscriptions, {"device_id": device_id})
     if not sub or not sub.get("stripe_customer_id"):
         raise HTTPException(status_code=400, detail="No hay una suscripción activa con Stripe.")
 
@@ -247,7 +249,7 @@ async def stripe_webhook(request: Request, stripe_signature: str = Header(None))
             await _activate(device_id, session["id"], customer_id)
             if customer_id:
                 await db_update_one(
-                    db.subscriptions,
+                    core_db.db.subscriptions,
                     {"device_id": device_id},
                     {"$set": {"stripe_customer_id": customer_id}},
                     upsert=True,
@@ -287,13 +289,16 @@ async def activate_subscription_legacy(device_id: str, payment_intent_id: str):
 # ── Admin ─────────────────────────────────────────────────────────────────────
 
 @router.post("/admin/verify")
-async def verify_admin_code(request: AdminCodeRequest):
-    if request.code != ADMIN_CODE:
+@limiter.limit("5/minute")
+async def verify_admin_code(request: Request, body: AdminCodeRequest, user=Depends(get_current_user)):
+    if user.get('device_id') != body.device_id:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    if body.code != ADMIN_CODE:
         return {"success": False, "message": "Invalid admin code", "is_admin": False}
 
     await db_update_one(
-        db.subscriptions,
-        {"device_id": request.device_id},
+        core_db.db.subscriptions,
+        {"device_id": body.device_id},
         {"$set": {"is_admin": True, "status": "active"}},
         upsert=True,
     )
@@ -312,7 +317,7 @@ async def _activate(device_id: str, payment_intent_id: str, customer_id: Optiona
         update["stripe_customer_id"] = customer_id
 
     await db_update_one(
-        db.subscriptions,
+        core_db.db.subscriptions,
         {"device_id": device_id},
         {"$set": update},
         upsert=True,

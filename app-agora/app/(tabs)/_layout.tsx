@@ -1,8 +1,20 @@
-import { Tabs } from 'expo-router';
+import { Tabs, Redirect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, View, Platform } from 'react-native';
+import { useUserStore } from '../../store/userStore';
 
 export default function TabLayout() {
+  const token = useUserStore((state) => state.token);
+
+  // Guardia de rutas: sin sesión iniciada, no se puede ver ninguna pestaña.
+  // _layout.tsx raíz ya espera a loadSession() antes de montar este árbol,
+  // así que "token" aquí refleja el estado real de la sesión guardada.
+  // Usamos <Redirect> (no router.replace() en un useEffect) porque en cargas
+  // directas (deep link / refresh) el Root Layout aún no ha terminado de
+  // montar cuando el efecto se dispara, y router.replace() falla silenciosamente
+  // con "Attempted to navigate before mounting the Root Layout component".
+  if (!token) return <Redirect href="/login" />;
+
   return (
     <Tabs screenOptions={{
       headerShown: false,

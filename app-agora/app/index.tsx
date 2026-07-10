@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet, Text, View, TouchableOpacity, ScrollView,
   Linking, Platform, useWindowDimensions, TextInput,
@@ -400,6 +400,50 @@ export default function AgoraFinalLanding() {
   const [feedback, setFeedback] = useState('');
   const [submitted, setSubmitted] = useState(false);
 
+  // ── Instalación real de la PWA (Chrome/Edge) ──────────────────────────────
+  const [installPromptEvent, setInstallPromptEvent] = useState<any>(null);
+  const [isStandalone, setIsStandalone] = useState(false);
+
+  useEffect(() => {
+    if (!isWeb || typeof window === 'undefined') return;
+
+    // ¿Ya está instalada/abierta como app? No mostramos nada de "instalar".
+    const standalone =
+      window.matchMedia?.('(display-mode: standalone)').matches ||
+      (window.navigator as any).standalone === true;
+    setIsStandalone(standalone);
+
+    const onBeforeInstallPrompt = (e: any) => {
+      e.preventDefault(); // evita el mini-banner nativo, lo disparamos nosotras
+      setInstallPromptEvent(e);
+    };
+    const onAppInstalled = () => setInstallPromptEvent(null);
+
+    window.addEventListener('beforeinstallprompt', onBeforeInstallPrompt);
+    window.addEventListener('appinstalled', onAppInstalled);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', onBeforeInstallPrompt);
+      window.removeEventListener('appinstalled', onAppInstalled);
+    };
+  }, []);
+
+  const handleInstallClick = async () => {
+    if (!installPromptEvent) {
+      // El navegador aún no ofreció el evento (o ya está instalada, o el
+      // navegador no soporta instalación — ej. Safari). Avisamos en vez
+      // de no hacer nada.
+      if (Platform.OS === 'web') {
+        window.alert(
+          'Para instalar: usa el ícono de instalación en la barra de direcciones, o el menú ⋮ > "Instalar Ágora Mujeres". En iPhone/Safari: Compartir > "Añadir a pantalla de inicio".'
+        );
+      }
+      return;
+    }
+    installPromptEvent.prompt();
+    await installPromptEvent.userChoice;
+    setInstallPromptEvent(null);
+  };
+
   // Parallax del logo (solo desktop web)
   const mX = useSharedValue(0);
   const mY = useSharedValue(0);
@@ -437,9 +481,11 @@ export default function AgoraFinalLanding() {
         {/* ── NAV ─────────────────────────────────────────────────────────── */}
         <View style={s.navBar}>
           <Text style={s.brandingTech}>SYNTEXIA Solutions</Text>
-          <TouchableOpacity style={s.navAction} onPress={() => Linking.openURL('https://agoramujeres.syntexia-solutions.es/')}>
-            <Text style={s.navActionText}>INSTALAR APP</Text>
-          </TouchableOpacity>
+          {!isStandalone && (
+            <TouchableOpacity style={s.navAction} onPress={handleInstallClick}>
+              <Text style={s.navActionText}>INSTALAR APP</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* ── HERO ────────────────────────────────────────────────────────── */}
@@ -677,7 +723,7 @@ export default function AgoraFinalLanding() {
                   shadowRadius: 16,
                   elevation: 8,
                 }}
-                onPress={() => router.push({ pathname: '/bienvenida' as any })}
+                onPress={() => router.push({ pathname: '/bienvenida', params: { intent: 'aurea' } } as any)}
                 activeOpacity={0.85}
               >
                 <Text style={{ color: 'white', fontWeight: 'bold', letterSpacing: 2, fontSize: D ? 13 : 12 }}>
@@ -722,7 +768,7 @@ export default function AgoraFinalLanding() {
             {/* ÁUREA */}
             <TouchableOpacity
               style={s.actionDoorPremium}
-              onPress={() => router.push({ pathname: '/bienvenida' as any })}
+              onPress={() => router.push({ pathname: '/bienvenida', params: { intent: 'aurea' } } as any)}
               activeOpacity={0.85}
             >
               <LinearGradient

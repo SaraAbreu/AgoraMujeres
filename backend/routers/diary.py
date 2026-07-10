@@ -1,6 +1,6 @@
 from fastapi import APIRouter, status, Depends, HTTPException
 from auth.dependencies import get_current_user
-from core.database import db, db_find, db_insert_one
+from core.database import db_find, db_insert_one
 from core.models import DiaryEntry, DiaryEntryCreate
 from core.crypto_utils import encrypt_text, decrypt_text
 
@@ -20,7 +20,7 @@ async def create_entry(entry: DiaryEntryCreate, user=Depends(get_current_user)):
 @router.get("/{device_id}")
 async def get_entries(device_id: str, limit: int = 30, offset: int = 0, user=Depends(get_current_user)):
     # Validar que el usuario solo accede a su propio device_id
-    if hasattr(user, 'device_id') and user.device_id != device_id:
+    if user.get('device_id') != device_id:
         raise HTTPException(status_code=403, detail="No autorizado")
     import core.database as cdb
     entries = await db_find(
@@ -41,7 +41,7 @@ async def get_entries(device_id: str, limit: int = 30, offset: int = 0, user=Dep
 
 @router.get("/{device_id}/patterns")
 async def get_patterns(device_id: str, days: int = 7, user=Depends(get_current_user)):
-    if hasattr(user, 'device_id') and user.device_id != device_id:
+    if user.get('device_id') != device_id:
         raise HTTPException(status_code=403, detail="No autorizado")
     import core.database as cdb
     from core.patterns import get_patterns_for_device

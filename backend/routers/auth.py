@@ -3,9 +3,8 @@ from pydantic import BaseModel
 from firebase_admin import auth as firebase_auth
 from auth.auth_utils import create_access_token
 import auth.firebase_config  # inicializa firebase
-from core.database import (
-    db, db_delete_many
-)
+import core.database as core_db
+from core.database import db_delete_many
 from auth.dependencies import get_current_user
 
 router = APIRouter()
@@ -67,15 +66,15 @@ async def delete_account(
     q = {"device_id": data.device_id}
 
     collections = [
-        db.chat_messages,
-        db.chat_conversations,
-        db.diary_entries,
-        db.subscriptions,
-        db.cycle_entries,
-        db.message_reactions,
-        db.favorite_messages,
-        db.crisis_logs,
-        db.monthly_records,
+        core_db.db.chat_messages,
+        core_db.db.chat_conversations,
+        core_db.db.diary_entries,
+        core_db.db.subscriptions,
+        core_db.db.cycle_entries,
+        core_db.db.message_reactions,
+        core_db.db.favorite_messages,
+        core_db.db.crisis_logs,
+        core_db.db.monthly_records,
     ]
 
     for col in collections:
